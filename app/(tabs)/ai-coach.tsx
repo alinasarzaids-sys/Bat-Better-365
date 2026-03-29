@@ -19,6 +19,7 @@ import { useAlert } from '@/template';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  id?: string;
 }
 
 export default function AICoachScreen() {
@@ -27,6 +28,7 @@ export default function AICoachScreen() {
     {
       role: 'assistant',
       content: 'Hello! I am your AI Cricket Coach. I can help you improve your batting skills, suggest drills, and create personalized training plans. What would you like to work on today?',
+      id: 'welcome-message',
     },
   ]);
   const [input, setInput] = useState('');
@@ -36,7 +38,7 @@ export default function AICoachScreen() {
   const handleSend = async () => {
     if (!input.trim() || loading) return;
 
-    const userMessage: Message = { role: 'user', content: input.trim() };
+    const userMessage: Message = { role: 'user', content: input.trim(), id: Date.now().toString() };
     const updatedMessages = [...messages, userMessage];
     setMessages(updatedMessages);
     setInput('');
@@ -51,7 +53,7 @@ export default function AICoachScreen() {
         return;
       }
 
-      setMessages([...updatedMessages, { role: 'assistant', content: data || 'Sorry, I could not process that.' }]);
+      setMessages([...updatedMessages, { role: 'assistant', content: data || 'Sorry, I could not process that.', id: Date.now().toString() }]);
       
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -62,6 +64,25 @@ export default function AICoachScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleReportMessage = (messageId: string, messageContent: string) => {
+    showAlert(
+      'Report Response',
+      'Thank you for reporting this AI response. We will review it to improve our AI Coach.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Report',
+          style: 'destructive',
+          onPress: () => {
+            console.log('Reported message:', messageId, messageContent);
+            // In a real implementation, this would send a report to your backend
+            showAlert('Reported', 'Thank you for your feedback!');
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -85,21 +106,31 @@ export default function AICoachScreen() {
           showsVerticalScrollIndicator={false}
         >
           {messages.map((message, index) => (
-            <View
-              key={index}
-              style={[
-                styles.messageBubble,
-                message.role === 'user' ? styles.userMessage : styles.assistantMessage,
-              ]}
-            >
-              <Text
+            <View key={message.id || index} style={styles.messageWrapper}>
+              <View
                 style={[
-                  styles.messageText,
-                  message.role === 'user' && styles.userMessageText,
+                  styles.messageBubble,
+                  message.role === 'user' ? styles.userMessage : styles.assistantMessage,
                 ]}
               >
-                {message.content}
-              </Text>
+                <Text
+                  style={[
+                    styles.messageText,
+                    message.role === 'user' && styles.userMessageText,
+                  ]}
+                >
+                  {message.content}
+                </Text>
+              </View>
+              {message.role === 'assistant' && (
+                <Pressable
+                  style={styles.reportButton}
+                  onPress={() => handleReportMessage(message.id || index.toString(), message.content)}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <MaterialIcons name="flag" size={16} color={colors.textSecondary} />
+                </Pressable>
+              )}
             </View>
           ))}
           {loading && (
@@ -171,8 +202,13 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: spacing.md,
   },
+  messageWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.xs,
+  },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: '75%',
     padding: spacing.md,
     borderRadius: borderRadius.lg,
   },
@@ -227,5 +263,10 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     backgroundColor: colors.disabled,
+  },
+  reportButton: {
+    paddingTop: spacing.md,
+    paddingHorizontal: spacing.xs,
+    opacity: 0.6,
   },
 });
