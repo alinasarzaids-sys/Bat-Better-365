@@ -56,15 +56,7 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.bulletPoint}>• Calendar events and training schedules</Text>
           <Text style={styles.bulletPoint}>• AI coach conversation history</Text>
 
-          <Text style={styles.subsectionTitle}>1.3 Subscription Information</Text>
-          <Text style={styles.paragraph}>
-            When you subscribe to premium features:
-          </Text>
-          <Text style={styles.bulletPoint}>• Payment information (processed securely through Apple App Store or Google Play Store)</Text>
-          <Text style={styles.bulletPoint}>• Subscription status and renewal dates</Text>
-          <Text style={styles.bulletPoint}>• Purchase receipts and transaction IDs</Text>
-
-          <Text style={styles.subsectionTitle}>1.4 Automatically Collected Information</Text>
+          <Text style={styles.subsectionTitle}>1.3 Automatically Collected Information</Text>
           <Text style={styles.paragraph}>
             We may automatically collect:
           </Text>
@@ -79,7 +71,6 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.paragraph}>We use your information to:</Text>
           <Text style={styles.bulletPoint}>• Provide and maintain the app functionality</Text>
           <Text style={styles.bulletPoint}>• Personalize your training experience and recommendations</Text>
-          <Text style={styles.bulletPoint}>• Process your subscription payments and manage your premium access</Text>
           <Text style={styles.bulletPoint}>• Send you important notifications about your training schedule and achievements</Text>
           <Text style={styles.bulletPoint}>• Provide customer support and respond to your inquiries</Text>
           <Text style={styles.bulletPoint}>• Improve our app features and user experience</Text>
@@ -112,7 +103,6 @@ export default function PrivacyPolicyScreen() {
           </Text>
           <Text style={styles.bulletPoint}>• Cloud hosting and database services (OnSpace Cloud/Supabase)</Text>
           <Text style={styles.bulletPoint}>• AI processing services (OpenAI, Google AI)</Text>
-          <Text style={styles.bulletPoint}>• Payment processing (Apple App Store, Google Play Store, RevenueCat)</Text>
           <Text style={styles.bulletPoint}>• Analytics and performance monitoring</Text>
 
           <Text style={styles.subsectionTitle}>4.2 Legal Requirements</Text>
@@ -149,10 +139,9 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.paragraph}>
             We retain your personal information for as long as your account is active or as needed to provide you with services. Specifically:
           </Text>
-          <Text style={styles.bulletPoint}>• Account information: Retained until you cancel your subscription</Text>
+          <Text style={styles.bulletPoint}>• Account information: Retained until you delete your account</Text>
           <Text style={styles.bulletPoint}>• Training data: Retained while your account is active</Text>
-          <Text style={styles.bulletPoint}>• Journal entries: Retained until you delete them or your subscription ends</Text>
-          <Text style={styles.bulletPoint}>• Payment records: Retained for 7 years for legal and tax compliance</Text>
+          <Text style={styles.bulletPoint}>• Journal entries: Retained until you delete them or close your account</Text>
         </View>
 
         <View style={styles.section}>
@@ -163,16 +152,11 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.bulletPoint}>• Change your password through Settings → Change Password</Text>
           <Text style={styles.bulletPoint}>• Reset your training data through Settings → Reset Account (this keeps your login credentials)</Text>
 
-          <Text style={styles.subsectionTitle}>7.2 Subscription Management</Text>
-          <Text style={styles.bulletPoint}>• Cancel your subscription at any time through your App Store or Google Play Store account settings</Text>
-          <Text style={styles.bulletPoint}>• Access to premium features continues until the end of your current billing period</Text>
-          <Text style={styles.bulletPoint}>• After subscription cancellation, your data is retained for 30 days in case you resubscribe</Text>
-
-          <Text style={styles.subsectionTitle}>7.3 Communication Preferences</Text>
+          <Text style={styles.subsectionTitle}>7.2 Communication Preferences</Text>
           <Text style={styles.bulletPoint}>• Opt out of promotional notifications through your device settings</Text>
           <Text style={styles.bulletPoint}>• You will still receive important account-related notifications</Text>
 
-          <Text style={styles.subsectionTitle}>7.4 Data Deletion</Text>
+          <Text style={styles.subsectionTitle}>7.3 Data Deletion</Text>
           <Text style={styles.paragraph}>
             To request deletion of your account and all associated data, please contact us at batbetter365@gmail.com. We will process your request within 30 days and permanently delete:
           </Text>
@@ -180,10 +164,6 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.bulletPoint}>• All training data and progress</Text>
           <Text style={styles.bulletPoint}>• Journal entries and calendar events</Text>
           <Text style={styles.bulletPoint}>• AI coach conversation history</Text>
-          
-          <Text style={styles.paragraph}>
-            Note: Payment records may be retained for legal compliance as noted in Section 6.
-          </Text>
         </View>
 
         <View style={styles.section}>
