@@ -144,6 +144,7 @@ export default function AICoachScreen() {
           <TextInput
             style={styles.input}
             placeholder="Ask about drills, technique, training plans..."
+            placeholderTextColor="#9CA3AF"
             value={input}
             onChangeText={setInput}
             multiline
@@ -246,6 +247,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     ...typography.body,
+    color: colors.text,
     backgroundColor: colors.background,
     borderRadius: borderRadius.md,
     padding: spacing.md,

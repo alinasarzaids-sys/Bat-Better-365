@@ -13,7 +13,7 @@ const PROFILE_SETUP_KEY = '@bat_better_profile_setup_completed';
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshSession } = useAuth();
   const { showAlert } = useAlert();
 
   const [fullName, setFullName] = useState('');
@@ -45,12 +45,17 @@ export default function ProfileSetupScreen() {
       return;
     }
 
+    setLoading(true);
+
+    // Refresh session to ensure user is properly loaded
+    await refreshSession();
+    
     if (!user?.id) {
-      showAlert('Error', 'User not found. Please login again.');
+      showAlert('Error', 'Session expired. Please login again.');
+      setLoading(false);
+      router.replace('/login');
       return;
     }
-
-    setLoading(true);
     try {
       // Update profile in database
       const { error } = await profileService.updateProfile(user.id, {

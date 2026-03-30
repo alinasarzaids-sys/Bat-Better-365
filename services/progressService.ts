@@ -11,13 +11,12 @@ export const XP_REWARDS = {
   STREAK: 20,              // Bonus for maintaining daily streak (3+ days)
 };
 
-// Level Thresholds
+// Level Thresholds (must match database CHECK constraint)
 export const LEVEL_THRESHOLDS = {
   Beginner: 0,
-  Amateur: 500,
-  'Semi-Pro': 1500,
-  Pro: 3000,
-  Elite: 5000,
+  Intermediate: 500,
+  Advanced: 1500,
+  Expert: 3000,
 };
 
 export const progressService = {
@@ -282,10 +281,9 @@ export const progressService = {
    * Determine skill level based on total XP
    */
   getSkillLevel(totalXP: number): string {
-    if (totalXP >= LEVEL_THRESHOLDS.Elite) return 'Elite';
-    if (totalXP >= LEVEL_THRESHOLDS.Pro) return 'Pro';
-    if (totalXP >= LEVEL_THRESHOLDS['Semi-Pro']) return 'Semi-Pro';
-    if (totalXP >= LEVEL_THRESHOLDS.Amateur) return 'Amateur';
+    if (totalXP >= LEVEL_THRESHOLDS.Expert) return 'Expert';
+    if (totalXP >= LEVEL_THRESHOLDS.Advanced) return 'Advanced';
+    if (totalXP >= LEVEL_THRESHOLDS.Intermediate) return 'Intermediate';
     return 'Beginner';
   },
 
@@ -293,11 +291,11 @@ export const progressService = {
    * Get next level info
    */
   getNextLevel(currentLevel: string): { level: string; requiredXP: number } {
-    const levels = ['Beginner', 'Amateur', 'Semi-Pro', 'Pro', 'Elite'];
+    const levels = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
     const currentIndex = levels.indexOf(currentLevel);
     
     if (currentIndex === -1 || currentIndex >= levels.length - 1) {
-      return { level: 'Elite', requiredXP: LEVEL_THRESHOLDS.Elite };
+      return { level: 'Expert', requiredXP: LEVEL_THRESHOLDS.Expert };
     }
 
     const nextLevel = levels[currentIndex + 1];
