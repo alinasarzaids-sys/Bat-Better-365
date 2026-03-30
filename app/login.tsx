@@ -73,15 +73,10 @@ export default function LoginScreen() {
       return;
     }
 
-    console.log('Starting signup process...');
-    
-    // Direct sign-up without email verification
-    const { error, user: newUser } = await signUpWithPassword(email, password);
-    
-    console.log('Signup result:', { error, hasUser: !!newUser });
+    // Send OTP for email verification
+    const { error } = await sendOTP(email);
     
     if (error) {
-      console.error('Signup error:', error);
       let errorMessage = error;
       if (error.toLowerCase().includes('already') || error.toLowerCase().includes('exist')) {
         errorMessage = 'This email is already registered. Please sign in instead or use a different email.';
@@ -90,14 +85,9 @@ export default function LoginScreen() {
       return;
     }
     
-    // Successful signup - go directly to profile setup
-    console.log('Signup successful! Navigating to profile setup...');
-    
-    // Small delay to ensure auth state updates
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    // Navigate directly to profile setup
-    router.replace('/profile-setup');
+    // Show OTP input screen
+    showAlert('Success', `Verification code sent to ${email}`);
+    setMode('otp');
   };
 
   const handleVerifyOTP = async () => {
@@ -106,13 +96,21 @@ export default function LoginScreen() {
       return;
     }
 
-    const { error } = await verifyOTPAndLogin(email, otp, { password });
+    // Verify OTP and create account with password
+    const { error, user: newUser } = await verifyOTPAndLogin(email, otp, { password });
     if (error) {
       showAlert('Verification Failed', error);
-    } else {
-      // After successful verification, let the root router handle the flow
-      router.replace('/');
+      return;
     }
+    
+    // Successful verification - go to profile setup for new users
+    console.log('OTP verified successfully!');
+    
+    // Small delay to ensure auth state updates
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Navigate to profile setup
+    router.replace('/profile-setup');
   };
 
   const handleForgotPassword = async () => {
