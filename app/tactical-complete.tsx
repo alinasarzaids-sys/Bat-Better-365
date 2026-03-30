@@ -23,6 +23,7 @@ export default function TacticalCompleteScreen() {
   const { user } = useAuth();
   const { showAlert } = useAlert();
   const router = useRouter();
+  const params = useLocalSearchParams();
   const drillName = params.drillName as string || 'T20 Powerplay – Green Seaming Wicket';
   const timeElapsed = params.timeElapsed ? parseInt(params.timeElapsed as string) : 0;
 
@@ -53,7 +54,7 @@ export default function TacticalCompleteScreen() {
         ((fieldReading / 5) * 10 + adaptedPlan / 5 * 10 + confidencePressure / 5 * 10) / 3
       );
 
-      const durationMinutes = Math.floor(timeElapsed / 60);
+      const durationMinutes = Math.max(1, Math.floor(timeElapsed / 60));
 
       // Award XP using the new system
       const { data: xpResult, error: xpError } = await progressService.awardDrillXP(

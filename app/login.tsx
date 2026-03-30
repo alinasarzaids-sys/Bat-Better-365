@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
@@ -194,6 +193,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Enter 4-digit code"
+                  placeholderTextColor={colors.textSecondary}
                   value={otp}
                   onChangeText={setOtp}
                   keyboardType="number-pad"
@@ -202,7 +202,8 @@ export default function LoginScreen() {
 
                 <TextInput
                   style={styles.input}
-                  placeholder="New Password"
+                  placeholder="New Password (min 6 characters)"
+                  placeholderTextColor={colors.textSecondary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -212,6 +213,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Confirm New Password"
+                  placeholderTextColor={colors.textSecondary}
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry
@@ -240,6 +242,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
+                  placeholderTextColor={colors.textSecondary}
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -270,6 +273,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Enter 4-digit code"
+                  placeholderTextColor={colors.textSecondary}
                   value={otp}
                   onChangeText={setOtp}
                   keyboardType="number-pad"
@@ -298,6 +302,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
+                  placeholderTextColor={colors.textSecondary}
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -307,7 +312,8 @@ export default function LoginScreen() {
 
                 <TextInput
                   style={styles.input}
-                  placeholder="Password"
+                  placeholder="Password (min 6 characters)"
+                  placeholderTextColor={colors.textSecondary}
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -318,6 +324,7 @@ export default function LoginScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Confirm Password"
+                    placeholderTextColor={colors.textSecondary}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry
