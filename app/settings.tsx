@@ -136,10 +136,27 @@ export default function SettingsScreen() {
           text: 'Logout',
           style: 'destructive',
           onPress: async () => {
-            const { error } = await logout();
-            if (error) {
-              showAlert('Error', error);
-            } else {
+            try {
+              // Clear local storage first
+              await AsyncStorage.multiRemove([
+                '@bat_better_onboarding_completed',
+                '@bat_better_profile_setup_completed',
+              ]);
+
+              // Attempt Supabase logout (may fail if session is corrupted)
+              const { error } = await logout();
+              
+              // Even if logout fails, navigate to login screen
+              // This ensures user can always log out locally
+              router.replace('/login' as any);
+              
+              // Show error only if needed, but don't block logout
+              if (error) {
+                console.warn('Logout warning:', error);
+              }
+            } catch (err) {
+              console.error('Logout error:', err);
+              // Force navigation to login even on error
               router.replace('/login' as any);
             }
           },
