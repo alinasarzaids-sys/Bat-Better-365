@@ -136,6 +136,16 @@ Example format:
       return;
     }
 
+    // Validate minimum session duration (1 minute)
+    const durationMinutes = Math.floor(timeElapsed / 60);
+    if (durationMinutes < 1) {
+      showAlert(
+        'Session Too Short',
+        'Please train for at least 1 minute before saving your progress. This session was only ' + formatTime(timeElapsed) + '.'
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
@@ -172,9 +182,6 @@ Example format:
         return;
       }
 
-      // Ensure minimum 1 minute duration
-      const durationMinutes = Math.max(1, Math.floor(timeElapsed / 60));
-
       // Award XP using the new system
       const { data: xpResult, error: xpError } = await progressService.awardDrillXP(
         user.id,
@@ -185,7 +192,10 @@ Example format:
 
       if (xpError || !xpResult) {
         console.error('XP award error:', xpError);
-        showAlert('Error', 'Failed to save feedback and progress.');
+        showAlert(
+          'Save Failed',
+          xpError || 'Unable to save your progress. Please check your internet connection and try again.'
+        );
         setSaving(false);
         return;
       }

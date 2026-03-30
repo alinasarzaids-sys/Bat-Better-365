@@ -59,11 +59,14 @@ export default function WorkoutCompleteScreen() {
 
     // Calculate session duration in minutes from sessionTime (format: "M:SS")
     const [minutes, seconds] = sessionTime.split(':').map(Number);
-    const totalMinutes = Math.max(1, minutes + Math.floor(seconds / 60)); // Minimum 1 minute
+    const totalMinutes = minutes + Math.floor(seconds / 60);
 
     // Validate minimum session duration
     if (totalMinutes < 1) {
-      showAlert('Session Too Short', 'Please complete at least 1 minute of training to save your progress.');
+      showAlert(
+        'Session Too Short',
+        'Please train for at least 1 minute before saving your progress. This session was only ' + sessionTime + '.'
+      );
       return;
     }
 
@@ -119,7 +122,10 @@ export default function WorkoutCompleteScreen() {
       if (xpError || !xpResult) {
         console.error('XP award error:', xpError);
         setSaving(false);
-        showAlert('Error', 'Failed to save progress');
+        showAlert(
+          'Save Failed',
+          xpError || 'Unable to save your progress. Please check your internet connection and try again.'
+        );
         return;
       }
 

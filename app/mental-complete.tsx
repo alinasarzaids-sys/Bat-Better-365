@@ -54,19 +54,25 @@ export default function MentalCompleteScreen() {
   };
 
   const handleSave = async () => {
+    if (!user) {
+      showAlert('Error', 'You must be logged in to save feedback');
+      return;
+    }
+
+    // Validate minimum session duration (1 minute)
+    const durationMinutes = Math.floor(timeElapsed / 60);
+    if (durationMinutes < 1) {
+      showAlert(
+        'Session Too Short',
+        'Please train for at least 1 minute before saving your progress. This session was only ' + formatTime(timeElapsed) + '.'
+      );
+      return;
+    }
+
     setSaving(true);
 
     try {
       const supabase = getSupabaseClient();
-      
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        showAlert('Error', 'You must be logged in to save feedback');
-        setSaving(false);
-        return;
-      }
 
       // Save mental performance feedback
       const { error } = await supabase.from('mental_drill_logs').insert({
@@ -97,9 +103,6 @@ export default function MentalCompleteScreen() {
         ((adherence / 5) * 10 + (engagement / 5) * 10 + (integration / 5) * 10) / 3
       );
 
-      // Ensure minimum 1 minute duration
-      const durationMinutes = Math.max(1, Math.floor(timeElapsed / 60));
-
       // Award XP using the new system
       const { data: xpResult, error: xpError } = await progressService.awardDrillXP(
         user.id,
@@ -110,7 +113,10 @@ export default function MentalCompleteScreen() {
 
       if (xpError || !xpResult) {
         console.error('XP award error:', xpError);
-        showAlert('Error', 'Failed to save feedback and progress.');
+        showAlert(
+          'Save Failed',
+          xpError || 'Unable to save your progress. Please check your internet connection and try again.'
+        );
         setSaving(false);
         return;
       }
