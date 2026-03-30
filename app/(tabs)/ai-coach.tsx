@@ -144,7 +144,7 @@ export default function AICoachScreen() {
           <TextInput
             style={styles.input}
             placeholder="Ask about drills, technique, training plans..."
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor="#4B5563"
             value={input}
             onChangeText={setInput}
             multiline
