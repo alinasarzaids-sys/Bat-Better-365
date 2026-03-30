@@ -97,7 +97,8 @@ export default function MentalCompleteScreen() {
         ((adherence / 5) * 10 + (engagement / 5) * 10 + (integration / 5) * 10) / 3
       );
 
-      const durationMinutes = Math.floor(timeElapsed / 60);
+      // Ensure minimum 1 minute duration
+      const durationMinutes = Math.max(1, Math.floor(timeElapsed / 60));
 
       // Award XP using the new system
       const { data: xpResult, error: xpError } = await progressService.awardDrillXP(
@@ -146,7 +147,7 @@ export default function MentalCompleteScreen() {
   };
 
   const handleSkip = () => {
-    router.push('/session-success' as any);
+    router.back();
   };
 
   const moods: MoodEmoji[] = ['😃', '😔', '😟', '😠', '😐'];

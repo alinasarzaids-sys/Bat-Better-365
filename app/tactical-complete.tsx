@@ -54,6 +54,7 @@ export default function TacticalCompleteScreen() {
         ((fieldReading / 5) * 10 + adaptedPlan / 5 * 10 + confidencePressure / 5 * 10) / 3
       );
 
+      // Ensure minimum 1 minute duration
       const durationMinutes = Math.max(1, Math.floor(timeElapsed / 60));
 
       // Award XP using the new system

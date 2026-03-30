@@ -172,7 +172,8 @@ Example format:
         return;
       }
 
-      const durationMinutes = Math.floor(timeElapsed / 60);
+      // Ensure minimum 1 minute duration
+      const durationMinutes = Math.max(1, Math.floor(timeElapsed / 60));
 
       // Award XP using the new system
       const { data: xpResult, error: xpError } = await progressService.awardDrillXP(
@@ -220,7 +221,7 @@ Example format:
   };
 
   const handleSkip = () => {
-    router.push('/session-success' as any);
+    router.back();
   };
 
   return (
