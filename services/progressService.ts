@@ -351,7 +351,7 @@ export const progressService = {
       .eq('user_id', userId)
       .single();
 
-    // If no progress exists, create it
+    // If no progress exists, create it with proper skill_level
     if (!current) {
       const { data, error } = await supabase
         .from('user_progress')
@@ -363,6 +363,9 @@ export const progressService = {
           technical_points: updates.technical_points || 0,
           mental_points: updates.mental_points || 0,
           tactical_points: updates.tactical_points || 0,
+          skill_level: 'Beginner',
+          current_streak: 0,
+          longest_streak: 0,
         })
         .select()
         .single();
