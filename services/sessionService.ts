@@ -159,39 +159,6 @@ export const sessionService = {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-    // Query completed sessions from this month with their items and drill info
-    const { data: sessions, error: sessionsError } = await supabase
-      .from('sessions')
-      .select(`
-        duration_minutes,
-        session_type,
-        items:session_items(
-          drill:drills(
-            pillar
-          )
-        )
-      `)
-      .eq('user_id', userId)
-      .eq('status', 'completed')
-      .gte('completed_at', startOfMonth.toISOString())
-      .lte('completed_at', endOfMonth.toISOString());
-
-    if (sessionsError) {
-      return { data: null, error: sessionsError.message };
-    }
-
-    // Query mental drill logs from this month
-    const { data: mentalLogs, error: mentalError } = await supabase
-      .from('mental_drill_logs')
-      .select('time_elapsed')
-      .eq('user_id', userId)
-      .gte('created_at', startOfMonth.toISOString())
-      .lte('created_at', endOfMonth.toISOString());
-
-    if (mentalError) {
-      return { data: null, error: mentalError.message };
-    }
-
     // Calculate minutes per pillar
     const pillarMinutes: Record<string, number> = {
       'Technical': 0,
@@ -201,24 +168,97 @@ export const sessionService = {
       'Freestyle': 0,
     };
 
-    // Process regular sessions
-    sessions?.forEach((session: any) => {
-      if (session.session_type === 'Freestyle') {
-        // Track freestyle sessions separately
-        pillarMinutes['Freestyle'] += session.duration_minutes || 0;
-      } else if (session.items && session.items.length > 0) {
-        // Drill-based sessions - use the drill's pillar
-        const pillar = session.items[0]?.drill?.pillar;
-        if (pillar && pillarMinutes.hasOwnProperty(pillar)) {
-          pillarMinutes[pillar] += session.duration_minutes || 0;
-        }
-      }
-    });
+    try {
+      // Query completed sessions from this month with their items and drill info
+      const { data: sessions, error: sessionsError } = await supabase
+        .from('sessions')
+        .select(`
+          duration_minutes,
+          session_type,
+          items:session_items(
+            drill:drills(
+              pillar
+            )
+          )
+        `)
+        .eq('user_id', userId)
+        .eq('status', 'completed')
+        .gte('completed_at', startOfMonth.toISOString())
+        .lte('completed_at', endOfMonth.toISOString());
 
-    // Process mental drill logs (in seconds, convert to minutes)
-    mentalLogs?.forEach((log: any) => {
-      pillarMinutes['Mental'] += (log.time_elapsed || 0) / 60;
-    });
+      if (!sessionsError && sessions) {
+        // Process regular sessions
+        sessions.forEach((session: any) => {
+          if (session.session_type === 'Freestyle') {
+            pillarMinutes['Freestyle'] += session.duration_minutes || 0;
+          } else if (session.items && session.items.length > 0) {
+            const pillar = session.items[0]?.drill?.pillar;
+            if (pillar && pillarMinutes.hasOwnProperty(pillar)) {
+              pillarMinutes[pillar] += session.duration_minutes || 0;
+            }
+          }
+        });
+      }
+
+      // Query technical drill logs from this month
+      const { data: technicalLogs } = await supabase
+        .from('technical_drill_logs')
+        .select('time_elapsed')
+        .eq('user_id', userId)
+        .gte('created_at', startOfMonth.toISOString())
+        .lte('created_at', endOfMonth.toISOString());
+
+      if (technicalLogs) {
+        technicalLogs.forEach((log: any) => {
+          pillarMinutes['Technical'] += Math.floor((log.time_elapsed || 0) / 60);
+        });
+      }
+
+      // Query mental drill logs from this month
+      const { data: mentalLogs } = await supabase
+        .from('mental_drill_logs')
+        .select('time_elapsed')
+        .eq('user_id', userId)
+        .gte('created_at', startOfMonth.toISOString())
+        .lte('created_at', endOfMonth.toISOString());
+
+      if (mentalLogs) {
+        mentalLogs.forEach((log: any) => {
+          pillarMinutes['Mental'] += Math.floor((log.time_elapsed || 0) / 60);
+        });
+      }
+
+      // Query workout drill logs from this month (Physical pillar)
+      const { data: workoutLogs } = await supabase
+        .from('workout_drill_logs')
+        .select('time_elapsed')
+        .eq('user_id', userId)
+        .gte('created_at', startOfMonth.toISOString())
+        .lte('created_at', endOfMonth.toISOString());
+
+      if (workoutLogs) {
+        workoutLogs.forEach((log: any) => {
+          pillarMinutes['Physical'] += Math.floor((log.time_elapsed || 0) / 60);
+        });
+      }
+
+      // Query tactical drill logs from this month
+      const { data: tacticalLogs } = await supabase
+        .from('tactical_drill_logs')
+        .select('time_elapsed')
+        .eq('user_id', userId)
+        .gte('created_at', startOfMonth.toISOString())
+        .lte('created_at', endOfMonth.toISOString());
+
+      if (tacticalLogs) {
+        tacticalLogs.forEach((log: any) => {
+          pillarMinutes['Tactical'] += Math.floor((log.time_elapsed || 0) / 60);
+        });
+      }
+
+    } catch (err) {
+      console.error('Error in getMonthlyTrainingByPillar:', err);
+    }
 
     // Convert to array format and round to whole numbers
     const result = Object.entries(pillarMinutes).map(([pillar, minutes]) => ({

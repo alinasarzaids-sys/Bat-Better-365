@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { progressService } from '@/services/progressService';
-import { useAuth, useAlert } from '@/template';
+import { useAuth, useAlert, getSupabaseClient } from '@/template';
 import Slider from '@react-native-community/slider';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -25,6 +25,7 @@ export default function TacticalCompleteScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const drillName = params.drillName as string || 'T20 Powerplay – Green Seaming Wicket';
+  const drillId = params.drillId as string || '';
   const timeElapsed = params.timeElapsed ? parseInt(params.timeElapsed as string) : 0;
 
   // Tactical Performance
@@ -59,6 +60,27 @@ export default function TacticalCompleteScreen() {
     setSaving(true);
 
     try {
+      const supabase = getSupabaseClient();
+
+      // Save tactical performance feedback to tactical_drill_logs
+      const { error: logError } = await supabase.from('tactical_drill_logs').insert({
+        user_id: user.id,
+        drill_id: drillId || null,
+        drill_name: drillName,
+        time_elapsed: timeElapsed,
+        field_reading: fieldReading,
+        shot_selection_matched: shotSelectionMatched === 'yes',
+        adapted_plan: adaptedPlan,
+        confidence_pressure: confidencePressure,
+        overall_mood: overallMood,
+        confidence,
+        session_notes: sessionNotes.trim() || null,
+      });
+
+      if (logError) {
+        console.error('Error saving tactical feedback:', logError);
+        // Continue even if log fails - don't block XP award
+      }
       // Calculate performance rating from tactical metrics (1-10 scale)
       const performanceRating = Math.round(
         ((fieldReading / 5) * 10 + adaptedPlan / 5 * 10 + confidencePressure / 5 * 10) / 3

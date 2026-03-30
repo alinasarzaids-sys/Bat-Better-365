@@ -14,7 +14,7 @@ import Slider from '@react-native-community/slider';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { progressService } from '@/services/progressService';
 import { sessionService } from '@/services/sessionService';
-import { useAuth, useAlert } from '@/template';
+import { useAuth, useAlert, getSupabaseClient } from '@/template';
 
 type DifficultyLevel = 'Easy' | 'Moderate' | 'Hard';
 
@@ -31,6 +31,8 @@ export default function WorkoutCompleteScreen() {
   const [sessionTime, setSessionTime] = useState((params.sessionTime as string) || '0:00');
   const [estimatedCalories, setEstimatedCalories] = useState(parseInt(params.estimatedCalories as string) || 0);
   const [drillName, setDrillName] = useState((params.drillName as string) || 'Physical Training');
+  const drillId = params.drillId as string || '';
+  const timeElapsed = parseInt(params.timeElapsed as string) || 0;
 
   // Feedback state
   const [difficulty, setDifficulty] = useState<DifficultyLevel>('Moderate');
@@ -73,6 +75,27 @@ export default function WorkoutCompleteScreen() {
     setSaving(true);
 
     try {
+      const supabase = getSupabaseClient();
+
+      // Save workout performance feedback to workout_drill_logs
+      const { error: logError } = await supabase.from('workout_drill_logs').insert({
+        user_id: user.id,
+        drill_id: drillId || null,
+        drill_name: drillName,
+        time_elapsed: timeElapsed || (totalMinutes * 60),
+        technique_quality: energyLevel,
+        consistency: null,
+        shot_control: null,
+        timing: null,
+        focus_level: null,
+        confidence_level: confidence,
+        reflection_notes: notes.trim() || null,
+      });
+
+      if (logError) {
+        console.error('Error saving workout feedback:', logError);
+        // Continue even if log fails - don't block XP award
+      }
 
       // Create session record
       const sessionData = {
