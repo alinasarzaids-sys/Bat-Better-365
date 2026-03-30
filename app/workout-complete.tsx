@@ -78,7 +78,7 @@ export default function WorkoutCompleteScreen() {
       const supabase = getSupabaseClient();
 
       // Save workout performance feedback to workout_drill_logs
-      const { error: logError } = await supabase.from('workout_drill_logs').insert({
+      const { error: drillLogError } = await supabase.from('workout_drill_logs').insert({
         user_id: user.id,
         drill_id: drillId || null,
         drill_name: drillName,
@@ -92,8 +92,8 @@ export default function WorkoutCompleteScreen() {
         reflection_notes: notes.trim() || null,
       });
 
-      if (logError) {
-        console.error('Error saving workout feedback:', logError);
+      if (drillLogError) {
+        console.error('Error saving workout feedback:', drillLogError);
         // Continue even if log fails - don't block XP award
       }
 
@@ -126,9 +126,9 @@ export default function WorkoutCompleteScreen() {
         notes: notes || '',
       };
 
-      const { error: logError } = await progressService.createSessionLog(logData);
-      if (logError) {
-        console.error('Session log error:', logError);
+      const { error: sessionLogError } = await progressService.createSessionLog(logData);
+      if (sessionLogError) {
+        console.error('Session log error:', sessionLogError);
       }
 
       // Calculate performance rating from sliders

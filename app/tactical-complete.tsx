@@ -63,7 +63,7 @@ export default function TacticalCompleteScreen() {
       const supabase = getSupabaseClient();
 
       // Save tactical performance feedback to tactical_drill_logs
-      const { error: logError } = await supabase.from('tactical_drill_logs').insert({
+      const { error: tacticalLogError } = await supabase.from('tactical_drill_logs').insert({
         user_id: user.id,
         drill_id: drillId || null,
         drill_name: drillName,
@@ -77,8 +77,8 @@ export default function TacticalCompleteScreen() {
         session_notes: sessionNotes.trim() || null,
       });
 
-      if (logError) {
-        console.error('Error saving tactical feedback:', logError);
+      if (tacticalLogError) {
+        console.error('Error saving tactical feedback:', tacticalLogError);
         // Continue even if log fails - don't block XP award
       }
       // Calculate performance rating from tactical metrics (1-10 scale)
