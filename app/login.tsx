@@ -193,7 +193,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Enter 4-digit code"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={otp}
                   onChangeText={setOtp}
                   keyboardType="number-pad"
@@ -203,7 +203,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="New Password (min 6 characters)"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -213,7 +213,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Confirm New Password"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={confirmPassword}
                   onChangeText={setConfirmPassword}
                   secureTextEntry
@@ -242,7 +242,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -273,7 +273,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Enter 4-digit code"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={otp}
                   onChangeText={setOtp}
                   keyboardType="number-pad"
@@ -302,7 +302,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Email"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={email}
                   onChangeText={setEmail}
                   keyboardType="email-address"
@@ -313,7 +313,7 @@ export default function LoginScreen() {
                 <TextInput
                   style={styles.input}
                   placeholder="Password (min 6 characters)"
-                  placeholderTextColor={colors.textSecondary}
+                  placeholderTextColor="#9CA3AF"
                   value={password}
                   onChangeText={setPassword}
                   secureTextEntry
@@ -324,7 +324,7 @@ export default function LoginScreen() {
                   <TextInput
                     style={styles.input}
                     placeholder="Confirm Password"
-                    placeholderTextColor={colors.textSecondary}
+                    placeholderTextColor="#9CA3AF"
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry
@@ -440,13 +440,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: '#D1D5DB',
     borderRadius: borderRadius.md,
     padding: spacing.md,
     marginBottom: spacing.md,
     ...typography.body,
+    color: colors.text,
+    fontSize: 16,
   },
   button: {
     marginTop: spacing.md,
