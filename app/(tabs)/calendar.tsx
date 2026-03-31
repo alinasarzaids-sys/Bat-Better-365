@@ -6,33 +6,18 @@ import {
   StyleSheet,
   Pressable,
   Modal,
-  Dimensions,
   Alert,
   Platform,
   TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useAuth } from '@/template';
-import { getSupabaseClient } from '@/template';
+import { useAuth, getSupabaseClient } from '@/template';
 import { useRouter } from 'expo-router';
 import { sessionService } from '@/services/sessionService';
-import { drillService } from '@/services/drillService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
-import { Session, Drill } from '@/types';
-import * as Notifications from 'expo-notifications';
-
-const { width } = Dimensions.get('window');
-
-// Configure notification behavior
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
 
 type ViewMode = 'week' | 'month';
 
@@ -44,29 +29,48 @@ interface CalendarEvent {
   event_date: string;
   notes: string;
   created_at: string;
-  notification_scheduled: boolean;
+}
+
+// Unified event for display on calendar
+interface CalendarEntry {
+  id: string;
+  title: string;
+  date: string; // YYYY-MM-DD
+  pillar: string; // Technical | Physical | Mental | Tactical | Freestyle | Club Training | Match
+  status: 'planned' | 'completed';
+  duration_minutes?: number;
+  scheduled_time?: string;
 }
 
 interface DayData {
   date: Date;
   dateString: string;
   isToday: boolean;
-  sessions: SessionWithDrill[];
+  entries: CalendarEntry[];
 }
 
-interface SessionWithDrill extends Session {
-  drill?: Drill;
-}
+// Consistent pillar → color mapping matching theme.ts
+const PILLAR_COLORS: Record<string, string> = {
+  Technical: colors.technical,     // #3B82F6 blue
+  Physical: colors.physical,       // #10B981 green
+  Mental: colors.mental,           // #8B5CF6 purple
+  Tactical: colors.tactical,       // #F97316 orange
+  Freestyle: colors.freestyle,     // #EF4444 red
+  'Club Training': colors.clubTraining, // #34D399 emerald
+  Match: colors.match,             // #06B6D4 cyan
+};
+
+const getPillarColor = (pillar: string) => PILLAR_COLORS[pillar] || colors.primary;
 
 export default function CalendarScreen() {
   const { user } = useAuth();
   const router = useRouter();
-  const [viewMode, setViewMode] = useState<ViewMode>('week');
+  const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showPlanModal, setShowPlanModal] = useState(false);
-  const [sessions, setSessions] = useState<SessionWithDrill[]>([]);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [allEntries, setAllEntries] = useState<CalendarEntry[]>([]);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEventDate, setSelectedEventDate] = useState<Date | null>(null);
   const [eventType, setEventType] = useState<'training' | 'match'>('training');
@@ -75,252 +79,185 @@ export default function CalendarScreen() {
   const [eventTime, setEventTime] = useState('09:00');
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [tempTime, setTempTime] = useState(new Date());
-  const [weekDays, setWeekDays] = useState<DayData[]>([]);
-  const [drills, setDrills] = useState<Drill[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
-      loadData();
-      requestNotificationPermissions();
+      loadAllData();
     }
-  }, [user, currentDate]);
+  }, [user]);
 
-  useEffect(() => {
-    generateWeekDays();
-  }, [currentDate, sessions, calendarEvents]);
-
-  const requestNotificationPermissions = async () => {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
-    
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      console.log('Notification permissions not granted');
-      return false;
-    }
-    
-    return true;
-  };
-
-  const scheduleEventNotifications = async (events: CalendarEvent[]) => {
-    const now = new Date();
-    now.setHours(0, 0, 0, 0);
-    
-    const upcomingEvents = events.filter(event => {
-      const eventDate = new Date(event.event_date);
-      return eventDate >= now;
-    });
-
-    for (const event of upcomingEvents) {
-      const eventDate = new Date(event.event_date);
-      eventDate.setHours(9, 0, 0, 0); // Notify at 9 AM on event day
-      
-      if (eventDate > new Date() && !event.notification_scheduled) {
-        try {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: event.event_type === 'training' ? '🏏 Training Day' : '🏆 Match Day',
-              body: `You have a ${event.event_type} today: ${event.title}`,
-              data: { eventId: event.id, eventType: event.event_type },
-              sound: true,
-            },
-            trigger: eventDate,
-          });
-          
-          // Mark notification as scheduled
-          const supabase = getSupabaseClient();
-          await supabase
-            .from('calendar_events')
-            .update({ notification_scheduled: true })
-            .eq('id', event.id);
-        } catch (error) {
-          console.error('Failed to schedule event notification:', error);
-        }
-      }
-    }
-  };
-
-  const scheduleSessionNotifications = async (sessions: SessionWithDrill[]) => {
-    // Cancel all existing notifications first
-    await Notifications.cancelAllScheduledNotificationsAsync();
-    
-    const now = new Date();
-    const upcomingSessions = sessions.filter(session => {
-      const sessionDate = new Date(session.scheduled_date);
-      return sessionDate > now && session.status !== 'completed';
-    });
-
-    for (const session of upcomingSessions) {
-      const sessionDate = new Date(session.scheduled_date);
-      const notificationTime = new Date(sessionDate.getTime() - 15 * 60 * 1000); // 15 minutes before
-      
-      // Only schedule if notification time is in the future
-      if (notificationTime > now) {
-        try {
-          await Notifications.scheduleNotificationAsync({
-            content: {
-              title: '🏏 Upcoming Training Session',
-              body: `${session.title} starts in 15 minutes`,
-              data: { sessionId: session.id, drillId: session.drill?.id },
-              sound: true,
-            },
-            trigger: notificationTime,
-          });
-        } catch (error) {
-          console.error('Failed to schedule notification:', error);
-        }
-      }
-    }
-  };
-
-  const loadData = async () => {
+  const loadAllData = async () => {
     if (!user) return;
-    
+    setLoading(true);
     const supabase = getSupabaseClient();
-    
-    // Load calendar events
-    const { data: eventsData } = await supabase
-      .from('calendar_events')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('event_date', { ascending: true });
-    
-    if (eventsData) {
-      setCalendarEvents(eventsData);
-      await scheduleEventNotifications(eventsData);
+    const entries: CalendarEntry[] = [];
+
+    try {
+      // 1. Load calendar events (Club Training / Match)
+      const { data: eventsData } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('event_date', { ascending: true });
+
+      if (eventsData) {
+        setCalendarEvents(eventsData);
+        eventsData.forEach((e: CalendarEvent) => {
+          entries.push({
+            id: e.id,
+            title: e.title,
+            date: e.event_date,
+            pillar: e.event_type === 'training' ? 'Club Training' : 'Match',
+            status: 'planned',
+            duration_minutes: 60,
+            scheduled_time: '09:00',
+          });
+        });
+      }
+
+      // 2. Load planned sessions from `sessions` table
+      const { data: sessionsData } = await sessionService.getUserSessions(user.id);
+      if (sessionsData) {
+        sessionsData.forEach((s: any) => {
+          const dateStr = new Date(s.scheduled_date).toISOString().split('T')[0];
+          let pillar = 'Freestyle';
+          if (s.session_type === 'Freestyle') pillar = 'Freestyle';
+          else if (s.session_type === 'Structured' || s.session_type === 'Drill-Based') pillar = 'Technical';
+
+          entries.push({
+            id: s.id,
+            title: s.title,
+            date: dateStr,
+            pillar,
+            status: s.status === 'completed' ? 'completed' : 'planned',
+            duration_minutes: s.duration_minutes,
+            scheduled_time: new Date(s.scheduled_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+          });
+        });
+      }
+
+      // 3. Load technical drill logs (completed drills)
+      const { data: techLogs } = await supabase
+        .from('technical_drill_logs')
+        .select('id, drill_name, time_elapsed, created_at')
+        .eq('user_id', user.id);
+      if (techLogs) {
+        techLogs.forEach((log: any) => {
+          entries.push({
+            id: log.id,
+            title: log.drill_name,
+            date: new Date(log.created_at).toISOString().split('T')[0],
+            pillar: 'Technical',
+            status: 'completed',
+            duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
+          });
+        });
+      }
+
+      // 4. Load physical/workout drill logs
+      const { data: workoutLogs } = await supabase
+        .from('workout_drill_logs')
+        .select('id, drill_name, time_elapsed, created_at')
+        .eq('user_id', user.id);
+      if (workoutLogs) {
+        workoutLogs.forEach((log: any) => {
+          entries.push({
+            id: log.id,
+            title: log.drill_name,
+            date: new Date(log.created_at).toISOString().split('T')[0],
+            pillar: 'Physical',
+            status: 'completed',
+            duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
+          });
+        });
+      }
+
+      // 5. Load mental drill logs
+      const { data: mentalLogs } = await supabase
+        .from('mental_drill_logs')
+        .select('id, drill_name, time_elapsed, created_at')
+        .eq('user_id', user.id);
+      if (mentalLogs) {
+        mentalLogs.forEach((log: any) => {
+          entries.push({
+            id: log.id,
+            title: log.drill_name,
+            date: new Date(log.created_at).toISOString().split('T')[0],
+            pillar: 'Mental',
+            status: 'completed',
+            duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
+          });
+        });
+      }
+
+      // 6. Load tactical drill logs
+      const { data: tacticalLogs } = await supabase
+        .from('tactical_drill_logs')
+        .select('id, drill_name, time_elapsed, created_at')
+        .eq('user_id', user.id);
+      if (tacticalLogs) {
+        tacticalLogs.forEach((log: any) => {
+          entries.push({
+            id: log.id,
+            title: log.drill_name,
+            date: new Date(log.created_at).toISOString().split('T')[0],
+            pillar: 'Tactical',
+            status: 'completed',
+            duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
+          });
+        });
+      }
+
+    } catch (err) {
+      console.error('Error loading calendar data:', err);
     }
-    
-    // Load sessions
-    const { data: sessionsData } = await sessionService.getUserSessions(user.id);
-    
-    // Load all drills
-    const { data: drillsData } = await drillService.getAllDrills();
-    if (drillsData) {
-      setDrills(drillsData);
-    }
-    
-    // Enrich sessions with drill data
-    if (sessionsData && drillsData) {
-      const enrichedSessions = sessionsData.map(session => {
-        if (session.session_type === 'Structured' || session.session_type === 'Drill-Based') {
-          // Find the drill for this session by matching title to drill name
-          const drill = drillsData.find(d => d.name === session.title);
-          return { ...session, drill };
-        }
-        return session;
-      });
-      setSessions(enrichedSessions);
-      
-      // Schedule notifications for upcoming sessions
-      scheduleSessionNotifications(enrichedSessions);
-    } else if (sessionsData) {
-      setSessions(sessionsData);
-    }
+
+    setAllEntries(entries);
+    setLoading(false);
   };
 
-  const generateWeekDays = () => {
+  const getEntriesForDate = (dateStr: string): CalendarEntry[] =>
+    allEntries.filter(e => e.date === dateStr);
+
+  const getStartOfWeek = (date: Date) => {
+    const d = new Date(date);
+    const diff = d.getDate() - d.getDay();
+    return new Date(d.setDate(diff));
+  };
+
+  const generateWeekDays = (): DayData[] => {
     const startOfWeek = getStartOfWeek(currentDate);
-    const days: DayData[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
+    const days: DayData[] = [];
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
       const dateString = date.toISOString().split('T')[0];
-      
-      const daySessions = sessions.filter((session) => {
-        const sessionDate = new Date(session.scheduled_date).toISOString().split('T')[0];
-        return sessionDate === dateString;
-      });
-      
-      const dayEvents = calendarEvents.filter((event) => {
-        return event.event_date === dateString;
-      });
-
-      const isToday = date.getTime() === today.getTime();
-
-      days.push({
-        date,
-        dateString,
-        isToday,
-        sessions: [...daySessions, ...dayEvents.map(e => ({
-          id: e.id,
-          user_id: e.user_id,
-          title: e.title,
-          scheduled_date: `${e.event_date}T09:00:00`,
-          duration_minutes: 60,
-          session_type: e.event_type === 'training' ? 'Training Event' : 'Match Event',
-          status: 'planned',
-          notes: e.notes,
-          created_at: e.created_at,
-        }))],
-      });
+      days.push({ date, dateString, isToday: date.getTime() === today.getTime(), entries: getEntriesForDate(dateString) });
     }
-
-    setWeekDays(days);
+    return days;
   };
 
-  const generateMonthDays = () => {
+  const generateMonthDays = (): DayData[] => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1);
     const startDate = getStartOfWeek(firstDay);
-    
-    const days: DayData[] = [];
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    // Generate 42 days (6 weeks) to fill the calendar grid
+    const days: DayData[] = [];
     for (let i = 0; i < 42; i++) {
       const date = new Date(startDate);
       date.setDate(startDate.getDate() + i);
       const dateString = date.toISOString().split('T')[0];
-      
-      const daySessions = sessions.filter((session) => {
-        const sessionDate = new Date(session.scheduled_date).toISOString().split('T')[0];
-        return sessionDate === dateString;
-      });
-      
-      const dayEvents = calendarEvents.filter((event) => {
-        return event.event_date === dateString;
-      });
-
-      const isToday = date.getTime() === today.getTime();
-
-      days.push({
-        date,
-        dateString,
-        isToday,
-        sessions: [...daySessions, ...dayEvents.map(e => ({
-          id: e.id,
-          user_id: e.user_id,
-          title: e.title,
-          scheduled_date: `${e.event_date}T09:00:00`,
-          duration_minutes: 60,
-          session_type: e.event_type === 'training' ? 'Training Event' : 'Match Event',
-          status: 'planned',
-          notes: e.notes,
-          created_at: e.created_at,
-        }))],
-      });
+      days.push({ date, dateString, isToday: date.getTime() === today.getTime(), entries: getEntriesForDate(dateString) });
     }
-
     return days;
   };
 
-  const getStartOfWeek = (date: Date) => {
-    const d = new Date(date);
-    const day = d.getDay();
-    const diff = d.getDate() - day;
-    return new Date(d.setDate(diff));
-  };
-
-  const navigateWeek = (direction: 'prev' | 'next') => {
+  const navigate = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
     if (viewMode === 'week') {
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
@@ -330,22 +267,15 @@ export default function CalendarScreen() {
     setCurrentDate(newDate);
   };
 
-  const getWeekRange = () => {
+  const getHeaderLabel = () => {
     if (viewMode === 'month') {
-      const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-      return `${months[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+      return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
     }
-    
     const start = getStartOfWeek(currentDate);
     const end = new Date(start);
     end.setDate(start.getDate() + 6);
-    
-    const formatDate = (date: Date) => {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return `${months[date.getMonth()]} ${date.getDate()}`;
-    };
-
-    return `${formatDate(start)} - ${formatDate(end)}`;
+    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return `${fmt(start)} – ${fmt(end)}`;
   };
 
   const handleDayPress = (day: DayData) => {
@@ -354,145 +284,72 @@ export default function CalendarScreen() {
     setShowPlanModal(true);
   };
 
-  const handleViewJournal = () => {
-    setShowPlanModal(false);
-    if (selectedDate) {
-      const dateString = selectedDate.toISOString().split('T')[0];
-      router.push(`/(tabs)/journal?date=${dateString}` as any);
-    }
-  };
-
-  const handleAddEvent = () => {
-    setShowPlanModal(false);
-    setShowEventModal(true);
-  };
-
-  const handleTimeChange = (event: any, selectedDate?: Date) => {
-    if (Platform.OS === 'android') {
-      setShowTimePicker(false);
-    }
-    
-    if (selectedDate) {
-      setTempTime(selectedDate);
-      const hours = selectedDate.getHours().toString().padStart(2, '0');
-      const minutes = selectedDate.getMinutes().toString().padStart(2, '0');
-      setEventTime(`${hours}:${minutes}`);
-    }
-  };
-
-  const handleTimePickerConfirm = () => {
-    setShowTimePicker(false);
-  };
-
-  const handleSaveEvent = async () => {
-    if (!user || !selectedEventDate) {
-      Alert.alert('Error', 'Invalid event data');
-      return;
-    }
-    
-    // Use default title if none provided
-    const defaultTitle = eventType === 'training' ? 'Club Training' : 'Match';
-    const finalTitle = eventTitle.trim() || defaultTitle;
-    
-    const supabase = getSupabaseClient();
-    const { error } = await supabase
-      .from('calendar_events')
-      .insert({
-        user_id: user.id,
-        event_type: eventType,
-        title: finalTitle,
-        event_date: selectedEventDate.toISOString().split('T')[0],
-        event_time: eventTime,
-        notes: eventNotes.trim(),
-      });
-    
-    if (error) {
-      Alert.alert('Error', 'Failed to create event');
-      console.error(error);
-    } else {
-      setEventTitle('');
-      setEventNotes('');
-      setEventTime('09:00');
-      setShowEventModal(false);
-      await loadData();
-    }
-  };
-
-  const handlePlanSession = (sessionType: 'Drill-Based' | 'Freestyle') => {
+  const handlePlanSession = (type: 'Drill-Based' | 'Freestyle') => {
     setShowPlanModal(false);
     const dateParam = selectedDate?.toISOString() || new Date().toISOString();
-    
-    if (sessionType === 'Drill-Based') {
+    if (type === 'Drill-Based') {
       router.push(`/session-drills?date=${encodeURIComponent(dateParam)}`);
     } else {
       router.push(`/session-freestyle?date=${encodeURIComponent(dateParam)}`);
     }
   };
 
-  const getDayName = (date: Date) => {
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return days[date.getDay()];
-  };
-
-  const getPillarColor = (pillar: string) => {
-    switch (pillar) {
-      case 'Technical':
-        return '#9C27B0';
-      case 'Physical':
-        return '#FFC107';
-      case 'Mental':
-        return '#3F51B5';
-      case 'Tactical':
-        return '#FF6F42';
-      case 'Freestyle':
-        return colors.freestyle;
-      case 'Training Event':
-        return colors.clubTraining; // Club training events
-      case 'Match Event':
-        return colors.match;
-      default:
-        return colors.primary;
+  const handleViewJournal = () => {
+    setShowPlanModal(false);
+    if (selectedDate) {
+      router.push(`/(tabs)/journal?date=${selectedDate.toISOString().split('T')[0]}` as any);
     }
   };
 
-  const handleStartSession = (session: SessionWithDrill) => {
-    if (session.drill && session.drill.id) {
-      router.push(`/drill-start?id=${session.drill.id}` as any);
-    } else if (session.session_type === 'Freestyle') {
-      // Navigate to freestyle tracking
-      router.push(`/session-freestyle?sessionId=${session.id}` as any);
+  const handleTimeChange = (event: any, selected?: Date) => {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (selected) {
+      setTempTime(selected);
+      const h = selected.getHours().toString().padStart(2, '0');
+      const m = selected.getMinutes().toString().padStart(2, '0');
+      setEventTime(`${h}:${m}`);
+    }
+  };
+
+  const handleSaveEvent = async () => {
+    if (!user || !selectedEventDate) return;
+    const supabase = getSupabaseClient();
+    const title = eventTitle.trim() || (eventType === 'training' ? 'Club Training' : 'Match');
+    const { error } = await supabase.from('calendar_events').insert({
+      user_id: user.id,
+      event_type: eventType,
+      title,
+      event_date: selectedEventDate.toISOString().split('T')[0],
+      event_time: eventTime,
+      notes: eventNotes.trim(),
+    });
+    if (error) {
+      Alert.alert('Error', 'Failed to save event');
     } else {
-      Alert.alert('Session Not Available', 'Cannot start this session. Drill data not found.');
+      setEventTitle('');
+      setEventNotes('');
+      setEventTime('09:00');
+      setShowEventModal(false);
+      loadAllData();
     }
   };
 
-  const handleReviewSession = (session: SessionWithDrill) => {
-    if (session.drill && session.drill.id) {
-      // Navigate to drill detail for review
-      router.push(`/drill-detail?id=${session.drill.id}` as any);
-    } else {
-      // Parse freestyle session notes for comprehensive summary
-      const notes = session.notes || '';
-      let summaryMessage = `Session: ${session.title}\n`;
-      summaryMessage += `Duration: ${session.duration_minutes || 'N/A'} minutes\n`;
-      summaryMessage += `Completed at: ${new Date(session.completed_at || session.scheduled_date).toLocaleString()}\n`;
-      
-      // Extract structured data from notes if available
-      if (notes) {
-        summaryMessage += `\n--- Session Details ---\n`;
-        summaryMessage += notes;
-      }
-      
-      Alert.alert('Session Review', summaryMessage);
-    }
-  };
+  const weekDays = generateWeekDays();
+  const monthDays = generateMonthDays();
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    const hours = date.getHours();
-    const minutes = date.getMinutes();
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
-  };
+  const selectedDayEntries = selectedDate
+    ? getEntriesForDate(selectedDate.toISOString().split('T')[0])
+    : [];
+
+  const LEGEND = [
+    { label: 'Technical', color: colors.technical },
+    { label: 'Physical', color: colors.physical },
+    { label: 'Mental', color: colors.mental },
+    { label: 'Tactical', color: colors.tactical },
+    { label: 'Freestyle', color: colors.freestyle },
+    { label: 'Club Training', color: colors.clubTraining },
+    { label: 'Match', color: colors.match },
+  ];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -500,326 +357,288 @@ export default function CalendarScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.headerTitle}>Training Calendar</Text>
-          <Text style={styles.headerSubtitle}>Plan and organize your cricket training sessions</Text>
+          <Text style={styles.headerSubtitle}>Plan and track your cricket training sessions</Text>
+        </View>
+        <Pressable
+          style={styles.addFab}
+          onPress={() => {
+            setSelectedDate(new Date());
+            setSelectedEventDate(new Date());
+            setShowPlanModal(true);
+          }}
+        >
+          <MaterialIcons name="add" size={24} color={colors.textLight} />
+        </Pressable>
+      </View>
+
+      {/* Controls */}
+      <View style={styles.controls}>
+        <View style={styles.viewToggle}>
+          {(['week', 'month'] as ViewMode[]).map(mode => (
+            <Pressable
+              key={mode}
+              style={[styles.toggleBtn, viewMode === mode && styles.toggleBtnActive]}
+              onPress={() => setViewMode(mode)}
+            >
+              <Text style={[styles.toggleBtnText, viewMode === mode && styles.toggleBtnTextActive]}>
+                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        <View style={styles.navRow}>
+          <Pressable onPress={() => navigate('prev')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="chevron-left" size={28} color={colors.text} />
+          </Pressable>
+          <Text style={styles.navLabel}>{getHeaderLabel()}</Text>
+          <Pressable onPress={() => navigate('next')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="chevron-right" size={28} color={colors.text} />
+          </Pressable>
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* View Mode Toggle & Date Navigation */}
-        <View style={styles.controls}>
-          <View style={styles.viewModeToggle}>
-            <Pressable
-              style={[styles.toggleButton, viewMode === 'week' && styles.toggleButtonActive]}
-              onPress={() => setViewMode('week')}
-            >
-              <Text style={[styles.toggleButtonText, viewMode === 'week' && styles.toggleButtonTextActive]}>
-                Week
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.toggleButton, viewMode === 'month' && styles.toggleButtonActive]}
-              onPress={() => setViewMode('month')}
-            >
-              <Text style={[styles.toggleButtonText, viewMode === 'month' && styles.toggleButtonTextActive]}>
-                Month
-              </Text>
-            </Pressable>
-          </View>
-
-          <View style={styles.dateNavigation}>
-            <Pressable onPress={() => navigateWeek('prev')} style={styles.navButton}>
-              <MaterialIcons name="chevron-left" size={24} color={colors.text} />
-            </Pressable>
-            <Text style={styles.dateRangeText}>{getWeekRange()}</Text>
-            <Pressable onPress={() => navigateWeek('next')} style={styles.navButton}>
-              <MaterialIcons name="chevron-right" size={24} color={colors.text} />
-            </Pressable>
-          </View>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Loading calendar...</Text>
         </View>
-
-        {/* Week View */}
-        {viewMode === 'week' ? (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.weekScrollContainer}
-            contentContainerStyle={styles.weekScrollContent}
-          >
-            {weekDays.map((day, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.dayColumn,
-                  day.isToday && styles.dayColumnToday,
-                ]}
-              >
-                {/* Day Header */}
-                <View style={styles.dayColumnHeader}>
-                  <Text style={styles.dayName}>{getDayName(day.date)}</Text>
-                  <Text style={styles.dayNumber}>{day.date.getDate()}</Text>
-                  <Pressable
-                    style={styles.addButton}
-                    onPress={() => handleDayPress(day)}
-                  >
-                    <MaterialIcons name="add" size={18} color={colors.textSecondary} />
-                  </Pressable>
-                </View>
-
-                {/* Sessions List */}
-                <ScrollView
-                  style={styles.sessionsList}
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.sessionsListContent}
-                >
-                  {day.sessions.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <MaterialIcons
-                        name="schedule"
-                        size={40}
-                        color={colors.border}
-                      />
-                      <Text style={styles.emptyStateText}>No sessions{"\n"}planned</Text>
-                    </View>
-                  ) : (
-                    day.sessions.map((session, idx) => (
-                      <View key={idx} style={styles.sessionCard}>
-                        {/* Status & Duration Badge */}
-                        <View style={styles.sessionHeader}>
-                          <View style={[
-                            styles.statusBadge,
-                            session.status === 'completed' && styles.statusBadgeCompleted
-                          ]}>
-                            <Text style={[
-                              styles.statusText,
-                              session.status === 'completed' && styles.statusTextCompleted
-                            ]}>
-                              {session.status === 'completed' ? 'Completed' : 'Planned'}
-                            </Text>
-                          </View>
-                          <View style={styles.durationBadge}>
-                            <MaterialIcons name="access-time" size={12} color={colors.textSecondary} />
-                            <Text style={styles.durationText}>{session.duration_minutes || 15}m</Text>
-                          </View>
-                        </View>
-
-                        {/* Pillar Badge */}
-                        <View style={[
-                          styles.pillarBadge,
-                          { backgroundColor: getPillarColor(session.drill?.pillar || 'Technical') + '20' }
-                        ]}>
-                          <Text style={[
-                            styles.pillarText,
-                            { color: getPillarColor(session.drill?.pillar || 'Technical') }
-                          ]}>
-                            {session.drill?.pillar || session.session_type}
-                          </Text>
-                        </View>
-
-                        {/* Session Title */}
-                        <Text style={styles.sessionTitle} numberOfLines={3}>
-                          {session.title}
-                        </Text>
-
-                        {/* Scheduled Time */}
-                        <Text style={styles.sessionTime}>
-                          {formatTime(session.scheduled_date)}
-                        </Text>
-
-                        {/* Action Button */}
-                        {session.status === 'completed' ? (
-                          <Pressable
-                            style={styles.actionButton}
-                            onPress={() => handleReviewSession(session)}
-                          >
-                            <MaterialIcons name="play-arrow" size={16} color={colors.textLight} />
-                            <Text style={styles.actionButtonText}>Review</Text>
-                          </Pressable>
-                        ) : (
-                          <Pressable
-                            style={styles.actionButton}
-                            onPress={() => handleStartSession(session)}
-                          >
-                            <MaterialIcons name="play-arrow" size={16} color={colors.textLight} />
-                            <Text style={styles.actionButtonText}>Start</Text>
-                          </Pressable>
-                        )}
-                      </View>
-                    ))
-                  )}
-                </ScrollView>
+      ) : (
+        <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+          {/* Legend */}
+          <View style={styles.legendRow}>
+            {LEGEND.map(l => (
+              <View key={l.label} style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: l.color }]} />
+                <Text style={styles.legendLabel}>{l.label}</Text>
               </View>
             ))}
-          </ScrollView>
-        ) : (
-          /* Month View */
-          <View style={styles.monthContainer}>
-            {/* Color Legend */}
-            <View style={styles.legendContainerTop}>
-              <View style={styles.legendItems}>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#9C27B0' }]} />
-                  <Text style={styles.legendText}>Technical</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#3F51B5' }]} />
-                  <Text style={styles.legendText}>Mental</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#FFC107' }]} />
-                  <Text style={styles.legendText}>Physical</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: '#FF6F42' }]} />
-                  <Text style={styles.legendText}>Tactical</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: colors.clubTraining }]} />
-                  <Text style={styles.legendText}>Club Training</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: colors.freestyle }]} />
-                  <Text style={styles.legendText}>Freestyle</Text>
-                </View>
-                <View style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: colors.match }]} />
-                  <Text style={styles.legendText}>Match</Text>
-                </View>
-              </View>
-            </View>
+          </View>
 
-            {/* Day Headers */}
-            <View style={styles.monthDayHeaders}>
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
-                <View key={index} style={styles.monthDayHeader}>
-                  <Text style={styles.monthDayHeaderText}>{day}</Text>
-                </View>
-              ))}
-            </View>
-
-            {/* Month Grid */}
-            <View style={styles.monthGrid}>
-              {generateMonthDays().map((day, index) => {
-                const isCurrentMonth = day.date.getMonth() === currentDate.getMonth();
-                return (
-                  <Pressable
-                    key={index}
-                    style={[
-                      styles.monthCell,
-                      day.isToday && styles.monthCellToday,
-                      !isCurrentMonth && styles.monthCellOtherMonth,
-                    ]}
-                    onPress={() => handleDayPress(day)}
-                  >
-                    <Text style={[
-                      styles.monthCellDate,
-                      day.isToday && styles.monthCellDateToday,
-                      !isCurrentMonth && styles.monthCellDateOtherMonth,
-                    ]}>
+          {viewMode === 'week' ? (
+            /* ── WEEK VIEW ── */
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekContent}>
+              {weekDays.map((day, i) => (
+                <View key={i} style={[styles.dayCol, day.isToday && styles.dayColToday]}>
+                  <Pressable style={styles.dayColHeader} onPress={() => handleDayPress(day)}>
+                    <Text style={styles.dayColName}>
+                      {day.date.toLocaleDateString('en-US', { weekday: 'short' })}
+                    </Text>
+                    <Text style={[styles.dayColNum, day.isToday && styles.dayColNumToday]}>
                       {day.date.getDate()}
                     </Text>
-                    
-                    {/* Session Indicators */}
-                    {day.sessions.length > 0 && isCurrentMonth && (
-                      <View style={styles.monthSessionIndicators}>
-                        {day.sessions.slice(0, 3).map((session, idx) => (
-                          <View
-                            key={idx}
-                            style={[
-                              styles.monthSessionDot,
-                              { backgroundColor: getPillarColor(session.drill?.pillar || 'Technical') }
-                            ]}
-                          />
-                        ))}
-                        {day.sessions.length > 3 && (
-                          <Text style={styles.monthSessionMore}>+{day.sessions.length - 3}</Text>
-                        )}
-                      </View>
-                    )}
+                    <MaterialIcons name="add" size={16} color={colors.textSecondary} />
                   </Pressable>
-                );
-              })}
-            </View>
-          </View>
-        )}
-      </ScrollView>
 
-      {/* Plan New Session Modal */}
-      <Modal
-        visible={showPlanModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowPlanModal(false)}
-      >
+                  <View style={styles.dayColBody}>
+                    {day.entries.length === 0 ? (
+                      <View style={styles.emptyDay}>
+                        <MaterialIcons name="calendar-today" size={28} color={colors.border} />
+                        <Text style={styles.emptyDayText}>No sessions</Text>
+                      </View>
+                    ) : (
+                      day.entries.map((entry, idx) => (
+                        <View
+                          key={idx}
+                          style={[styles.entryCard, { borderLeftColor: getPillarColor(entry.pillar), borderLeftWidth: 4 }]}
+                        >
+                          <View style={[styles.entryPillarBadge, { backgroundColor: getPillarColor(entry.pillar) + '20' }]}>
+                            <Text style={[styles.entryPillarText, { color: getPillarColor(entry.pillar) }]}>
+                              {entry.pillar}
+                            </Text>
+                          </View>
+                          <Text style={styles.entryTitle} numberOfLines={2}>{entry.title}</Text>
+                          <View style={styles.entryMeta}>
+                            {entry.duration_minutes ? (
+                              <Text style={styles.entryMetaText}>{entry.duration_minutes} min</Text>
+                            ) : null}
+                            <View style={[styles.entryStatusBadge, entry.status === 'completed' && styles.entryStatusDone]}>
+                              <Text style={[styles.entryStatusText, entry.status === 'completed' && styles.entryStatusDoneText]}>
+                                {entry.status === 'completed' ? '✓ Done' : 'Planned'}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            /* ── MONTH VIEW ── */
+            <View style={styles.monthContainer}>
+              {/* Day headers */}
+              <View style={styles.monthHeader}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
+                  <Text key={d} style={styles.monthHeaderCell}>{d}</Text>
+                ))}
+              </View>
+
+              {/* Grid */}
+              <View style={styles.monthGrid}>
+                {monthDays.map((day, i) => {
+                  const isCurrentMonth = day.date.getMonth() === currentDate.getMonth();
+                  const dotEntries = day.entries.slice(0, 4);
+                  return (
+                    <Pressable
+                      key={i}
+                      style={[
+                        styles.monthCell,
+                        day.isToday && styles.monthCellToday,
+                        !isCurrentMonth && styles.monthCellOther,
+                      ]}
+                      onPress={() => handleDayPress(day)}
+                    >
+                      <Text style={[
+                        styles.monthCellDate,
+                        day.isToday && styles.monthCellDateToday,
+                        !isCurrentMonth && styles.monthCellDateOther,
+                      ]}>
+                        {day.date.getDate()}
+                      </Text>
+                      {isCurrentMonth && dotEntries.length > 0 && (
+                        <View style={styles.monthDots}>
+                          {dotEntries.map((entry, idx) => (
+                            <View
+                              key={idx}
+                              style={[styles.monthDot, { backgroundColor: getPillarColor(entry.pillar) }]}
+                            />
+                          ))}
+                          {day.entries.length > 4 && (
+                            <Text style={styles.monthMoreText}>+{day.entries.length - 4}</Text>
+                          )}
+                        </View>
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
+          {/* Selected Day Detail Panel */}
+          {selectedDate && (
+            <View style={styles.detailPanel}>
+              <View style={styles.detailPanelHeader}>
+                <Text style={styles.detailPanelDate}>
+                  {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+                </Text>
+                <Pressable
+                  style={styles.detailAddBtn}
+                  onPress={() => {
+                    setSelectedEventDate(selectedDate);
+                    setShowPlanModal(true);
+                  }}
+                >
+                  <MaterialIcons name="add" size={18} color={colors.textLight} />
+                  <Text style={styles.detailAddBtnText}>Add</Text>
+                </Pressable>
+              </View>
+
+              {selectedDayEntries.length === 0 ? (
+                <View style={styles.detailEmpty}>
+                  <MaterialIcons name="event-available" size={36} color={colors.border} />
+                  <Text style={styles.detailEmptyText}>Nothing planned. Tap Add to schedule a session.</Text>
+                </View>
+              ) : (
+                selectedDayEntries.map((entry, idx) => (
+                  <View
+                    key={idx}
+                    style={[styles.detailEntry, { borderLeftColor: getPillarColor(entry.pillar), borderLeftWidth: 4 }]}
+                  >
+                    <View style={styles.detailEntryTop}>
+                      <View style={[styles.detailPillarBadge, { backgroundColor: getPillarColor(entry.pillar) + '20' }]}>
+                        <Text style={[styles.detailPillarText, { color: getPillarColor(entry.pillar) }]}>
+                          {entry.pillar}
+                        </Text>
+                      </View>
+                      <View style={[styles.entryStatusBadge, entry.status === 'completed' && styles.entryStatusDone]}>
+                        <Text style={[styles.entryStatusText, entry.status === 'completed' && styles.entryStatusDoneText]}>
+                          {entry.status === 'completed' ? '✓ Completed' : 'Planned'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={styles.detailEntryTitle}>{entry.title}</Text>
+                    {entry.duration_minutes ? (
+                      <Text style={styles.detailEntryMeta}>{entry.duration_minutes} min</Text>
+                    ) : null}
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      )}
+
+      {/* Plan Session Modal */}
+      <Modal visible={showPlanModal} animationType="fade" transparent onRequestClose={() => setShowPlanModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Plan New Session</Text>
+          <View style={styles.modalCard}>
+            <View style={styles.modalTitleRow}>
+              <Text style={styles.modalTitle}>
+                {selectedDate
+                  ? selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                  : 'Plan Session'}
+              </Text>
               <Pressable onPress={() => setShowPlanModal(false)}>
                 <MaterialIcons name="close" size={24} color={colors.text} />
               </Pressable>
             </View>
 
-            <Text style={styles.modalQuestion}>What kind of session are you planning?</Text>
+            <Text style={styles.modalSub}>What kind of session are you planning?</Text>
 
-            <View style={styles.sessionTypeGrid}>
-              <Pressable
-                style={styles.sessionTypeCard}
-                onPress={() => handlePlanSession('Drill-Based')}
-              >
-                <View style={[styles.sessionTypeIcon, styles.sessionTypeIconDrill]}>
-                  <MaterialIcons name="track-changes" size={32} color={colors.success} />
+            <View style={styles.sessionTypeRow}>
+              <Pressable style={styles.sessionTypeBtn} onPress={() => handlePlanSession('Drill-Based')}>
+                <View style={[styles.sessionTypeIcon, { backgroundColor: colors.primary + '20' }]}>
+                  <MaterialIcons name="track-changes" size={28} color={colors.primary} />
                 </View>
                 <Text style={styles.sessionTypeName}>Drill-Based</Text>
-                <Text style={styles.sessionTypeDescription}>Structured training</Text>
+                <Text style={styles.sessionTypeDesc}>Structured training</Text>
               </Pressable>
-
-              <Pressable
-                style={styles.sessionTypeCard}
-                onPress={() => handlePlanSession('Freestyle')}
-              >
-                <View style={[styles.sessionTypeIcon, styles.sessionTypeIconFreestyle]}>
-                  <MaterialIcons name="flash-on" size={32} color={colors.tactical} />
+              <Pressable style={styles.sessionTypeBtn} onPress={() => handlePlanSession('Freestyle')}>
+                <View style={[styles.sessionTypeIcon, { backgroundColor: colors.freestyle + '20' }]}>
+                  <MaterialIcons name="flash-on" size={28} color={colors.freestyle} />
                 </View>
                 <Text style={styles.sessionTypeName}>Freestyle</Text>
-                <Text style={styles.sessionTypeDescription}>Open practice</Text>
+                <Text style={styles.sessionTypeDesc}>Open practice</Text>
               </Pressable>
             </View>
 
-            <View style={styles.eventTypeDivider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.dividerLine} />
+            <View style={styles.orDivider}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>OR</Text>
+              <View style={styles.orLine} />
             </View>
 
-            <Pressable style={styles.addEventButton} onPress={handleAddEvent}>
+            <Pressable
+              style={styles.eventBtn}
+              onPress={() => { setShowPlanModal(false); setShowEventModal(true); }}
+            >
               <MaterialIcons name="event" size={20} color={colors.textLight} />
-              <Text style={styles.addEventButtonText}>Add Club Training or Match Event</Text>
+              <Text style={styles.eventBtnText}>Add Club Training or Match Event</Text>
             </Pressable>
 
-            <View style={styles.eventTypeDivider}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>OR</Text>
-              <View style={styles.dividerLine} />
+            <View style={styles.orDivider}>
+              <View style={styles.orLine} />
+              <Text style={styles.orText}>OR</Text>
+              <View style={styles.orLine} />
             </View>
 
-            <Pressable style={styles.viewJournalButton} onPress={handleViewJournal}>
+            <Pressable style={styles.journalBtn} onPress={handleViewJournal}>
               <MaterialIcons name="book" size={20} color={colors.primary} />
-              <Text style={styles.viewJournalButtonText}>View Journal for This Day</Text>
+              <Text style={styles.journalBtnText}>View Journal for This Day</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
 
       {/* Add Event Modal */}
-      <Modal
-        visible={showEventModal}
-        animationType="fade"
-        transparent
-        onRequestClose={() => setShowEventModal(false)}
-      >
+      <Modal visible={showEventModal} animationType="fade" transparent onRequestClose={() => setShowEventModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalTitleRow}>
               <Text style={styles.modalTitle}>Add Event</Text>
               <Pressable onPress={() => setShowEventModal(false)}>
                 <MaterialIcons name="close" size={24} color={colors.text} />
@@ -828,59 +647,41 @@ export default function CalendarScreen() {
 
             {selectedEventDate && (
               <Text style={styles.selectedDateText}>
-                {selectedEventDate.toLocaleDateString('en-US', { 
-                  weekday: 'long',
-                  month: 'long', 
-                  day: 'numeric',
-                  year: 'numeric'
-                })}
+                {selectedEventDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
               </Text>
             )}
 
-            <View style={styles.eventTypeSelector}>
-              <Pressable
-                style={[styles.eventTypeOption, eventType === 'training' && styles.eventTypeOptionActive]}
-                onPress={() => setEventType('training')}
-              >
-                <MaterialIcons 
-                  name="fitness-center" 
-                  size={24} 
-                  color={eventType === 'training' ? colors.primary : colors.textSecondary} 
-                />
-                <Text style={[styles.eventTypeOptionText, eventType === 'training' && styles.eventTypeOptionTextActive]}>
-                  Club Training
-                </Text>
-              </Pressable>
-              <Pressable
-                style={[styles.eventTypeOption, eventType === 'match' && styles.eventTypeOptionActive]}
-                onPress={() => setEventType('match')}
-              >
-                <MaterialIcons 
-                  name="sports-cricket" 
-                  size={24} 
-                  color={eventType === 'match' ? colors.primary : colors.textSecondary} 
-                />
-                <Text style={[styles.eventTypeOptionText, eventType === 'match' && styles.eventTypeOptionTextActive]}>
-                  Match
-                </Text>
-              </Pressable>
+            <View style={styles.eventTypeRow}>
+              {(['training', 'match'] as const).map(t => (
+                <Pressable
+                  key={t}
+                  style={[styles.eventTypeOpt, eventType === t && styles.eventTypeOptActive]}
+                  onPress={() => setEventType(t)}
+                >
+                  <MaterialIcons
+                    name={t === 'training' ? 'fitness-center' : 'sports-cricket'}
+                    size={22}
+                    color={eventType === t ? colors.primary : colors.textSecondary}
+                  />
+                  <Text style={[styles.eventTypeOptText, eventType === t && styles.eventTypeOptTextActive]}>
+                    {t === 'training' ? 'Club Training' : 'Match'}
+                  </Text>
+                </Pressable>
+              ))}
             </View>
 
             <TextInput
-              style={styles.eventInput}
+              style={styles.input}
               placeholder="Event title (optional)"
               placeholderTextColor={colors.textSecondary}
               value={eventTitle}
               onChangeText={setEventTitle}
             />
 
-            <Pressable 
-              style={styles.timePickerContainer}
-              onPress={() => setShowTimePicker(true)}
-            >
+            <Pressable style={styles.timeRow} onPress={() => setShowTimePicker(true)}>
               <MaterialIcons name="access-time" size={20} color={colors.textSecondary} />
               <Text style={styles.timeText}>{eventTime}</Text>
-              <MaterialIcons name="arrow-drop-down" size={24} color={colors.textSecondary} />
+              <MaterialIcons name="expand-more" size={20} color={colors.textSecondary} />
             </Pressable>
 
             {showTimePicker && (
@@ -893,18 +694,15 @@ export default function CalendarScreen() {
                   onChange={handleTimeChange}
                 />
                 {Platform.OS === 'ios' && (
-                  <Pressable 
-                    style={styles.timePickerConfirm}
-                    onPress={handleTimePickerConfirm}
-                  >
-                    <Text style={styles.timePickerConfirmText}>Done</Text>
+                  <Pressable style={styles.timeConfirmBtn} onPress={() => setShowTimePicker(false)}>
+                    <Text style={styles.timeConfirmText}>Done</Text>
                   </Pressable>
                 )}
               </>
             )}
 
             <TextInput
-              style={[styles.eventInput, styles.eventNotesInput]}
+              style={[styles.input, styles.notesInput]}
               placeholder="Notes (optional)"
               placeholderTextColor={colors.textSecondary}
               value={eventNotes}
@@ -914,8 +712,8 @@ export default function CalendarScreen() {
               textAlignVertical="top"
             />
 
-            <Pressable style={styles.saveEventButton} onPress={handleSaveEvent}>
-              <Text style={styles.saveEventButtonText}>Save Event</Text>
+            <Pressable style={styles.saveBtn} onPress={handleSaveEvent}>
+              <Text style={styles.saveBtnText}>Save Event</Text>
             </Pressable>
           </View>
         </View>
@@ -925,536 +723,198 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
+
   header: {
-    padding: spacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  headerTitle: {
-    ...typography.h2,
-    color: colors.text,
+  headerTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
+  headerSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  addFab: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  headerSubtitle: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginTop: spacing.xs,
-  },
+
   controls: {
-    padding: spacing.md,
-    gap: spacing.md,
-  },
-  viewModeToggle: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: 4,
-    alignSelf: 'flex-start',
-  },
-  toggleButton: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-  },
-  toggleButtonActive: {
-    backgroundColor: colors.text,
-  },
-  toggleButtonText: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  toggleButtonTextActive: {
-    color: colors.textLight,
-  },
-  dateNavigation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-  },
-  navButton: {
-    padding: spacing.xs,
-  },
-  dateRangeText: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'center',
-  },
-  weekScrollContainer: {
-    flex: 1,
-  },
-  weekScrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.xl,
-  },
-  dayColumn: {
-    width: 155,
-    marginRight: spacing.md,
-    backgroundColor: '#F8F9FA',
-    borderRadius: borderRadius.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-    overflow: 'hidden',
-  },
-  dayColumnToday: {
-    borderColor: '#52B788',
-    backgroundColor: '#F0FFF4',
-  },
-  dayColumnHeader: {
     backgroundColor: colors.surface,
-    padding: spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-    alignItems: 'center',
-    gap: spacing.xs,
-  },
-  dayName: {
-    ...typography.bodySmall,
-    color: colors.text,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  dayNumber: {
-    ...typography.body,
-    color: colors.textSecondary,
-    fontSize: 12,
-  },
-  addButton: {
-    width: 24,
-    height: 24,
-    borderRadius: borderRadius.sm,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginTop: spacing.xs,
-  },
-  sessionsList: {
-    flex: 1,
-  },
-  sessionsListContent: {
-    padding: spacing.sm,
+    borderBottomColor: colors.border,
     gap: spacing.sm,
   },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl * 2,
+  viewToggle: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: borderRadius.md, padding: 3, alignSelf: 'flex-start' },
+  toggleBtn: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.sm },
+  toggleBtnActive: { backgroundColor: colors.text },
+  toggleBtnText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  toggleBtnTextActive: { color: colors.textLight },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  navBtn: { padding: spacing.xs },
+  navLabel: { ...typography.body, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'center' },
+
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
+  loadingText: { ...typography.body, color: colors.textSecondary },
+
+  /* Legend */
+  legendRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
     paddingHorizontal: spacing.md,
-  },
-  emptyStateText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: spacing.sm,
-    lineHeight: 16,
-  },
-  sessionCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    gap: spacing.sm,
-  },
-  sessionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  statusBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: borderRadius.sm,
-    backgroundColor: '#F5F5F5',
-  },
-  statusBadgeCompleted: {
-    backgroundColor: '#E8F5E9',
-  },
-  statusText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 10,
-  },
-  statusTextCompleted: {
-    color: '#52B788',
-  },
-  durationBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-  },
-  durationText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 10,
-  },
-  pillarBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 3,
-    borderRadius: borderRadius.sm,
-  },
-  pillarText: {
-    ...typography.caption,
-    fontWeight: '600',
-    fontSize: 11,
-  },
-  sessionTitle: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-    fontSize: 13,
-    lineHeight: 18,
-    marginTop: spacing.xs,
-  },
-  sessionTime: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 11,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    backgroundColor: '#52B788',
     paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.sm,
-    marginTop: spacing.xs,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
   },
-  actionButtonText: {
-    ...typography.bodySmall,
-    color: colors.textLight,
-    fontWeight: '600',
-    fontSize: 13,
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendLabel: { ...typography.caption, color: colors.text, fontSize: 11 },
+
+  /* Week View */
+  weekContent: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, paddingTop: spacing.md, gap: spacing.sm },
+  dayCol: {
+    width: 160,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
+  dayColToday: { borderColor: colors.primary, borderWidth: 2 },
+  dayColHeader: {
     alignItems: 'center',
-    padding: spacing.lg,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 2,
   },
-  modalContent: {
+  dayColName: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', fontSize: 11 },
+  dayColNum: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  dayColNumToday: { color: colors.primary },
+  dayColBody: { padding: spacing.sm, gap: spacing.sm, minHeight: 120 },
+  emptyDay: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
+  emptyDayText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
+  entryCard: {
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    padding: spacing.sm,
+    gap: 4,
+  },
+  entryPillarBadge: { alignSelf: 'flex-start', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
+  entryPillarText: { fontSize: 10, fontWeight: '700' },
+  entryTitle: { ...typography.caption, color: colors.text, fontWeight: '600', lineHeight: 15 },
+  entryMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 2 },
+  entryMetaText: { fontSize: 10, color: colors.textSecondary },
+  entryStatusBadge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, backgroundColor: '#F5F5F5' },
+  entryStatusDone: { backgroundColor: colors.primary + '20' },
+  entryStatusText: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  entryStatusDoneText: { color: colors.primary },
+
+  /* Month View */
+  monthContainer: { paddingHorizontal: 2 },
+  monthHeader: { flexDirection: 'row', paddingVertical: spacing.sm },
+  monthHeaderCell: { flex: 1, textAlign: 'center', ...typography.caption, color: colors.textSecondary, fontWeight: '700', textTransform: 'uppercase' },
+  monthGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  monthCell: {
+    width: `${100 / 7}%`,
+    minHeight: 56,
+    padding: 4,
+    borderWidth: 0.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  monthCellToday: { backgroundColor: '#F0FFF4', borderColor: colors.primary, borderWidth: 2 },
+  monthCellOther: { backgroundColor: '#FAFAFA' },
+  monthCellDate: { ...typography.caption, color: colors.text, fontWeight: '700', textAlign: 'center', fontSize: 13 },
+  monthCellDateToday: { color: colors.primary, fontWeight: '800' },
+  monthCellDateOther: { color: colors.textSecondary, opacity: 0.5 },
+  monthDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, justifyContent: 'center', marginTop: 3 },
+  monthDot: { width: 7, height: 7, borderRadius: 4 },
+  monthMoreText: { fontSize: 9, color: colors.textSecondary, fontWeight: '600' },
+
+  /* Detail Panel */
+  detailPanel: {
+    margin: spacing.md,
     backgroundColor: colors.surface,
     borderRadius: borderRadius.xl,
     padding: spacing.md,
-    width: '88%',
-    maxWidth: 480,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  modalTitle: {
-    ...typography.h3,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  modalQuestion: {
-    ...typography.h4,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
-  },
-  sessionTypeGrid: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    justifyContent: 'center',
-  },
-  sessionTypeCard: {
-    width: 135,
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.lg,
-    padding: spacing.sm,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 1,
     borderColor: colors.border,
+    gap: spacing.md,
   },
-  sessionTypeIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: borderRadius.md,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  sessionTypeIconDrill: {
-    backgroundColor: colors.success + '20',
-  },
-  sessionTypeIconFreestyle: {
-    backgroundColor: colors.tactical + '20',
-  },
-  sessionTypeName: {
-    fontSize: 17,
-    color: colors.text,
-    fontWeight: '600',
-    textAlign: 'center',
-    marginTop: spacing.xs,
-  },
-  sessionTypeDescription: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  eventTypeDivider: {
+  detailPanelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  detailPanelDate: { ...typography.body, color: colors.text, fontWeight: '700' },
+  detailAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: spacing.lg,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: colors.border,
-  },
-  dividerText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginHorizontal: spacing.md,
-  },
-  addEventButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
+    gap: 4,
     backgroundColor: colors.primary,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  addEventButtonText: {
-    fontSize: 15,
-    color: colors.textLight,
-    fontWeight: '600',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  viewJournalButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.primary,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-  },
-  viewJournalButtonText: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  selectedDateText: {
-    ...typography.body,
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: spacing.lg,
-    fontWeight: '500',
-  },
-  eventTypeSelector: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginBottom: spacing.lg,
-  },
-  eventTypeOption: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: colors.border,
-    backgroundColor: colors.background,
-  },
-  eventTypeOptionActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primaryLight + '20',
-  },
-  eventTypeOptionText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    fontWeight: '500',
-  },
-  eventTypeOptionTextActive: {
-    color: colors.primary,
-    fontWeight: '600',
-  },
-  eventInput: {
-    ...typography.body,
-    color: colors.text,
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  eventNotesInput: {
-    minHeight: 80,
-  },
-  saveEventButton: {
-    backgroundColor: colors.success,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-  },
-  saveEventButtonText: {
-    ...typography.body,
-    color: colors.textLight,
-    fontWeight: '600',
-  },
-  timePickerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.background,
-    borderRadius: borderRadius.md,
-    borderWidth: 1,
-    borderColor: colors.border,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
-    marginBottom: spacing.md,
-  },
-  timeText: {
-    ...typography.body,
-    color: colors.text,
-    flex: 1,
-    paddingVertical: spacing.sm,
-  },
-  timePickerConfirm: {
-    backgroundColor: colors.primary,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
-    alignItems: 'center',
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
   },
-  timePickerConfirmText: {
-    ...typography.body,
-    color: colors.textLight,
-    fontWeight: '600',
-  },
-  
-  // Month View Styles
-  monthContainer: {
-    paddingVertical: spacing.md,
-  },
-  monthDayHeaders: {
-    flexDirection: 'row',
-    marginBottom: spacing.sm,
-    paddingHorizontal: 2,
-  },
-  monthDayHeader: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: spacing.sm,
-  },
-  monthDayHeaderText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  monthGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginHorizontal: -0.5,
-  },
-  monthCell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 0.75,
-    padding: spacing.xs,
-    borderWidth: 0.5,
-    borderColor: '#E0E0E0',
-    backgroundColor: colors.surface,
-  },
-  monthCellToday: {
-    backgroundColor: '#F0FFF4',
-    borderColor: '#52B788',
-    borderWidth: 2,
-  },
-  monthCellOtherMonth: {
-    backgroundColor: '#FAFAFA',
-  },
-  monthCellDate: {
-    ...typography.bodySmall,
-    color: colors.text,
-    fontWeight: '600',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  monthCellDateToday: {
-    color: '#52B788',
-    fontWeight: '700',
-  },
-  monthCellDateOtherMonth: {
-    color: colors.textSecondary,
-    opacity: 0.5,
-  },
-  monthSessionIndicators: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 3,
-    justifyContent: 'center',
-    marginTop: 4,
-  },
-  monthSessionDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  monthSessionMore: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    fontSize: 9,
-    fontWeight: '600',
-  },
-  legendContainerTop: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: '#F8F9FA',
+  detailAddBtnText: { ...typography.bodySmall, color: colors.textLight, fontWeight: '600' },
+  detailEmpty: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  detailEmptyText: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center' },
+  detailEntry: {
+    backgroundColor: colors.background,
     borderRadius: borderRadius.md,
-    marginHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  legendItems: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-    justifyContent: 'center',
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    padding: spacing.md,
     gap: spacing.xs,
   },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  legendText: {
-    ...typography.caption,
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: '500',
-  },
+  detailEntryTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  detailPillarBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.sm },
+  detailPillarText: { fontSize: 11, fontWeight: '700' },
+  detailEntryTitle: { ...typography.body, color: colors.text, fontWeight: '600' },
+  detailEntryMeta: { ...typography.caption, color: colors.textSecondary },
+
+  /* Modals */
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  modalCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, width: '90%', maxWidth: 480 },
+  modalTitleRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  modalTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
+  modalSub: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg },
+
+  sessionTypeRow: { flexDirection: 'row', gap: spacing.md, justifyContent: 'center', marginBottom: spacing.md },
+  sessionTypeBtn: { flex: 1, backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', borderWidth: 2, borderColor: colors.border },
+  sessionTypeIcon: { width: 56, height: 56, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.sm },
+  sessionTypeName: { ...typography.body, color: colors.text, fontWeight: '700', textAlign: 'center' },
+  sessionTypeDesc: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginTop: 2 },
+
+  orDivider: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.md },
+  orLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  orText: { ...typography.caption, color: colors.textSecondary, marginHorizontal: spacing.md },
+
+  eventBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md },
+  eventBtnText: { ...typography.body, color: colors.textLight, fontWeight: '600' },
+  journalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderWidth: 2, borderColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md },
+  journalBtnText: { ...typography.body, color: colors.primary, fontWeight: '600' },
+
+  selectedDateText: { ...typography.body, color: colors.text, textAlign: 'center', marginBottom: spacing.md, fontWeight: '600' },
+  eventTypeRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
+  eventTypeOpt: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.background },
+  eventTypeOptActive: { borderColor: colors.primary, backgroundColor: colors.primary + '15' },
+  eventTypeOptText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  eventTypeOptTextActive: { color: colors.primary },
+
+  input: { ...typography.body, color: colors.text, backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
+  notesInput: { minHeight: 80 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, marginBottom: spacing.md },
+  timeText: { ...typography.body, color: colors.text, flex: 1 },
+  timeConfirmBtn: { backgroundColor: colors.primary, paddingVertical: spacing.sm, borderRadius: borderRadius.md, alignItems: 'center', marginBottom: spacing.md },
+  timeConfirmText: { ...typography.body, color: colors.textLight, fontWeight: '600' },
+  saveBtn: { backgroundColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md, alignItems: 'center' },
+  saveBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700' },
 });
