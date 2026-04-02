@@ -6,7 +6,10 @@ import {
   StyleSheet,
   Pressable,
   Alert,
+  Modal,
+  Platform,
 } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -25,6 +28,9 @@ export default function SessionDrillsScreen() {
   const insets = useSafeAreaInsets();
   const prefilledDateStr = params.date as string | undefined;
   const [saving, setSaving] = useState(false);
+  const [showTimeModal, setShowTimeModal] = useState(false);
+  const [scheduledTime, setScheduledTime] = useState(new Date());
+  const [showTimePicker, setShowTimePicker] = useState(false);
   
   const [selectedPillar, setSelectedPillar] = useState<PillarFilter>('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('all');
@@ -95,49 +101,53 @@ export default function SessionDrillsScreen() {
     }, 0);
   };
 
-  const handleNext = async () => {
+  const handleNext = () => {
     if (!user || selectedDrills.size === 0) return;
-
-    // If came from calendar with a pre-filled date, save as planned session
     if (prefilledDateStr) {
-      setSaving(true);
-      const [y, m, d] = prefilledDateStr.split('-').map(Number);
-      // Schedule at 9am on the selected date by default
-      const scheduledDateTime = new Date(y, m - 1, d, 9, 0, 0);
+      // Show time picker modal before saving
+      setShowTimeModal(true);
+    } else {
+      router.back();
+    }
+  };
 
-      const selectedDrillObjs = Array.from(selectedDrills)
-        .map(id => drills.find(d => d.id === id))
-        .filter(Boolean) as Drill[];
+  const handleSaveWithTime = async () => {
+    if (!user || !prefilledDateStr) return;
+    setSaving(true);
 
-      const pillar = selectedDrillObjs[0]?.pillar || 'Technical';
-      const totalDuration = selectedDrillObjs.reduce((sum, d) => sum + (d.duration_minutes || 0), 0);
-      const drillNames = selectedDrillObjs.map(d => d.name).join(', ');
+    const [y, m, d] = prefilledDateStr.split('-').map(Number);
+    const scheduledDateTime = new Date(y, m - 1, d, scheduledTime.getHours(), scheduledTime.getMinutes(), 0);
 
-      const { error } = await sessionService.createSession({
-        user_id: user.id,
-        title: `Drill Session: ${drillNames.length > 40 ? drillNames.slice(0, 40) + '...' : drillNames}`,
-        scheduled_date: scheduledDateTime.toISOString(),
-        duration_minutes: totalDuration || 30,
-        session_type: 'Structured',
-        status: 'planned',
-        notes: `Drills: ${drillNames}`,
-      });
+    const selectedDrillObjs = Array.from(selectedDrills)
+      .map(id => drills.find(d => d.id === id))
+      .filter(Boolean) as Drill[];
 
-      setSaving(false);
+    const totalDuration = selectedDrillObjs.reduce((sum, d) => sum + (d.duration_minutes || 0), 0);
+    const drillNames = selectedDrillObjs.map(d => d.name).join(', ');
 
-      if (error) {
-        Alert.alert('Error', 'Failed to schedule session');
-        return;
-      }
+    const { error } = await sessionService.createSession({
+      user_id: user.id,
+      title: drillNames.length > 50 ? drillNames.slice(0, 50) + '...' : drillNames,
+      scheduled_date: scheduledDateTime.toISOString(),
+      duration_minutes: totalDuration || 30,
+      session_type: 'Structured',
+      status: 'planned',
+      notes: `Drills: ${drillNames}`,
+    });
 
-      Alert.alert('Session Scheduled', `${selectedDrills.size} drill(s) scheduled for ${new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`, [
-        { text: 'OK', onPress: () => router.back() }
-      ]);
+    setSaving(false);
+    setShowTimeModal(false);
+
+    if (error) {
+      Alert.alert('Error', 'Failed to schedule session');
       return;
     }
 
-    // Otherwise navigate back (no calendar context)
-    router.back();
+    Alert.alert(
+      'Scheduled!',
+      `${selectedDrills.size} drill(s) added to ${new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}`,
+      [{ text: 'OK', onPress: () => router.back() }]
+    );
   };
 
   const pillarOptions: PillarFilter[] = ['all', 'Technical', 'Physical', 'Mental', 'Tactical'];
@@ -156,8 +166,62 @@ export default function SessionDrillsScreen() {
     return drill.subcategory || drill.pillar;
   };
 
+  const formatTime = (date: Date) =>
+    date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Time Picker Modal */}
+      <Modal visible={showTimeModal} transparent animationType="fade" onRequestClose={() => setShowTimeModal(false)}>
+        <View style={styles.timeModalOverlay}>
+          <View style={styles.timeModalCard}>
+            <Text style={styles.timeModalTitle}>What time?</Text>
+            <Text style={styles.timeModalSub}>
+              {prefilledDateStr ? (() => { const [y,m,d] = prefilledDateStr.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'}); })() : ''}
+            </Text>
+
+            <Pressable style={styles.timePickerRow} onPress={() => setShowTimePicker(true)}>
+              <Text style={styles.timePickerIcon}>🕐</Text>
+              <Text style={styles.timePickerValue}>{formatTime(scheduledTime)}</Text>
+              <Text style={styles.timePickerHint}>Tap to change</Text>
+            </Pressable>
+
+            {showTimePicker && (
+              <>
+                <DateTimePicker
+                  value={scheduledTime}
+                  mode="time"
+                  is24Hour={false}
+                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                  onChange={(_, selected) => {
+                    if (Platform.OS === 'android') setShowTimePicker(false);
+                    if (selected) setScheduledTime(selected);
+                  }}
+                />
+                {Platform.OS === 'ios' && (
+                  <Pressable style={styles.timeDoneBtn} onPress={() => setShowTimePicker(false)}>
+                    <Text style={styles.timeDoneBtnText}>Done</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
+
+            <View style={styles.timeModalButtons}>
+              <Pressable style={styles.timeCancelBtn} onPress={() => setShowTimeModal(false)}>
+                <Text style={styles.timeCancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.timeConfirmBtn, saving && styles.nextButtonDisabled]}
+                onPress={handleSaveWithTime}
+                disabled={saving}
+              >
+                <Text style={styles.timeConfirmBtnText}>{saving ? 'Saving...' : 'Schedule'}</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.headerButton}>
@@ -660,6 +724,98 @@ const styles = StyleSheet.create({
   nextButtonTextDisabled: {
     color: colors.textSecondary,
   },
+
+  /* Time Modal */
+  timeModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  timeModalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 400,
+    gap: spacing.md,
+  },
+  timeModalTitle: {
+    ...typography.h2,
+    color: colors.text,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  timeModalSub: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  timePickerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    gap: spacing.md,
+  },
+  timePickerIcon: { fontSize: 28 },
+  timePickerValue: {
+    ...typography.h3,
+    color: colors.primary,
+    fontWeight: '700',
+    flex: 1,
+  },
+  timePickerHint: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  timeDoneBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+  },
+  timeDoneBtnText: {
+    ...typography.body,
+    color: colors.textLight,
+    fontWeight: '600',
+  },
+  timeModalButtons: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    marginTop: spacing.sm,
+  },
+  timeCancelBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  timeCancelBtnText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  timeConfirmBtn: {
+    flex: 1,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  timeConfirmBtnText: {
+    ...typography.body,
+    color: colors.textLight,
+    fontWeight: '700',
+  },
+
   drillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
