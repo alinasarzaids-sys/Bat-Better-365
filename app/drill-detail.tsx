@@ -632,29 +632,24 @@ export default function DrillDetailScreen() {
               </Pressable>
             </View>
 
-            {/* Date and Start Time Row */}
-            <View style={styles.modalFieldRow}>
-              <View style={styles.modalFieldHalf}>
-                <Text style={styles.modalFieldLabel}>Date</Text>
-                <Pressable
-                  style={styles.modalFieldInput}
-                  onPress={() => setShowDatePicker(true)}
-                >
-                  <Text style={styles.modalFieldValue}>{formatDate(sessionDate)}</Text>
-                  <MaterialIcons name="event" size={24} color={colors.textSecondary} />
-                </Pressable>
-              </View>
+            {/* Date - full width */}
+            <View style={styles.modalFieldFull}>
+              <Text style={styles.modalFieldLabel}>Date</Text>
+              <Pressable style={styles.modalFieldInputRow} onPress={() => setShowDatePicker(true)}>
+                <MaterialIcons name="event" size={20} color={colors.primary} />
+                <Text style={styles.modalFieldValueInline}>{formatDate(sessionDate)}</Text>
+                <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </View>
 
-              <View style={styles.modalFieldHalf}>
-                <Text style={styles.modalFieldLabel}>Start Time</Text>
-                <Pressable
-                  style={styles.modalFieldInput}
-                  onPress={() => setShowTimePicker(true)}
-                >
-                  <Text style={styles.modalFieldValue}>{formatTime(sessionTime)}</Text>
-                  <MaterialIcons name="access-time" size={24} color={colors.textSecondary} />
-                </Pressable>
-              </View>
+            {/* Start Time - full width */}
+            <View style={styles.modalFieldFull}>
+              <Text style={styles.modalFieldLabel}>Start Time</Text>
+              <Pressable style={styles.modalFieldInputRow} onPress={() => setShowTimePicker(true)}>
+                <MaterialIcons name="access-time" size={20} color={colors.primary} />
+                <Text style={styles.modalFieldValueInline}>{formatTime(sessionTime)}</Text>
+                <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
+              </Pressable>
             </View>
 
             {/* Duration */}
@@ -675,7 +670,7 @@ export default function DrillDetailScreen() {
               <Text style={styles.modalFieldLabel}>Selected Drills</Text>
               {drill && (
                 <View style={styles.selectedDrillItem}>
-                  <Text style={styles.selectedDrillName}>{drill.name}</Text>
+                  <Text style={styles.selectedDrillName} numberOfLines={2}>{drill.name}</Text>
                   <View style={styles.selectedDrillDuration}>
                     <MaterialIcons name="access-time" size={18} color={colors.textSecondary} />
                     <Text style={styles.selectedDrillDurationText}>{drill.duration_minutes} min</Text>
@@ -1108,28 +1103,52 @@ const styles = StyleSheet.create({
   selectedDrillItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     backgroundColor: colors.background,
     borderRadius: borderRadius.md,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
+    gap: spacing.sm,
   },
   selectedDrillName: {
     ...typography.body,
     color: colors.text,
     flex: 1,
-    marginRight: spacing.md,
+    fontSize: 14,
+    lineHeight: 20,
   },
   selectedDrillDuration: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.xs,
+    gap: 4,
+    backgroundColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: borderRadius.sm,
   },
   selectedDrillDurationText: {
+    ...typography.caption,
+    color: colors.text,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  modalFieldInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.background,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  modalFieldValueInline: {
     ...typography.body,
-    color: colors.textSecondary,
+    color: colors.text,
     fontWeight: '600',
+    flex: 1,
   },
   saveSessionButton: {
     flexDirection: 'row',
