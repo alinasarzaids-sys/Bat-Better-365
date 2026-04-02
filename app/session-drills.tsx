@@ -118,7 +118,7 @@ export default function SessionDrillsScreen() {
         title: `Drill Session: ${drillNames.length > 40 ? drillNames.slice(0, 40) + '...' : drillNames}`,
         scheduled_date: scheduledDateTime.toISOString(),
         duration_minutes: totalDuration || 30,
-        session_type: 'Drill-Based',
+        session_type: 'Structured',
         status: 'planned',
         notes: `Drills: ${drillNames}`,
       });
