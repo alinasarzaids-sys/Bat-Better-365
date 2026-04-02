@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useAuth, getSupabaseClient } from '@/template';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { sessionService } from '@/services/sessionService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
@@ -31,12 +32,11 @@ interface CalendarEvent {
   created_at: string;
 }
 
-// Unified event for display on calendar
 interface CalendarEntry {
   id: string;
   title: string;
-  date: string; // YYYY-MM-DD
-  pillar: string; // Technical | Physical | Mental | Tactical | Freestyle | Club Training | Match
+  date: string;
+  pillar: string;
   status: 'planned' | 'completed';
   duration_minutes?: number;
   scheduled_time?: string;
@@ -49,15 +49,14 @@ interface DayData {
   entries: CalendarEntry[];
 }
 
-// Consistent pillar → color mapping matching theme.ts
 const PILLAR_COLORS: Record<string, string> = {
-  Technical: colors.technical,     // #3B82F6 blue
-  Physical: colors.physical,       // #10B981 green
-  Mental: colors.mental,           // #8B5CF6 purple
-  Tactical: colors.tactical,       // #F97316 orange
-  Freestyle: colors.freestyle,     // #EF4444 red
-  'Club Training': colors.clubTraining, // #34D399 emerald
-  Match: colors.match,             // #06B6D4 cyan
+  Technical: colors.technical,
+  Physical: colors.physical,
+  Mental: colors.mental,
+  Tactical: colors.tactical,
+  Freestyle: colors.freestyle,
+  'Club Training': colors.clubTraining,
+  Match: colors.match,
 };
 
 const getPillarColor = (pillar: string) => PILLAR_COLORS[pillar] || colors.primary;
@@ -69,7 +68,6 @@ export default function CalendarScreen() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showPlanModal, setShowPlanModal] = useState(false);
-  const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [allEntries, setAllEntries] = useState<CalendarEntry[]>([]);
   const [showEventModal, setShowEventModal] = useState(false);
   const [selectedEventDate, setSelectedEventDate] = useState<Date | null>(null);
@@ -80,12 +78,16 @@ export default function CalendarScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [tempTime, setTempTime] = useState(new Date());
   const [loading, setLoading] = useState(true);
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      loadAllData();
-    }
-  }, [user]);
+  // Reload data every time this screen comes into focus (catches new sessions added from other screens)
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        loadAllData();
+      }
+    }, [user])
+  );
 
   const loadAllData = async () => {
     if (!user) return;
@@ -94,7 +96,7 @@ export default function CalendarScreen() {
     const entries: CalendarEntry[] = [];
 
     try {
-      // 1. Load calendar events (Club Training / Match)
+      // 1. Calendar events (Club Training / Match)
       const { data: eventsData } = await supabase
         .from('calendar_events')
         .select('*')
@@ -102,7 +104,6 @@ export default function CalendarScreen() {
         .order('event_date', { ascending: true });
 
       if (eventsData) {
-        setCalendarEvents(eventsData);
         eventsData.forEach((e: CalendarEvent) => {
           entries.push({
             id: e.id,
@@ -116,16 +117,15 @@ export default function CalendarScreen() {
         });
       }
 
-      // 2. Load planned sessions from `sessions` table (timezone-safe date extraction)
+      // 2. Planned sessions from `sessions` table (timezone-safe)
       const { data: sessionsData } = await sessionService.getUserSessions(user.id);
       if (sessionsData) {
         sessionsData.forEach((s: any) => {
-          // Use local date from the stored ISO string to avoid UTC shift
           const d = new Date(s.scheduled_date);
-          const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+          const dateStr = toLocalDateStringFromDate(d);
           let pillar = 'Freestyle';
-          if (s.session_type === 'Freestyle') pillar = 'Freestyle';
-          else if (s.session_type === 'Structured' || s.session_type === 'Drill-Based') pillar = 'Technical';
+          if (s.session_type === 'Structured') pillar = 'Technical';
+          else if (s.session_type === 'Freestyle') pillar = 'Freestyle';
 
           entries.push({
             id: s.id,
@@ -134,12 +134,11 @@ export default function CalendarScreen() {
             pillar,
             status: s.status === 'completed' ? 'completed' : 'planned',
             duration_minutes: s.duration_minutes,
-            scheduled_time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
           });
         });
       }
 
-      // 3. Load technical drill logs (completed drills)
+      // 3. Technical drill logs
       const { data: techLogs } = await supabase
         .from('technical_drill_logs')
         .select('id, drill_name, time_elapsed, created_at')
@@ -149,7 +148,7 @@ export default function CalendarScreen() {
           entries.push({
             id: log.id,
             title: log.drill_name,
-            date: new Date(log.created_at).toISOString().split('T')[0],
+            date: toLocalDateStringFromDate(new Date(log.created_at)),
             pillar: 'Technical',
             status: 'completed',
             duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
@@ -157,7 +156,7 @@ export default function CalendarScreen() {
         });
       }
 
-      // 4. Load physical/workout drill logs
+      // 4. Physical/workout drill logs
       const { data: workoutLogs } = await supabase
         .from('workout_drill_logs')
         .select('id, drill_name, time_elapsed, created_at')
@@ -167,7 +166,7 @@ export default function CalendarScreen() {
           entries.push({
             id: log.id,
             title: log.drill_name,
-            date: new Date(log.created_at).toISOString().split('T')[0],
+            date: toLocalDateStringFromDate(new Date(log.created_at)),
             pillar: 'Physical',
             status: 'completed',
             duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
@@ -175,7 +174,7 @@ export default function CalendarScreen() {
         });
       }
 
-      // 5. Load mental drill logs
+      // 5. Mental drill logs
       const { data: mentalLogs } = await supabase
         .from('mental_drill_logs')
         .select('id, drill_name, time_elapsed, created_at')
@@ -185,7 +184,7 @@ export default function CalendarScreen() {
           entries.push({
             id: log.id,
             title: log.drill_name,
-            date: new Date(log.created_at).toISOString().split('T')[0],
+            date: toLocalDateStringFromDate(new Date(log.created_at)),
             pillar: 'Mental',
             status: 'completed',
             duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
@@ -193,7 +192,7 @@ export default function CalendarScreen() {
         });
       }
 
-      // 6. Load tactical drill logs
+      // 6. Tactical drill logs
       const { data: tacticalLogs } = await supabase
         .from('tactical_drill_logs')
         .select('id, drill_name, time_elapsed, created_at')
@@ -203,14 +202,13 @@ export default function CalendarScreen() {
           entries.push({
             id: log.id,
             title: log.drill_name,
-            date: new Date(log.created_at).toISOString().split('T')[0],
+            date: toLocalDateStringFromDate(new Date(log.created_at)),
             pillar: 'Tactical',
             status: 'completed',
             duration_minutes: Math.max(1, Math.floor((log.time_elapsed || 0) / 60)),
           });
         });
       }
-
     } catch (err) {
       console.error('Error loading calendar data:', err);
     }
@@ -218,6 +216,16 @@ export default function CalendarScreen() {
     setAllEntries(entries);
     setLoading(false);
   };
+
+  // Timezone-safe local date string
+  const toLocalDateStringFromDate = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const toLocalDateString = (date: Date): string => toLocalDateStringFromDate(date);
 
   const getEntriesForDate = (dateStr: string): CalendarEntry[] =>
     allEntries.filter(e => e.date === dateStr);
@@ -259,14 +267,6 @@ export default function CalendarScreen() {
     return days;
   };
 
-  // Build a timezone-safe YYYY-MM-DD string from a local Date
-  const toLocalDateString = (date: Date): string => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  };
-
   const navigate = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
     if (viewMode === 'week') {
@@ -275,8 +275,8 @@ export default function CalendarScreen() {
       newDate.setMonth(currentDate.getMonth() + (direction === 'next' ? 1 : -1));
     }
     setCurrentDate(newDate);
-    // Clear selected date so stale detail panel doesn't persist across navigation
     setSelectedDate(null);
+    setShowDetailPanel(false);
   };
 
   const getHeaderLabel = () => {
@@ -293,12 +293,11 @@ export default function CalendarScreen() {
   const handleDayPress = (day: DayData) => {
     setSelectedDate(day.date);
     setSelectedEventDate(day.date);
-    setShowPlanModal(true);
+    setShowDetailPanel(true);
   };
 
   const handlePlanSession = (type: 'Drill-Based' | 'Freestyle') => {
     setShowPlanModal(false);
-    // Use local date string to avoid UTC timezone shift issues
     const dateStr = selectedDate ? toLocalDateString(selectedDate) : toLocalDateString(new Date());
     if (type === 'Drill-Based') {
       router.push(`/session-drills?date=${encodeURIComponent(dateStr)}`);
@@ -343,7 +342,7 @@ export default function CalendarScreen() {
       setEventNotes('');
       setEventTime('09:00');
       setShowEventModal(false);
-      loadAllData();
+      await loadAllData();
     }
   };
 
@@ -386,27 +385,36 @@ export default function CalendarScreen() {
 
       {/* Controls */}
       <View style={styles.controls}>
-        <View style={styles.viewToggle}>
-          {(['week', 'month'] as ViewMode[]).map(mode => (
-            <Pressable
-              key={mode}
-              style={[styles.toggleBtn, viewMode === mode && styles.toggleBtnActive]}
-              onPress={() => setViewMode(mode)}
-            >
-              <Text style={[styles.toggleBtnText, viewMode === mode && styles.toggleBtnTextActive]}>
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
-              </Text>
+        <View style={styles.controlsRow}>
+          {/* Compact box-style Week/Month toggle */}
+          <View style={styles.viewToggle}>
+            {(['week', 'month'] as ViewMode[]).map(mode => (
+              <Pressable
+                key={mode}
+                style={[styles.toggleBox, viewMode === mode && styles.toggleBoxActive]}
+                onPress={() => {
+                  setViewMode(mode);
+                  setSelectedDate(null);
+                  setShowDetailPanel(false);
+                }}
+              >
+                <Text style={[styles.toggleBoxText, viewMode === mode && styles.toggleBoxTextActive]}>
+                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Nav */}
+          <View style={styles.navRow}>
+            <Pressable onPress={() => navigate('prev')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <MaterialIcons name="chevron-left" size={26} color={colors.text} />
             </Pressable>
-          ))}
-        </View>
-        <View style={styles.navRow}>
-          <Pressable onPress={() => navigate('prev')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <MaterialIcons name="chevron-left" size={28} color={colors.text} />
-          </Pressable>
-          <Text style={styles.navLabel}>{getHeaderLabel()}</Text>
-          <Pressable onPress={() => navigate('next')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <MaterialIcons name="chevron-right" size={28} color={colors.text} />
-          </Pressable>
+            <Text style={styles.navLabel}>{getHeaderLabel()}</Text>
+            <Pressable onPress={() => navigate('next')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <MaterialIcons name="chevron-right" size={26} color={colors.text} />
+            </Pressable>
+          </View>
         </View>
       </View>
 
@@ -480,17 +488,16 @@ export default function CalendarScreen() {
           ) : (
             /* ── MONTH VIEW ── */
             <View style={styles.monthContainer}>
-              {/* Day headers */}
               <View style={styles.monthHeader}>
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
                   <Text key={d} style={styles.monthHeaderCell}>{d}</Text>
                 ))}
               </View>
 
-              {/* Grid */}
               <View style={styles.monthGrid}>
                 {monthDays.map((day, i) => {
                   const isCurrentMonth = day.date.getMonth() === currentDate.getMonth();
+                  const isSelected = selectedDate && toLocalDateString(selectedDate) === day.dateString;
                   const dotEntries = day.entries.slice(0, 4);
                   return (
                     <Pressable
@@ -499,6 +506,7 @@ export default function CalendarScreen() {
                         styles.monthCell,
                         day.isToday && styles.monthCellToday,
                         !isCurrentMonth && styles.monthCellOther,
+                        isSelected && styles.monthCellSelected,
                       ]}
                       onPress={() => handleDayPress(day)}
                     >
@@ -506,6 +514,7 @@ export default function CalendarScreen() {
                         styles.monthCellDate,
                         day.isToday && styles.monthCellDateToday,
                         !isCurrentMonth && styles.monthCellDateOther,
+                        isSelected && styles.monthCellDateSelected,
                       ]}>
                         {day.date.getDate()}
                       </Text>
@@ -529,23 +538,31 @@ export default function CalendarScreen() {
             </View>
           )}
 
-          {/* Selected Day Detail Panel */}
-          {selectedDate && (
+          {/* Selected Day Detail Panel — only shown after an explicit tap, dismissible */}
+          {showDetailPanel && selectedDate && (
             <View style={styles.detailPanel}>
               <View style={styles.detailPanelHeader}>
                 <Text style={styles.detailPanelDate}>
                   {selectedDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
                 </Text>
-                <Pressable
-                  style={styles.detailAddBtn}
-                  onPress={() => {
-                    setSelectedEventDate(selectedDate);
-                    setShowPlanModal(true);
-                  }}
-                >
-                  <MaterialIcons name="add" size={18} color={colors.textLight} />
-                  <Text style={styles.detailAddBtnText}>Add</Text>
-                </Pressable>
+                <View style={styles.detailPanelActions}>
+                  <Pressable
+                    style={styles.detailAddBtn}
+                    onPress={() => {
+                      setSelectedEventDate(selectedDate);
+                      setShowPlanModal(true);
+                    }}
+                  >
+                    <MaterialIcons name="add" size={16} color={colors.textLight} />
+                    <Text style={styles.detailAddBtnText}>Add</Text>
+                  </Pressable>
+                  <Pressable
+                    style={styles.detailCloseBtn}
+                    onPress={() => { setShowDetailPanel(false); setSelectedDate(null); }}
+                  >
+                    <MaterialIcons name="close" size={18} color={colors.textSecondary} />
+                  </Pressable>
+                </View>
               </View>
 
               {selectedDayEntries.length === 0 ? (
@@ -658,7 +675,6 @@ export default function CalendarScreen() {
               </Pressable>
             </View>
 
-            {/* Date is locked from calendar selection — display only, no picker */}
             {selectedEventDate && (
               <View style={styles.lockedDateRow}>
                 <MaterialIcons name="event" size={18} color={colors.primary} />
@@ -769,16 +785,41 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    gap: spacing.sm,
   },
-  viewToggle: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: borderRadius.md, padding: 3, alignSelf: 'flex-start' },
-  toggleBtn: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: borderRadius.sm },
-  toggleBtnActive: { backgroundColor: colors.text },
-  toggleBtnText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
-  toggleBtnTextActive: { color: colors.textLight },
-  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+
+  /* Compact box-style toggle */
+  viewToggle: {
+    flexDirection: 'row',
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  toggleBox: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    backgroundColor: colors.background,
+  },
+  toggleBoxActive: {
+    backgroundColor: colors.text,
+  },
+  toggleBoxText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  toggleBoxTextActive: {
+    color: colors.textLight,
+  },
+
+  navRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   navBtn: { padding: spacing.xs },
-  navLabel: { ...typography.body, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'center' },
+  navLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'center' },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.body, color: colors.textSecondary },
@@ -795,7 +836,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendDot: { width: 9, height: 9, borderRadius: 5 },
   legendLabel: { ...typography.caption, color: colors.text, fontSize: 11 },
 
   /* Week View */
@@ -854,9 +895,11 @@ const styles = StyleSheet.create({
   },
   monthCellToday: { backgroundColor: '#F0FFF4', borderColor: colors.primary, borderWidth: 2 },
   monthCellOther: { backgroundColor: '#FAFAFA' },
+  monthCellSelected: { backgroundColor: colors.primary + '15', borderColor: colors.primary, borderWidth: 1.5 },
   monthCellDate: { ...typography.caption, color: colors.text, fontWeight: '700', textAlign: 'center', fontSize: 13 },
   monthCellDateToday: { color: colors.primary, fontWeight: '800' },
   monthCellDateOther: { color: colors.textSecondary, opacity: 0.5 },
+  monthCellDateSelected: { color: colors.primary, fontWeight: '800' },
   monthDots: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, justifyContent: 'center', marginTop: 3 },
   monthDot: { width: 7, height: 7, borderRadius: 4 },
   monthMoreText: { fontSize: 9, color: colors.textSecondary, fontWeight: '600' },
@@ -872,17 +915,28 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   detailPanelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  detailPanelDate: { ...typography.body, color: colors.text, fontWeight: '700' },
+  detailPanelDate: { ...typography.body, color: colors.text, fontWeight: '700', flex: 1 },
+  detailPanelActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   detailAddBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     backgroundColor: colors.primary,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.md,
   },
-  detailAddBtnText: { ...typography.bodySmall, color: colors.textLight, fontWeight: '600' },
+  detailAddBtnText: { ...typography.caption, color: colors.textLight, fontWeight: '600' },
+  detailCloseBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: colors.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   detailEmpty: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   detailEmptyText: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center' },
   detailEntry: {
@@ -919,7 +973,6 @@ const styles = StyleSheet.create({
   journalBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, borderWidth: 2, borderColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md },
   journalBtnText: { ...typography.body, color: colors.primary, fontWeight: '600' },
 
-  selectedDateText: { ...typography.body, color: colors.text, textAlign: 'center', marginBottom: spacing.md, fontWeight: '600' },
   lockedDateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.primary + '12', borderRadius: borderRadius.md, padding: spacing.sm, marginBottom: spacing.md },
   lockedDateText: { ...typography.bodySmall, color: colors.primary, fontWeight: '600', flex: 1 },
   eventTypeRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
