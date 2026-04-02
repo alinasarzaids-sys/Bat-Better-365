@@ -149,6 +149,13 @@ export default function JournalScreen() {
   const [selectedDate, setSelectedDate] = useState(
     (params.date as string) || new Date().toISOString().split('T')[0]
   );
+
+  // Sync selectedDate when navigated from calendar with a specific date
+  useEffect(() => {
+    if (params.date && typeof params.date === 'string') {
+      setSelectedDate(params.date);
+    }
+  }, [params.date]);
   const [entry, setEntry] = useState<JournalEntry | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
