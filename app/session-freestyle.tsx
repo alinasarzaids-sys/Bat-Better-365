@@ -50,9 +50,19 @@ export default function FreestyleSessionScreen() {
   // Step management (1: Setup, 2: Active, 3: Ratings, 4: Summary)
   const [currentStep, setCurrentStep] = useState(1);
 
+  // If a date was passed from the calendar, pre-fill it and switch to 'later' mode
+  const prefilledDateStr = params.date as string | undefined;
+  const getInitialScheduledDate = () => {
+    if (prefilledDateStr) {
+      const [y, m, d] = prefilledDateStr.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    }
+    return new Date();
+  };
+
   // Session timing mode
-  const [sessionMode, setSessionMode] = useState<'now' | 'later'>('now');
-  const [scheduledDate, setScheduledDate] = useState<Date>(new Date());
+  const [sessionMode, setSessionMode] = useState<'now' | 'later'>(prefilledDateStr ? 'later' : 'now');
+  const [scheduledDate, setScheduledDate] = useState<Date>(getInitialScheduledDate());
   const [scheduledTime, setScheduledTime] = useState<Date>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
@@ -402,23 +412,40 @@ export default function FreestyleSessionScreen() {
       {/* Date/Time Pickers - Only show when scheduling for later */}
       {sessionMode === 'later' && (
         <View style={styles.dateTimeSection}>
+          {/* Date row: locked if came from calendar, editable otherwise */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Date</Text>
-            <Pressable
-              style={styles.dateTimeButton}
-              onPress={() => setShowDatePicker(true)}
-            >
-              <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
-              <Text style={styles.dateTimeButtonText}>
-                {scheduledDate.toLocaleDateString('en-US', {
-                  weekday: 'short',
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Text>
-            </Pressable>
-            {showDatePicker && (
+            {prefilledDateStr ? (
+              // Locked date from calendar tap
+              <View style={[styles.dateTimeButton, { backgroundColor: colors.primary + '12' }]}>
+                <MaterialIcons name="event" size={20} color={colors.primary} />
+                <Text style={[styles.dateTimeButtonText, { color: colors.primary, fontWeight: '600' }]}>
+                  {scheduledDate.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+                <MaterialIcons name="lock" size={16} color={colors.primary} />
+              </View>
+            ) : (
+              <Pressable
+                style={styles.dateTimeButton}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
+                <Text style={styles.dateTimeButtonText}>
+                  {scheduledDate.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Text>
+              </Pressable>
+            )}
+            {showDatePicker && !prefilledDateStr && (
               <DateTimePicker
                 value={scheduledDate}
                 mode="date"

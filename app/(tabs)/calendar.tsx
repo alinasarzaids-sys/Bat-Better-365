@@ -116,11 +116,13 @@ export default function CalendarScreen() {
         });
       }
 
-      // 2. Load planned sessions from `sessions` table
+      // 2. Load planned sessions from `sessions` table (timezone-safe date extraction)
       const { data: sessionsData } = await sessionService.getUserSessions(user.id);
       if (sessionsData) {
         sessionsData.forEach((s: any) => {
-          const dateStr = new Date(s.scheduled_date).toISOString().split('T')[0];
+          // Use local date from the stored ISO string to avoid UTC shift
+          const d = new Date(s.scheduled_date);
+          const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
           let pillar = 'Freestyle';
           if (s.session_type === 'Freestyle') pillar = 'Freestyle';
           else if (s.session_type === 'Structured' || s.session_type === 'Drill-Based') pillar = 'Technical';
@@ -132,7 +134,7 @@ export default function CalendarScreen() {
             pillar,
             status: s.status === 'completed' ? 'completed' : 'planned',
             duration_minutes: s.duration_minutes,
-            scheduled_time: new Date(s.scheduled_date).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
+            scheduled_time: d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }),
           });
         });
       }

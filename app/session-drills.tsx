@@ -5,12 +5,14 @@ import {
   ScrollView,
   StyleSheet,
   Pressable,
-  Image,
+  Alert,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { drillService } from '@/services/drillService';
+import { sessionService } from '@/services/sessionService';
+import { useAuth } from '@/template';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { Drill } from '@/types';
 
@@ -19,7 +21,10 @@ type PillarFilter = 'all' | 'Technical' | 'Physical' | 'Mental' | 'Tactical';
 export default function SessionDrillsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { user } = useAuth();
   const insets = useSafeAreaInsets();
+  const prefilledDateStr = params.date as string | undefined;
+  const [saving, setSaving] = useState(false);
   
   const [selectedPillar, setSelectedPillar] = useState<PillarFilter>('all');
   const [selectedSubcategory, setSelectedSubcategory] = useState<string>('all');
@@ -90,9 +95,48 @@ export default function SessionDrillsScreen() {
     }, 0);
   };
 
-  const handleNext = () => {
-    // TODO: Navigate to session creation with selected drills
-    console.log('Selected drills:', Array.from(selectedDrills));
+  const handleNext = async () => {
+    if (!user || selectedDrills.size === 0) return;
+
+    // If came from calendar with a pre-filled date, save as planned session
+    if (prefilledDateStr) {
+      setSaving(true);
+      const [y, m, d] = prefilledDateStr.split('-').map(Number);
+      // Schedule at 9am on the selected date by default
+      const scheduledDateTime = new Date(y, m - 1, d, 9, 0, 0);
+
+      const selectedDrillObjs = Array.from(selectedDrills)
+        .map(id => drills.find(d => d.id === id))
+        .filter(Boolean) as Drill[];
+
+      const pillar = selectedDrillObjs[0]?.pillar || 'Technical';
+      const totalDuration = selectedDrillObjs.reduce((sum, d) => sum + (d.duration_minutes || 0), 0);
+      const drillNames = selectedDrillObjs.map(d => d.name).join(', ');
+
+      const { error } = await sessionService.createSession({
+        user_id: user.id,
+        title: `Drill Session: ${drillNames.length > 40 ? drillNames.slice(0, 40) + '...' : drillNames}`,
+        scheduled_date: scheduledDateTime.toISOString(),
+        duration_minutes: totalDuration || 30,
+        session_type: 'Drill-Based',
+        status: 'planned',
+        notes: `Drills: ${drillNames}`,
+      });
+
+      setSaving(false);
+
+      if (error) {
+        Alert.alert('Error', 'Failed to schedule session');
+        return;
+      }
+
+      Alert.alert('Session Scheduled', `${selectedDrills.size} drill(s) scheduled for ${new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`, [
+        { text: 'OK', onPress: () => router.back() }
+      ]);
+      return;
+    }
+
+    // Otherwise navigate back (no calendar context)
     router.back();
   };
 
@@ -327,18 +371,18 @@ export default function SessionDrillsScreen() {
         <Pressable
           style={[
             styles.nextButton,
-            selectedDrills.size === 0 && styles.nextButtonDisabled,
+            (selectedDrills.size === 0 || saving) && styles.nextButtonDisabled,
           ]}
           onPress={handleNext}
-          disabled={selectedDrills.size === 0}
+          disabled={selectedDrills.size === 0 || saving}
         >
           <Text
             style={[
               styles.nextButtonText,
-              selectedDrills.size === 0 && styles.nextButtonTextDisabled,
+              (selectedDrills.size === 0 || saving) && styles.nextButtonTextDisabled,
             ]}
           >
-            Next
+            {saving ? 'Saving...' : prefilledDateStr ? 'Schedule' : 'Next'}
           </Text>
         </Pressable>
       </View>
