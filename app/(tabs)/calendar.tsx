@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -294,6 +295,10 @@ export default function CalendarScreen() {
     setSelectedDate(day.date);
     setSelectedEventDate(day.date);
     setShowDetailPanel(true);
+    // Auto-open plan modal if no sessions on that day
+    if (day.entries.length === 0) {
+      setShowPlanModal(true);
+    }
   };
 
   const handlePlanSession = (type: 'Drill-Based' | 'Freestyle') => {
@@ -437,54 +442,34 @@ export default function CalendarScreen() {
 
           {viewMode === 'week' ? (
             /* ── WEEK VIEW ── */
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekContent}>
-              {weekDays.map((day, i) => (
-                <View key={i} style={[styles.dayCol, day.isToday && styles.dayColToday]}>
-                  <Pressable style={styles.dayColHeader} onPress={() => handleDayPress(day)}>
-                    <Text style={styles.dayColName}>
-                      {day.date.toLocaleDateString('en-US', { weekday: 'short' })}
+            // Compact week chips
+            <View style={styles.weekChipsRow}>
+              {weekDays.map((day, i) => {
+                const isSelected = selectedDate && toLocalDateString(selectedDate) === day.dateString;
+                const hasDots = day.entries.length > 0;
+                return (
+                  <Pressable
+                    key={i}
+                    style={[styles.weekChip, day.isToday && styles.weekChipToday, isSelected && styles.weekChipSelected]}
+                    onPress={() => handleDayPress(day)}
+                  >
+                    <Text style={[styles.weekChipName, isSelected && styles.weekChipNameSelected]}>
+                      {day.date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
                     </Text>
-                    <Text style={[styles.dayColNum, day.isToday && styles.dayColNumToday]}>
+                    <Text style={[styles.weekChipNum, day.isToday && styles.weekChipNumToday, isSelected && styles.weekChipNumSelected]}>
                       {day.date.getDate()}
                     </Text>
-                    <MaterialIcons name="add" size={16} color={colors.textSecondary} />
-                  </Pressable>
-
-                  <View style={styles.dayColBody}>
-                    {day.entries.length === 0 ? (
-                      <View style={styles.emptyDay}>
-                        <MaterialIcons name="calendar-today" size={28} color={colors.border} />
-                        <Text style={styles.emptyDayText}>No sessions</Text>
+                    {hasDots && (
+                      <View style={styles.weekChipDots}>
+                        {day.entries.slice(0, 3).map((e, idx) => (
+                          <View key={idx} style={[styles.weekChipDot, { backgroundColor: getPillarColor(e.pillar) }]} />
+                        ))}
                       </View>
-                    ) : (
-                      day.entries.map((entry, idx) => (
-                        <View
-                          key={idx}
-                          style={[styles.entryCard, { borderLeftColor: getPillarColor(entry.pillar), borderLeftWidth: 4 }]}
-                        >
-                          <View style={[styles.entryPillarBadge, { backgroundColor: getPillarColor(entry.pillar) + '20' }]}>
-                            <Text style={[styles.entryPillarText, { color: getPillarColor(entry.pillar) }]}>
-                              {entry.pillar}
-                            </Text>
-                          </View>
-                          <Text style={styles.entryTitle} numberOfLines={2}>{entry.title}</Text>
-                          <View style={styles.entryMeta}>
-                            {entry.duration_minutes ? (
-                              <Text style={styles.entryMetaText}>{entry.duration_minutes} min</Text>
-                            ) : null}
-                            <View style={[styles.entryStatusBadge, entry.status === 'completed' && styles.entryStatusDone]}>
-                              <Text style={[styles.entryStatusText, entry.status === 'completed' && styles.entryStatusDoneText]}>
-                                {entry.status === 'completed' ? '✓ Done' : 'Planned'}
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
-                      ))
                     )}
-                  </View>
-                </View>
-              ))}
-            </ScrollView>
+                  </Pressable>
+                );
+              })}
+            </View>
           ) : (
             /* ── MONTH VIEW ── */
             <View style={styles.monthContainer}>
@@ -840,30 +825,39 @@ const styles = StyleSheet.create({
   legendLabel: { ...typography.caption, color: colors.text, fontSize: 11 },
 
   /* Week View */
-  weekContent: { paddingHorizontal: spacing.md, paddingBottom: spacing.xl, paddingTop: spacing.md, gap: spacing.sm },
-  dayCol: {
-    width: 160,
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  dayColToday: { borderColor: colors.primary, borderWidth: 2 },
-  dayColHeader: {
-    alignItems: 'center',
+  /* Compact week chips */
+  weekChipsRow: {
+    flexDirection: 'row',
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.background,
+    gap: 4,
+    backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+  },
+  weekChip: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 2,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.background,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minHeight: 56,
+    justifyContent: 'center',
     gap: 2,
   },
-  dayColName: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', fontSize: 11 },
-  dayColNum: { ...typography.h4, color: colors.text, fontWeight: '700' },
-  dayColNumToday: { color: colors.primary },
-  dayColBody: { padding: spacing.sm, gap: spacing.sm, minHeight: 120 },
-  emptyDay: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.xs },
-  emptyDayText: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
+  weekChipToday: { borderColor: colors.primary, borderWidth: 2 },
+  weekChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  weekChipName: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase' },
+  weekChipNameSelected: { color: colors.textLight },
+  weekChipNum: { fontSize: 16, fontWeight: '800', color: colors.text },
+  weekChipNumToday: { color: colors.primary },
+  weekChipNumSelected: { color: colors.textLight },
+  weekChipDots: { flexDirection: 'row', gap: 2, marginTop: 2 },
+  weekChipDot: { width: 5, height: 5, borderRadius: 3 },
+
   entryCard: {
     backgroundColor: colors.background,
     borderRadius: borderRadius.md,
