@@ -363,6 +363,7 @@ export default function JournalScreen() {
                     key={index}
                     style={styles.onboardingInput}
                     placeholder={`Goal ${index + 1}`}
+                    placeholderTextColor={colors.text}
                     value={goal}
                     onChangeText={(text) => updateArrayField('mindset_goals', index, text)}
                     multiline
