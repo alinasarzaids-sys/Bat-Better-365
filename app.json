@@ -26,7 +26,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1E1E1E"
+        "backgroundColor": "#1B5E20"
       },
       "package": "com.batbetter365.app",
       "versionCode": 1774805629,
