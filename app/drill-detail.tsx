@@ -632,16 +632,6 @@ export default function DrillDetailScreen() {
               </Pressable>
             </View>
 
-            {/* Date - full width */}
-            <View style={styles.modalFieldFull}>
-              <Text style={styles.modalFieldLabel}>Date</Text>
-              <Pressable style={styles.modalFieldInputRow} onPress={() => setShowDatePicker(true)}>
-                <MaterialIcons name="event" size={20} color={colors.primary} />
-                <Text style={styles.modalFieldValueInline}>{formatDate(sessionDate)}</Text>
-                <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
-              </Pressable>
-            </View>
-
             {/* Start Time - full width */}
             <View style={styles.modalFieldFull}>
               <Text style={styles.modalFieldLabel}>Start Time</Text>
