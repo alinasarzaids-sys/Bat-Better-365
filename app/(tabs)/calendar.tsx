@@ -234,7 +234,7 @@ export default function CalendarScreen() {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      const dateString = date.toISOString().split('T')[0];
+      const dateString = toLocalDateString(date);
       days.push({ date, dateString, isToday: date.getTime() === today.getTime(), entries: getEntriesForDate(dateString) });
     }
     return days;
@@ -251,10 +251,18 @@ export default function CalendarScreen() {
     for (let i = 0; i < 42; i++) {
       const date = new Date(startDate);
       date.setDate(startDate.getDate() + i);
-      const dateString = date.toISOString().split('T')[0];
+      const dateString = toLocalDateString(date);
       days.push({ date, dateString, isToday: date.getTime() === today.getTime(), entries: getEntriesForDate(dateString) });
     }
     return days;
+  };
+
+  // Build a timezone-safe YYYY-MM-DD string from a local Date
+  const toLocalDateString = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
   };
 
   const navigate = (direction: 'prev' | 'next') => {
@@ -265,6 +273,8 @@ export default function CalendarScreen() {
       newDate.setMonth(currentDate.getMonth() + (direction === 'next' ? 1 : -1));
     }
     setCurrentDate(newDate);
+    // Clear selected date so stale detail panel doesn't persist across navigation
+    setSelectedDate(null);
   };
 
   const getHeaderLabel = () => {
@@ -286,18 +296,19 @@ export default function CalendarScreen() {
 
   const handlePlanSession = (type: 'Drill-Based' | 'Freestyle') => {
     setShowPlanModal(false);
-    const dateParam = selectedDate?.toISOString() || new Date().toISOString();
+    // Use local date string to avoid UTC timezone shift issues
+    const dateStr = selectedDate ? toLocalDateString(selectedDate) : toLocalDateString(new Date());
     if (type === 'Drill-Based') {
-      router.push(`/session-drills?date=${encodeURIComponent(dateParam)}`);
+      router.push(`/session-drills?date=${encodeURIComponent(dateStr)}`);
     } else {
-      router.push(`/session-freestyle?date=${encodeURIComponent(dateParam)}`);
+      router.push(`/session-freestyle?date=${encodeURIComponent(dateStr)}`);
     }
   };
 
   const handleViewJournal = () => {
     setShowPlanModal(false);
     if (selectedDate) {
-      router.push(`/(tabs)/journal?date=${selectedDate.toISOString().split('T')[0]}` as any);
+      router.push(`/(tabs)/journal?date=${toLocalDateString(selectedDate)}` as any);
     }
   };
 
@@ -319,7 +330,7 @@ export default function CalendarScreen() {
       user_id: user.id,
       event_type: eventType,
       title,
-      event_date: selectedEventDate.toISOString().split('T')[0],
+      event_date: toLocalDateString(selectedEventDate),
       event_time: eventTime,
       notes: eventNotes.trim(),
     });
@@ -338,7 +349,7 @@ export default function CalendarScreen() {
   const monthDays = generateMonthDays();
 
   const selectedDayEntries = selectedDate
-    ? getEntriesForDate(selectedDate.toISOString().split('T')[0])
+    ? getEntriesForDate(toLocalDateString(selectedDate))
     : [];
 
   const LEGEND = [
@@ -645,10 +656,14 @@ export default function CalendarScreen() {
               </Pressable>
             </View>
 
+            {/* Date is locked from calendar selection — display only, no picker */}
             {selectedEventDate && (
-              <Text style={styles.selectedDateText}>
-                {selectedEventDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-              </Text>
+              <View style={styles.lockedDateRow}>
+                <MaterialIcons name="event" size={18} color={colors.primary} />
+                <Text style={styles.lockedDateText}>
+                  {selectedEventDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                </Text>
+              </View>
             )}
 
             <View style={styles.eventTypeRow}>
@@ -903,6 +918,8 @@ const styles = StyleSheet.create({
   journalBtnText: { ...typography.body, color: colors.primary, fontWeight: '600' },
 
   selectedDateText: { ...typography.body, color: colors.text, textAlign: 'center', marginBottom: spacing.md, fontWeight: '600' },
+  lockedDateRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, backgroundColor: colors.primary + '12', borderRadius: borderRadius.md, padding: spacing.sm, marginBottom: spacing.md },
+  lockedDateText: { ...typography.bodySmall, color: colors.primary, fontWeight: '600', flex: 1 },
   eventTypeRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md },
   eventTypeOpt: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 2, borderColor: colors.border, backgroundColor: colors.background },
   eventTypeOptActive: { borderColor: colors.primary, backgroundColor: colors.primary + '15' },
