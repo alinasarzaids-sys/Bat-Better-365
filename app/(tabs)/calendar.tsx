@@ -21,8 +21,6 @@ import { useFocusEffect } from 'expo-router';
 import { sessionService } from '@/services/sessionService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-type ViewMode = 'week' | 'month';
-
 interface CalendarEvent {
   id: string;
   user_id: string;
@@ -65,7 +63,6 @@ const getPillarColor = (pillar: string) => PILLAR_COLORS[pillar] || colors.prima
 export default function CalendarScreen() {
   const { user } = useAuth();
   const router = useRouter();
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -237,20 +234,6 @@ export default function CalendarScreen() {
     return new Date(d.setDate(diff));
   };
 
-  const generateWeekDays = (): DayData[] => {
-    const startOfWeek = getStartOfWeek(currentDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const days: DayData[] = [];
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      const dateString = toLocalDateString(date);
-      days.push({ date, dateString, isToday: date.getTime() === today.getTime(), entries: getEntriesForDate(dateString) });
-    }
-    return days;
-  };
-
   const generateMonthDays = (): DayData[] => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -270,25 +253,14 @@ export default function CalendarScreen() {
 
   const navigate = (direction: 'prev' | 'next') => {
     const newDate = new Date(currentDate);
-    if (viewMode === 'week') {
-      newDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
-    } else {
-      newDate.setMonth(currentDate.getMonth() + (direction === 'next' ? 1 : -1));
-    }
+    newDate.setMonth(currentDate.getMonth() + (direction === 'next' ? 1 : -1));
     setCurrentDate(newDate);
     setSelectedDate(null);
     setShowDetailPanel(false);
   };
 
   const getHeaderLabel = () => {
-    if (viewMode === 'month') {
-      return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-    }
-    const start = getStartOfWeek(currentDate);
-    const end = new Date(start);
-    end.setDate(start.getDate() + 6);
-    const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    return `${fmt(start)} – ${fmt(end)}`;
+    return currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   };
 
   const handleDayPress = (day: DayData) => {
@@ -351,7 +323,6 @@ export default function CalendarScreen() {
     }
   };
 
-  const weekDays = generateWeekDays();
   const monthDays = generateMonthDays();
 
   const selectedDayEntries = selectedDate
@@ -390,36 +361,14 @@ export default function CalendarScreen() {
 
       {/* Controls */}
       <View style={styles.controls}>
-        <View style={styles.controlsRow}>
-          {/* Compact box-style Week/Month toggle */}
-          <View style={styles.viewToggle}>
-            {(['week', 'month'] as ViewMode[]).map(mode => (
-              <Pressable
-                key={mode}
-                style={[styles.toggleBox, viewMode === mode && styles.toggleBoxActive]}
-                onPress={() => {
-                  setViewMode(mode);
-                  setSelectedDate(null);
-                  setShowDetailPanel(false);
-                }}
-              >
-                <Text style={[styles.toggleBoxText, viewMode === mode && styles.toggleBoxTextActive]}>
-                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-
-          {/* Nav */}
-          <View style={styles.navRow}>
-            <Pressable onPress={() => navigate('prev')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <MaterialIcons name="chevron-left" size={26} color={colors.text} />
-            </Pressable>
-            <Text style={styles.navLabel}>{getHeaderLabel()}</Text>
-            <Pressable onPress={() => navigate('next')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-              <MaterialIcons name="chevron-right" size={26} color={colors.text} />
-            </Pressable>
-          </View>
+        <View style={styles.navRow}>
+          <Pressable onPress={() => navigate('prev')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="chevron-left" size={26} color={colors.text} />
+          </Pressable>
+          <Text style={styles.navLabel}>{getHeaderLabel()}</Text>
+          <Pressable onPress={() => navigate('next')} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <MaterialIcons name="chevron-right" size={26} color={colors.text} />
+          </Pressable>
         </View>
       </View>
 
@@ -440,39 +389,8 @@ export default function CalendarScreen() {
             ))}
           </View>
 
-          {viewMode === 'week' ? (
-            /* ── WEEK VIEW ── */
-            // Compact week chips
-            <View style={styles.weekChipsRow}>
-              {weekDays.map((day, i) => {
-                const isSelected = selectedDate && toLocalDateString(selectedDate) === day.dateString;
-                const hasDots = day.entries.length > 0;
-                return (
-                  <Pressable
-                    key={i}
-                    style={[styles.weekChip, day.isToday && styles.weekChipToday, isSelected && styles.weekChipSelected]}
-                    onPress={() => handleDayPress(day)}
-                  >
-                    <Text style={[styles.weekChipName, isSelected && styles.weekChipNameSelected]}>
-                      {day.date.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()}
-                    </Text>
-                    <Text style={[styles.weekChipNum, day.isToday && styles.weekChipNumToday, isSelected && styles.weekChipNumSelected]}>
-                      {day.date.getDate()}
-                    </Text>
-                    {hasDots && (
-                      <View style={styles.weekChipDots}>
-                        {day.entries.slice(0, 3).map((e, idx) => (
-                          <View key={idx} style={[styles.weekChipDot, { backgroundColor: getPillarColor(e.pillar) }]} />
-                        ))}
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : (
-            /* ── MONTH VIEW ── */
-            <View style={styles.monthContainer}>
+          {/* ── MONTH VIEW ── */}
+          <View style={styles.monthContainer}>
               <View style={styles.monthHeader}>
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => (
                   <Text key={d} style={styles.monthHeaderCell}>{d}</Text>
@@ -520,8 +438,7 @@ export default function CalendarScreen() {
                   );
                 })}
               </View>
-            </View>
-          )}
+          </View>
 
           {/* Selected Day Detail Panel — only shown after an explicit tap, dismissible */}
           {showDetailPanel && selectedDate && (
@@ -771,40 +688,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  controlsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
-  },
 
-  /* Compact box-style toggle */
-  viewToggle: {
-    flexDirection: 'row',
-    borderRadius: borderRadius.sm,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  toggleBox: {
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    backgroundColor: colors.background,
-  },
-  toggleBoxActive: {
-    backgroundColor: colors.text,
-  },
-  toggleBoxText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textSecondary,
-  },
-  toggleBoxTextActive: {
-    color: colors.textLight,
-  },
-
-  navRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  navRow: { flexDirection: 'row', alignItems: 'center' },
   navBtn: { padding: spacing.xs },
-  navLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'center' },
+  navLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'center', fontSize: 16 },
 
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.body, color: colors.textSecondary },
@@ -823,40 +710,6 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 9, height: 9, borderRadius: 5 },
   legendLabel: { ...typography.caption, color: colors.text, fontSize: 11 },
-
-  /* Week View */
-  /* Compact week chips */
-  weekChipsRow: {
-    flexDirection: 'row',
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm,
-    gap: 4,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  weekChip: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 2,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    minHeight: 56,
-    justifyContent: 'center',
-    gap: 2,
-  },
-  weekChipToday: { borderColor: colors.primary, borderWidth: 2 },
-  weekChipSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
-  weekChipName: { fontSize: 9, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase' },
-  weekChipNameSelected: { color: colors.textLight },
-  weekChipNum: { fontSize: 16, fontWeight: '800', color: colors.text },
-  weekChipNumToday: { color: colors.primary },
-  weekChipNumSelected: { color: colors.textLight },
-  weekChipDots: { flexDirection: 'row', gap: 2, marginTop: 2 },
-  weekChipDot: { width: 5, height: 5, borderRadius: 3 },
 
   entryCard: {
     backgroundColor: colors.background,
