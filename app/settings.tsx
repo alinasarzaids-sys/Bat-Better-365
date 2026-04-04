@@ -26,6 +26,9 @@ export default function SettingsScreen() {
   const { showAlert } = useAlert();
   
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleteLoading, setDeleteLoading] = useState(false);
   
   // Change Password States
   const [newPassword, setNewPassword] = useState('');
@@ -125,6 +128,60 @@ export default function SettingsScreen() {
 
 
 
+  // Handle Delete Account
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') {
+      showAlert('Error', 'Please type DELETE to confirm');
+      return;
+    }
+
+    setDeleteLoading(true);
+    try {
+      const supabase = getSupabaseClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) {
+        showAlert('Error', 'Session expired. Please log in again.');
+        setDeleteLoading(false);
+        return;
+      }
+
+      const { error } = await supabase.functions.invoke('delete-account', {
+        body: {},
+      });
+
+      if (error) {
+        const { FunctionsHttpError } = await import('@supabase/supabase-js');
+        let errorMessage = error.message;
+        if (error instanceof FunctionsHttpError) {
+          try {
+            const text = await error.context?.text();
+            errorMessage = text || error.message;
+          } catch {}
+        }
+        showAlert('Error', errorMessage || 'Failed to delete account. Please try again.');
+        setDeleteLoading(false);
+        return;
+      }
+
+      // Clear local storage
+      await AsyncStorage.multiRemove([
+        '@bat_better_onboarding_completed',
+        '@bat_better_profile_setup_completed',
+      ]);
+
+      // Sign out locally
+      await supabase.auth.signOut();
+
+      setShowDeleteAccountModal(false);
+      router.replace('/login' as any);
+    } catch (err: any) {
+      console.error('Delete account error:', err);
+      showAlert('Error', 'Failed to delete account. Please try again.');
+    }
+    setDeleteLoading(false);
+  };
+
   // Handle Logout
   const handleLogout = async () => {
     Alert.alert(
@@ -210,6 +267,10 @@ export default function SettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ACCOUNT</Text>
           {renderSettingItem('lock-outline', 'Change Password', () => setShowChangePasswordModal(true))}
+          {renderSettingItem('delete-forever', 'Delete Account', () => {
+            setDeleteConfirmText('');
+            setShowDeleteAccountModal(true);
+          }, colors.error)}
         </View>
 
         {/* Actions Section */}
@@ -311,6 +372,68 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
+
+      {/* Delete Account Modal */}
+      <Modal
+        visible={showDeleteAccountModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowDeleteAccountModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Delete Account</Text>
+              <Pressable onPress={() => setShowDeleteAccountModal(false)}>
+                <MaterialIcons name="close" size={24} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <View style={styles.deleteWarningBox}>
+              <MaterialIcons name="warning" size={32} color={colors.error} />
+              <Text style={styles.deleteWarningTitle}>This action cannot be undone</Text>
+              <Text style={styles.deleteWarningText}>
+                Deleting your account will permanently remove all your data including training history, journal entries, progress, and achievements.
+              </Text>
+            </View>
+
+            <Text style={styles.deleteInstructions}>
+              Type <Text style={styles.deleteKeyword}>DELETE</Text> below to confirm:
+            </Text>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Type DELETE to confirm"
+              placeholderTextColor={colors.textSecondary}
+              value={deleteConfirmText}
+              onChangeText={setDeleteConfirmText}
+              autoCapitalize="characters"
+              autoCorrect={false}
+            />
+
+            <View style={styles.modalButtons}>
+              <Pressable
+                style={[styles.secondaryButton]}
+                onPress={() => setShowDeleteAccountModal(false)}
+                disabled={deleteLoading}
+              >
+                <Text style={styles.secondaryButtonText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.primaryButton, { backgroundColor: colors.error, flex: 1, marginTop: 0 }]}
+                onPress={handleDeleteAccount}
+                disabled={deleteLoading || deleteConfirmText !== 'DELETE'}
+              >
+                {deleteLoading ? (
+                  <ActivityIndicator color={colors.textLight} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Delete Account</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -483,6 +606,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: spacing.md,
     marginTop: spacing.lg,
+    alignItems: 'center',
   },
   warningBox: {
     backgroundColor: colors.warning + '10',
@@ -521,6 +645,37 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   confirmationKeyword: {
+    fontWeight: '700',
+    color: colors.error,
+  },
+  deleteWarningBox: {
+    backgroundColor: colors.error + '15',
+    borderWidth: 1,
+    borderColor: colors.error + '40',
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+    gap: spacing.sm,
+  },
+  deleteWarningTitle: {
+    ...typography.body,
+    color: colors.error,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  deleteWarningText: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  deleteInstructions: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  deleteKeyword: {
     fontWeight: '700',
     color: colors.error,
   },
