@@ -24,7 +24,7 @@ export default function PrivacyPolicyScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.lastUpdated}>Last Updated: March 18, 2026</Text>
+        <Text style={styles.lastUpdated}>Last Updated: April 4, 2026</Text>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Introduction</Text>
@@ -150,20 +150,28 @@ export default function PrivacyPolicyScreen() {
           <Text style={styles.subsectionTitle}>7.1 Account Management</Text>
           <Text style={styles.bulletPoint}>• Update your profile information at any time through the Settings menu</Text>
           <Text style={styles.bulletPoint}>• Change your password through Settings → Change Password</Text>
-          <Text style={styles.bulletPoint}>• Reset your training data through Settings → Reset Account (this keeps your login credentials)</Text>
 
           <Text style={styles.subsectionTitle}>7.2 Communication Preferences</Text>
           <Text style={styles.bulletPoint}>• Opt out of promotional notifications through your device settings</Text>
           <Text style={styles.bulletPoint}>• You will still receive important account-related notifications</Text>
 
-          <Text style={styles.subsectionTitle}>7.3 Data Deletion</Text>
+          <Text style={styles.subsectionTitle}>7.3 Account & Data Deletion</Text>
           <Text style={styles.paragraph}>
-            To request deletion of your account and all associated data, please contact us at batbetter365@gmail.com. We will process your request within 30 days and permanently delete:
+            You can permanently delete your account and all associated data directly within the app at any time — no email or additional steps required:
+          </Text>
+          <Text style={styles.bulletPoint}>• Go to Settings → Delete Account</Text>
+          <Text style={styles.bulletPoint}>• Type DELETE to confirm</Text>
+          <Text style={styles.bulletPoint}>• Your account will be permanently removed immediately</Text>
+          <Text style={styles.paragraph}>
+            Upon deletion, we permanently remove:
           </Text>
           <Text style={styles.bulletPoint}>• Your account and login credentials</Text>
           <Text style={styles.bulletPoint}>• All training data and progress</Text>
           <Text style={styles.bulletPoint}>• Journal entries and calendar events</Text>
           <Text style={styles.bulletPoint}>• AI coach conversation history</Text>
+          <Text style={styles.paragraph}>
+            If you have trouble deleting your account in-app, contact us at batbetter365@gmail.com and we will process your request within 30 days.
+          </Text>
         </View>
 
         <View style={styles.section}>

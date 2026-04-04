@@ -146,19 +146,21 @@ export default function SettingsScreen() {
         return;
       }
 
+      // Explicitly pass the auth token in the headers
       const { error } = await supabase.functions.invoke('delete-account', {
         body: {},
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
       });
 
       if (error) {
-        const { FunctionsHttpError } = await import('@supabase/supabase-js');
         let errorMessage = error.message;
-        if (error instanceof FunctionsHttpError) {
-          try {
-            const text = await error.context?.text();
-            errorMessage = text || error.message;
-          } catch {}
-        }
+        try {
+          // Try to get more specific error details
+          const text = await (error as any).context?.text?.();
+          if (text) errorMessage = text;
+        } catch {}
         showAlert('Error', errorMessage || 'Failed to delete account. Please try again.');
         setDeleteLoading(false);
         return;
