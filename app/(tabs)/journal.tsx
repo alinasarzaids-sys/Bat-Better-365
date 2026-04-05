@@ -835,7 +835,7 @@ export default function JournalScreen() {
             )}
 
             {/* Activity */}
-            <Text style={styles.blockLabel}>What were you doing?</Text>
+            <Text style={styles.blockLabel}>What are you doing?</Text>
             <TextInput
               style={styles.blockActivityInput}
               placeholder="e.g. Training, Rest, Study, Match..."
@@ -850,7 +850,7 @@ export default function JournalScreen() {
               onPress={saveBlock}
               disabled={!blockActivity.trim()}
             >
-              <Text style={styles.saveBlockBtnText}>
+              <Text style={styles.saveBlockBtnText} numberOfLines={1}>
                 {editingBlockId ? 'Save Changes' : 'Add Block'}
               </Text>
             </Pressable>
@@ -1049,11 +1049,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm,
   },
   timeOption: {
-    padding: spacing.sm, paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.md,
   },
   timeOptionActive: { backgroundColor: colors.primary + '15' },
-  timeOptionText: { ...typography.body, color: colors.text },
-  timeOptionTextActive: { color: colors.primary, fontWeight: '700' },
+  timeOptionText: { ...typography.body, color: colors.text, fontSize: 18 },
+  timeOptionTextActive: { color: colors.primary, fontWeight: '700', fontSize: 18 },
   blockActivityInput: {
     ...typography.body, color: colors.text,
     backgroundColor: colors.background,
@@ -1063,11 +1063,13 @@ const styles = StyleSheet.create({
   },
   saveBlockBtn: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md, padding: spacing.md,
+    borderRadius: borderRadius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.sm,
     alignItems: 'center',
+    minHeight: 52,
+    justifyContent: 'center',
   },
   saveBlockBtnDisabled: { backgroundColor: colors.disabled },
-  saveBlockBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700' },
+  saveBlockBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700', fontSize: 16 },
 
   wellnessGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
