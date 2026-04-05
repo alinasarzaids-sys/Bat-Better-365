@@ -9,7 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Card } from '@/components/ui/Card';
 import { aiCoachService } from '@/services/aiCoachService';
@@ -24,6 +24,7 @@ interface Message {
 
 export default function AICoachScreen() {
   const { showAlert } = useAlert();
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'assistant',
@@ -97,7 +98,7 @@ export default function AICoachScreen() {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
-        keyboardVerticalOffset={100}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           ref={scrollViewRef}
@@ -140,7 +141,7 @@ export default function AICoachScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.inputContainer}>
+        <View style={[styles.inputContainer, { paddingBottom: insets.bottom > 0 ? insets.bottom : spacing.md }]}>
           <TextInput
             style={styles.input}
             placeholder="Ask about drills, technique, training plans..."
