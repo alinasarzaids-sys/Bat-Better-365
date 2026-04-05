@@ -16,101 +16,145 @@ import { getSupabaseClient } from '@/template';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CHART_WIDTH = SCREEN_WIDTH - spacing.md * 2 - spacing.lg * 2;
 
 interface FreestyleSession {
   id: string;
   title: string;
   scheduled_date: string;
+  completed_at: string;
   duration_minutes: number;
   notes: string;
   status: string;
-  completed_at: string;
-  // Parsed from notes
+  // Batting Stats
+  ballsFaced?: number;
+  ballsMiddled?: number;
+  middlePercent?: number;
+  boundariesHit?: number;
+  // Technical
+  shotExecution?: number;
+  footwork?: number;
+  timing?: number;
+  // Mental
+  focus?: number;
+  confidence?: number;
+  pressureHandling?: number;
+  // Physical
+  energyLevel?: number;
+  reactionSpeed?: number;
+  // Tactical
+  shotSelection?: number;
+  gameAwareness?: number;
+  // Legacy pillar averages
   physicalRating?: number;
   mentalRating?: number;
   tacticalRating?: number;
   technicalRating?: number;
-  ballsFaced?: number;
+  // Meta
+  trainingTypes?: string[];
   focusArea?: string;
   sessionGoal?: string;
-  trainingTypes?: string[];
   sessionNotes?: string;
 }
 
-interface LatestSession extends FreestyleSession {
-  avgRating: number;
-  strengths: string[];
-  improvements: string[];
-}
-
-/** Parse the notes string from a freestyle session into structured data */
 function parseSessionNotes(notes: string): Partial<FreestyleSession> {
   const result: Partial<FreestyleSession> = {};
   if (!notes) return result;
-
   const lines = notes.split('\n');
   for (const line of lines) {
-    if (line.startsWith('Training Types:')) {
-      result.trainingTypes = line.replace('Training Types:', '').trim().split(', ').filter(Boolean);
-    } else if (line.startsWith('Focus Area:')) {
-      result.focusArea = line.replace('Focus Area:', '').trim();
-    } else if (line.startsWith('Session Goal:')) {
-      result.sessionGoal = line.replace('Session Goal:', '').trim();
-    } else if (line.startsWith('Balls Faced:')) {
-      result.ballsFaced = parseInt(line.replace('Balls Faced:', '').trim()) || 0;
-    } else if (line.startsWith('Physical:')) {
-      result.physicalRating = parseInt(line.replace('Physical:', '').replace('/5', '').trim()) || 0;
-    } else if (line.startsWith('Mental:')) {
-      result.mentalRating = parseInt(line.replace('Mental:', '').replace('/5', '').trim()) || 0;
-    } else if (line.startsWith('Tactical:')) {
-      result.tacticalRating = parseInt(line.replace('Tactical:', '').replace('/5', '').trim()) || 0;
-    } else if (line.startsWith('Technical:')) {
-      result.technicalRating = parseInt(line.replace('Technical:', '').replace('/5', '').trim()) || 0;
-    }
+    const clean = line.trim();
+    if (clean.startsWith('Training Types:')) result.trainingTypes = clean.replace('Training Types:', '').trim().split(', ').filter(Boolean);
+    else if (clean.startsWith('Focus Area:')) result.focusArea = clean.replace('Focus Area:', '').trim();
+    else if (clean.startsWith('Session Goal:')) result.sessionGoal = clean.replace('Session Goal:', '').trim();
+    else if (clean.startsWith('Balls Faced:')) result.ballsFaced = parseInt(clean.replace('Balls Faced:', '').trim()) || 0;
+    else if (clean.startsWith('Balls Middled:')) result.ballsMiddled = parseInt(clean.replace('Balls Middled:', '').trim()) || 0;
+    else if (clean.startsWith('Middle %:')) result.middlePercent = parseInt(clean.replace('Middle %:', '').trim()) || 0;
+    else if (clean.startsWith('Boundaries Hit:')) result.boundariesHit = parseInt(clean.replace('Boundaries Hit:', '').trim()) || 0;
+    else if (clean.startsWith('Shot Execution:')) result.shotExecution = parseInt(clean.replace('Shot Execution:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Footwork:')) result.footwork = parseInt(clean.replace('Footwork:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Timing:')) result.timing = parseInt(clean.replace('Timing:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Focus:')) result.focus = parseInt(clean.replace('Focus:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Confidence:')) result.confidence = parseInt(clean.replace('Confidence:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Pressure Handling:')) result.pressureHandling = parseInt(clean.replace('Pressure Handling:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Energy Level:')) result.energyLevel = parseInt(clean.replace('Energy Level:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Reaction Speed:')) result.reactionSpeed = parseInt(clean.replace('Reaction Speed:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Shot Selection:')) result.shotSelection = parseInt(clean.replace('Shot Selection:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Game Awareness:')) result.gameAwareness = parseInt(clean.replace('Game Awareness:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Physical:')) result.physicalRating = parseInt(clean.replace('Physical:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Mental:')) result.mentalRating = parseInt(clean.replace('Mental:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Tactical:')) result.tacticalRating = parseInt(clean.replace('Tactical:', '').replace('/5', '').trim()) || 0;
+    else if (clean.startsWith('Technical:')) result.technicalRating = parseInt(clean.replace('Technical:', '').replace('/5', '').trim()) || 0;
   }
-
-  // Extract notes after "Notes:"
   const notesIdx = notes.indexOf('\n\nNotes:');
-  if (notesIdx !== -1) {
-    result.sessionNotes = notes.substring(notesIdx + 8).trim();
-  }
-
+  if (notesIdx !== -1) result.sessionNotes = notes.substring(notesIdx + 8).trim();
   return result;
 }
 
-function getStrengthsAndImprovements(session: FreestyleSession): { strengths: string[]; improvements: string[] } {
-  const ratings = [
-    { label: 'Physical', value: session.physicalRating || 0 },
-    { label: 'Mental', value: session.mentalRating || 0 },
-    { label: 'Tactical', value: session.tacticalRating || 0 },
-    { label: 'Technical', value: session.technicalRating || 0 },
-  ];
-
-  const strengths = ratings.filter(r => r.value >= 4).map(r => r.label);
-  const improvements = ratings.filter(r => r.value <= 2).map(r => r.label);
-
-  return { strengths, improvements };
-}
-
 function formatDate(iso: string): string {
+  if (!iso) return '';
   const d = new Date(iso);
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-// ─── Custom Bar Chart ─────────────────────────────────────────────────────────
-function BarChart({ data, color }: { data: { label: string; value: number; max: number }[]; color: string }) {
-  const BAR_HEIGHT = 180;
+function getPerformanceLabel(avg: number): { label: string; color: string } {
+  if (avg >= 4.5) return { label: 'Elite', color: '#7C3AED' };
+  if (avg >= 4) return { label: 'Excellent', color: colors.success };
+  if (avg >= 3.5) return { label: 'Good', color: colors.primary };
+  if (avg >= 2.5) return { label: 'Average', color: colors.warning };
+  return { label: 'Needs Work', color: colors.error };
+}
+
+function avgOf(vals: (number | undefined)[]): number {
+  const valid = vals.filter((v): v is number => (v || 0) > 0) as number[];
+  if (!valid.length) return 0;
+  return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
+}
+
+// ── Mini horizontal bar ───────────────────────────────────────────────────────
+function MetricBar({ label, value, max = 5, color }: { label: string; value: number; max?: number; color: string }) {
+  const pct = max > 0 ? Math.min(1, value / max) * 100 : 0;
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 8, height: BAR_HEIGHT + 40 }}>
+    <View style={barStyles.row}>
+      <Text style={barStyles.label}>{label}</Text>
+      <View style={barStyles.track}>
+        <View style={[barStyles.fill, { width: `${pct}%`, backgroundColor: color }]} />
+      </View>
+      <Text style={[barStyles.val, { color }]}>{value > 0 ? `${value}/5` : '—'}</Text>
+    </View>
+  );
+}
+const barStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 10 },
+  label: { ...typography.bodySmall, color: colors.text, width: 120 },
+  track: { flex: 1, height: 8, backgroundColor: colors.border, borderRadius: 4 },
+  fill: { height: 8, borderRadius: 4, minWidth: 4 },
+  val: { ...typography.bodySmall, fontWeight: '800', width: 36, textAlign: 'right' },
+});
+
+// ── Vertical bar chart ─────────────────────────────────────────────────────────
+function BarChart({
+  data,
+  color,
+  maxVal = 5,
+}: {
+  data: { label: string; value: number }[];
+  color: string;
+  maxVal?: number;
+}) {
+  const BAR_HEIGHT = 140;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: BAR_HEIGHT + 44 }}>
       {data.map((item, i) => {
-        const pct = item.max > 0 ? item.value / item.max : 0;
+        const pct = maxVal > 0 ? item.value / maxVal : 0;
         const barH = Math.max(4, Math.round(pct * BAR_HEIGHT));
         return (
           <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={barChartStyles.valueLabel}>{item.value > 0 ? item.value : ''}</Text>
-            <View style={[barChartStyles.bar, { height: barH, backgroundColor: color }]} />
-            <Text style={barChartStyles.barLabel} numberOfLines={1}>{item.label}</Text>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.text, marginBottom: 2 }}>
+              {item.value > 0 ? item.value : ''}
+            </Text>
+            <View style={{ height: barH, width: '100%', backgroundColor: color, borderRadius: 4 }} />
+            <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 4, textAlign: 'center' }} numberOfLines={1}>
+              {item.label}
+            </Text>
           </View>
         );
       })}
@@ -118,139 +162,12 @@ function BarChart({ data, color }: { data: { label: string; value: number; max: 
   );
 }
 
-const barChartStyles = StyleSheet.create({
-  bar: { width: '100%', borderRadius: 6, minHeight: 4 },
-  barLabel: { fontSize: 10, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
-  valueLabel: { fontSize: 11, fontWeight: '700', color: colors.text, marginBottom: 2 },
-});
-
-// ─── Radar-style chart (octagonal area) ───────────────────────────────────────
-function RadarChart({ physical, mental, tactical, technical }: {
-  physical: number; mental: number; tactical: number; technical: number;
-}) {
-  const SIZE = 160;
-  const CENTER = SIZE / 2;
-  const MAX_RADIUS = 60;
-
-  const toXY = (angle: number, r: number) => ({
-    x: CENTER + r * Math.cos((angle - 90) * (Math.PI / 180)),
-    y: CENTER + r * Math.sin((angle - 90) * (Math.PI / 180)),
-  });
-
-  const axes = [
-    { label: 'Physical', angle: 0, value: physical, color: colors.physical },
-    { label: 'Mental', angle: 90, value: mental, color: colors.mental },
-    { label: 'Tactical', angle: 180, value: tactical, color: colors.tactical },
-    { label: 'Technical', angle: 270, value: technical, color: colors.technical },
-  ];
-
-  // Build polygon path for data
-  const dataPoints = axes.map(a => {
-    const r = (a.value / 5) * MAX_RADIUS;
-    return toXY(a.angle, r);
-  });
-
-  const gridLevels = [1, 2, 3, 4, 5];
-
-  return (
-    <View style={{ alignItems: 'center', marginVertical: spacing.md }}>
-      <View style={{ width: SIZE, height: SIZE, position: 'relative' }}>
-        {/* SVG-like rendering using absolute positioned Views for grid */}
-        {gridLevels.map(level => {
-          const r = (level / 5) * MAX_RADIUS;
-          const pts = [0, 90, 180, 270].map(angle => toXY(angle, r));
-          return (
-            <View
-              key={level}
-              style={{
-                position: 'absolute',
-                left: pts[0].x,
-                top: pts[1].y,
-                width: (pts[2].x - pts[0].x),
-                height: (pts[3].y - pts[1].y),
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
-            />
-          );
-        })}
-
-        {/* Axis lines */}
-        {axes.map((a, i) => {
-          const end = toXY(a.angle, MAX_RADIUS);
-          const dx = end.x - CENTER;
-          const dy = end.y - CENTER;
-          const length = Math.sqrt(dx * dx + dy * dy);
-          const angle = Math.atan2(dy, dx) * (180 / Math.PI);
-          return (
-            <View
-              key={i}
-              style={{
-                position: 'absolute',
-                left: CENTER,
-                top: CENTER,
-                width: length,
-                height: 1,
-                backgroundColor: colors.border,
-                transformOrigin: '0 50%',
-                transform: [{ rotate: `${angle}deg` }],
-              }}
-            />
-          );
-        })}
-
-        {/* Data dots */}
-        {dataPoints.map((pt, i) => (
-          <View
-            key={i}
-            style={{
-              position: 'absolute',
-              left: pt.x - 5,
-              top: pt.y - 5,
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: axes[i].color,
-            }}
-          />
-        ))}
-
-        {/* Center dot */}
-        <View style={{
-          position: 'absolute',
-          left: CENTER - 4,
-          top: CENTER - 4,
-          width: 8,
-          height: 8,
-          borderRadius: 4,
-          backgroundColor: colors.textSecondary,
-        }} />
-      </View>
-
-      {/* Legend */}
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md, justifyContent: 'center' }}>
-        {axes.map(a => (
-          <View key={a.label} style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: a.color }} />
-            <Text style={{ fontSize: 12, color: colors.text }}>{a.label} ({a.value}/5)</Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── Star display ─────────────────────────────────────────────────────────────
-function StarDisplay({ rating, color }: { rating: number; color: string }) {
+// ── Star row ──────────────────────────────────────────────────────────────────
+function Stars({ rating, color }: { rating: number; color: string }) {
   return (
     <View style={{ flexDirection: 'row', gap: 2 }}>
       {[1, 2, 3, 4, 5].map(s => (
-        <MaterialIcons
-          key={s}
-          name={s <= rating ? 'star' : 'star-border'}
-          size={16}
-          color={s <= rating ? color : colors.border}
-        />
+        <MaterialIcons key={s} name={s <= rating ? 'star' : 'star-border'} size={14} color={s <= rating ? color : colors.border} />
       ))}
     </View>
   );
@@ -265,27 +182,40 @@ export default function SessionAnalyticsScreen() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'latest' | 'history' | 'trends'>('latest');
 
-  // Latest session data passed directly from step 4
+  // Params from most recent completed session (if navigated from step 4)
   const fromParams: Partial<FreestyleSession> = {
     physicalRating: parseInt(params.physical as string) || undefined,
     mentalRating: parseInt(params.mental as string) || undefined,
     tacticalRating: parseInt(params.tactical as string) || undefined,
     technicalRating: parseInt(params.technical as string) || undefined,
     ballsFaced: parseInt(params.balls as string) || undefined,
+    ballsMiddled: parseInt(params.ballsMiddled as string) || undefined,
+    boundariesHit: parseInt(params.boundaries as string) || undefined,
+    middlePercent: params.balls && params.ballsMiddled && parseInt(params.balls as string) > 0
+      ? Math.round((parseInt(params.ballsMiddled as string) / parseInt(params.balls as string)) * 100)
+      : undefined,
     duration_minutes: parseInt(params.duration as string) || undefined,
-    trainingTypes: params.types ? (params.types as string).split(',') : undefined,
+    trainingTypes: params.types ? (params.types as string).split(',').filter(Boolean) : undefined,
     sessionNotes: params.notes as string || undefined,
     focusArea: params.focus as string || undefined,
     sessionGoal: params.goal as string || undefined,
+    shotExecution: parseInt(params.shotExecution as string) || undefined,
+    footwork: parseInt(params.footwork as string) || undefined,
+    timing: parseInt(params.timing as string) || undefined,
+    focus: parseInt(params.focusRating as string) || undefined,
+    confidence: parseInt(params.confidence as string) || undefined,
+    pressureHandling: parseInt(params.pressureHandling as string) || undefined,
+    energyLevel: parseInt(params.energyLevel as string) || undefined,
+    reactionSpeed: parseInt(params.reactionSpeed as string) || undefined,
+    shotSelection: parseInt(params.shotSelection as string) || undefined,
+    gameAwareness: parseInt(params.gameAwareness as string) || undefined,
   };
-
-  const hasParamRatings = !!fromParams.physicalRating;
+  const hasParamRatings = !!(fromParams.physicalRating || fromParams.technicalRating);
 
   const loadSessions = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const supabase = getSupabaseClient();
-
     const { data, error } = await supabase
       .from('sessions')
       .select('*')
@@ -293,61 +223,56 @@ export default function SessionAnalyticsScreen() {
       .eq('session_type', 'Freestyle')
       .eq('status', 'completed')
       .order('completed_at', { ascending: false })
-      .limit(20);
-
+      .limit(30);
     if (!error && data) {
-      const parsed = data.map((s: any) => ({
-        ...s,
-        ...parseSessionNotes(s.notes || ''),
-      }));
+      const parsed = data.map((s: any) => ({ ...s, ...parseSessionNotes(s.notes || '') }));
       setSessions(parsed);
     }
     setLoading(false);
   }, [user]);
 
-  useEffect(() => {
-    loadSessions();
-  }, [loadSessions]);
+  useEffect(() => { loadSessions(); }, [loadSessions]);
 
-  // Determine "latest" — prefer params if we just finished a session, else first DB record
   const latest: FreestyleSession | null = hasParamRatings
-    ? { ...sessions[0], ...fromParams, id: sessions[0]?.id || 'new' } as FreestyleSession
+    ? { ...(sessions[0] || {}), ...fromParams, id: sessions[0]?.id || 'new' } as FreestyleSession
     : sessions[0] || null;
 
-  const latestStrengths = latest ? getStrengthsAndImprovements(latest as FreestyleSession) : { strengths: [], improvements: [] };
-  const latestAvg = latest
-    ? ((latest.physicalRating || 0) + (latest.mentalRating || 0) + (latest.tacticalRating || 0) + (latest.technicalRating || 0)) / 4
-    : 0;
+  // Compute pillar averages for latest
+  const latestTechnical = avgOf([latest?.shotExecution, latest?.footwork, latest?.timing]) || latest?.technicalRating || 0;
+  const latestMental = avgOf([latest?.focus, latest?.confidence, latest?.pressureHandling]) || latest?.mentalRating || 0;
+  const latestPhysical = avgOf([latest?.energyLevel, latest?.reactionSpeed]) || latest?.physicalRating || 0;
+  const latestTactical = avgOf([latest?.shotSelection, latest?.gameAwareness]) || latest?.tacticalRating || 0;
+  const latestOverall = avgOf([latestTechnical, latestMental, latestPhysical, latestTactical]);
 
-  // Trends: last 8 sessions
-  const trendSessions = sessions.slice(0, 8).reverse();
+  // Middle % for latest
+  const latestMiddlePct = latest?.middlePercent || (latest?.ballsFaced && latest?.ballsMiddled && latest.ballsFaced > 0
+    ? Math.round((latest.ballsMiddled / latest.ballsFaced) * 100)
+    : null);
 
-  const avgByMetric = (key: keyof FreestyleSession) => {
+  // Trend sessions (reverse for chronological order in charts)
+  const trendSessions = sessions.slice(0, 10).reverse();
+
+  // Aggregation helpers
+  const avgAcrossSessions = (key: keyof FreestyleSession) => {
     const vals = sessions.map(s => (s[key] as number) || 0).filter(v => v > 0);
     if (!vals.length) return 0;
     return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
   };
 
-  const getPerformanceLabel = (avg: number) => {
-    if (avg >= 4.5) return { label: 'Excellent', color: colors.success };
-    if (avg >= 3.5) return { label: 'Good', color: colors.primary };
-    if (avg >= 2.5) return { label: 'Average', color: colors.warning };
-    return { label: 'Needs Work', color: colors.error };
-  };
-
-  const pillarRatingColor = (val: number) => {
-    if (val >= 4) return colors.success;
-    if (val >= 3) return colors.primary;
-    if (val >= 2) return colors.warning;
-    return colors.error;
-  };
+  const totalBallsFaced = sessions.reduce((a, s) => a + (s.ballsFaced || 0), 0);
+  const totalBoundaries = sessions.reduce((a, s) => a + (s.boundariesHit || 0), 0);
+  const avgMiddlePct = (() => {
+    const sessWithPct = sessions.filter(s => (s.middlePercent || 0) > 0);
+    if (!sessWithPct.length) return null;
+    return Math.round(sessWithPct.reduce((a, s) => a + (s.middlePercent || 0), 0) / sessWithPct.length);
+  })();
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading analytics...</Text>
+          <Text style={styles.loadingText}>Loading performance data...</Text>
         </View>
       </SafeAreaView>
     );
@@ -360,7 +285,10 @@ export default function SessionAnalyticsScreen() {
         <Pressable onPress={() => router.back()} style={styles.headerBtn}>
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Session Analytics</Text>
+        <View>
+          <Text style={styles.headerTitle}>Performance Hub</Text>
+          <Text style={styles.headerSubtitle}>{sessions.length} freestyle sessions tracked</Text>
+        </View>
         <View style={styles.headerBtn} />
       </View>
 
@@ -372,6 +300,11 @@ export default function SessionAnalyticsScreen() {
             style={[styles.tab, activeTab === tab && styles.tabActive]}
             onPress={() => setActiveTab(tab)}
           >
+            <MaterialIcons
+              name={tab === 'latest' ? 'analytics' : tab === 'history' ? 'history' : 'show-chart'}
+              size={16}
+              color={activeTab === tab ? colors.primary : colors.textSecondary}
+            />
             <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
               {tab.charAt(0).toUpperCase() + tab.slice(1)}
             </Text>
@@ -381,143 +314,211 @@ export default function SessionAnalyticsScreen() {
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* ─── LATEST SESSION ────────────────────────────────────── */}
+        {/* ─────────────────── LATEST ─────────────────── */}
         {activeTab === 'latest' && (
           <>
             {!latest ? (
               <View style={styles.emptyState}>
-                <MaterialIcons name="analytics" size={64} color={colors.border} />
+                <MaterialIcons name="sports-cricket" size={72} color={colors.border} />
                 <Text style={styles.emptyTitle}>No sessions yet</Text>
-                <Text style={styles.emptySubtitle}>Complete a freestyle session to see your analytics</Text>
+                <Text style={styles.emptySubtitle}>Complete a freestyle session to see your performance breakdown here</Text>
               </View>
             ) : (
               <>
-                {/* Overall score */}
-                <View style={styles.card}>
-                  <View style={styles.overallRow}>
-                    <View style={styles.overallLeft}>
-                      <Text style={styles.cardTitle}>Overall Performance</Text>
-                      <Text style={styles.overallScore}>{latestAvg.toFixed(1)}<Text style={styles.overallMax}>/5</Text></Text>
-                      <View style={[styles.badge, { backgroundColor: getPerformanceLabel(latestAvg).color + '20' }]}>
-                        <Text style={[styles.badgeText, { color: getPerformanceLabel(latestAvg).color }]}>
-                          {getPerformanceLabel(latestAvg).label}
-                        </Text>
+                {/* Overall score card */}
+                <View style={[styles.card, styles.heroCard]}>
+                  <View style={styles.heroLeft}>
+                    <Text style={styles.heroLabel}>Overall Performance</Text>
+                    <Text style={styles.heroScore}>{latestOverall.toFixed(1)}<Text style={styles.heroMax}>/5</Text></Text>
+                    <View style={[styles.badge, { backgroundColor: getPerformanceLabel(latestOverall).color + '25' }]}>
+                      <Text style={[styles.badgeText, { color: getPerformanceLabel(latestOverall).color }]}>
+                        {getPerformanceLabel(latestOverall).label}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.heroRight}>
+                    {latest.duration_minutes ? (
+                      <View style={styles.heroStat}>
+                        <MaterialIcons name="timer" size={14} color={colors.textSecondary} />
+                        <Text style={styles.heroStatText}>{latest.duration_minutes} min</Text>
                       </View>
-                    </View>
-                    <View style={styles.overallRight}>
-                      {latest.duration_minutes ? (
-                        <View style={styles.metaStat}>
-                          <MaterialIcons name="timer" size={16} color={colors.textSecondary} />
-                          <Text style={styles.metaStatText}>{latest.duration_minutes} min</Text>
-                        </View>
-                      ) : null}
-                      {(latest.ballsFaced || 0) > 0 ? (
-                        <View style={styles.metaStat}>
-                          <MaterialIcons name="sports-cricket" size={16} color={colors.textSecondary} />
-                          <Text style={styles.metaStatText}>{latest.ballsFaced} balls</Text>
-                        </View>
-                      ) : null}
-                      {latest.focusArea ? (
-                        <View style={styles.metaStat}>
-                          <MaterialIcons name="my-location" size={16} color={colors.textSecondary} />
-                          <Text style={styles.metaStatText} numberOfLines={2}>{latest.focusArea}</Text>
-                        </View>
-                      ) : null}
-                    </View>
+                    ) : null}
+                    {(latest.ballsFaced || 0) > 0 ? (
+                      <View style={styles.heroStat}>
+                        <MaterialIcons name="sports-cricket" size={14} color={colors.textSecondary} />
+                        <Text style={styles.heroStatText}>{latest.ballsFaced} balls</Text>
+                      </View>
+                    ) : null}
+                    {latestMiddlePct !== null ? (
+                      <View style={styles.heroStat}>
+                        <MaterialIcons name="gps-fixed" size={14} color={colors.success} />
+                        <Text style={[styles.heroStatText, { color: colors.success, fontWeight: '700' }]}>{latestMiddlePct}% middle</Text>
+                      </View>
+                    ) : null}
+                    {(latest.boundariesHit || 0) > 0 ? (
+                      <View style={styles.heroStat}>
+                        <MaterialIcons name="star" size={14} color={colors.warning} />
+                        <Text style={styles.heroStatText}>{latest.boundariesHit} boundaries</Text>
+                      </View>
+                    ) : null}
                   </View>
                 </View>
 
-                {/* Radar chart */}
+                {/* 4 Pillar summary */}
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Performance Radar</Text>
-                  <RadarChart
-                    physical={latest.physicalRating || 0}
-                    mental={latest.mentalRating || 0}
-                    tactical={latest.tacticalRating || 0}
-                    technical={latest.technicalRating || 0}
-                  />
-                </View>
-
-                {/* Pillar breakdown */}
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Pillar Breakdown</Text>
+                  <Text style={styles.cardTitle}>Pillar Averages</Text>
                   <View style={styles.pillarGrid}>
                     {[
-                      { label: 'Physical', value: latest.physicalRating || 0, color: colors.physical, icon: 'fitness-center' as const },
-                      { label: 'Mental', value: latest.mentalRating || 0, color: colors.mental, icon: 'psychology' as const },
-                      { label: 'Tactical', value: latest.tacticalRating || 0, color: colors.tactical, icon: 'lightbulb' as const },
-                      { label: 'Technical', value: latest.technicalRating || 0, color: colors.technical, icon: 'sports-cricket' as const },
-                    ].map(pillar => (
-                      <View key={pillar.label} style={styles.pillarCard}>
-                        <View style={[styles.pillarIcon, { backgroundColor: pillar.color + '20' }]}>
-                          <MaterialIcons name={pillar.icon} size={22} color={pillar.color} />
-                        </View>
-                        <Text style={styles.pillarLabel}>{pillar.label}</Text>
-                        <Text style={[styles.pillarScore, { color: pillarRatingColor(pillar.value) }]}>
-                          {pillar.value}/5
-                        </Text>
-                        <StarDisplay rating={pillar.value} color={pillar.color} />
-                        {/* Progress bar */}
-                        <View style={styles.pillarBarBg}>
-                          <View style={[styles.pillarBar, { width: `${(pillar.value / 5) * 100}%`, backgroundColor: pillar.color }]} />
-                        </View>
+                      { label: 'Technical', value: latestTechnical, color: colors.technical, icon: 'sports-cricket' as const },
+                      { label: 'Mental', value: latestMental, color: colors.mental, icon: 'psychology' as const },
+                      { label: 'Physical', value: latestPhysical, color: colors.physical, icon: 'fitness-center' as const },
+                      { label: 'Tactical', value: latestTactical, color: colors.tactical, icon: 'lightbulb' as const },
+                    ].map(p => (
+                      <View key={p.label} style={[styles.pillarCard, { borderTopColor: p.color }]}>
+                        <MaterialIcons name={p.icon} size={20} color={p.color} />
+                        <Text style={[styles.pillarScore, { color: p.color }]}>{p.value > 0 ? p.value.toFixed(1) : '—'}</Text>
+                        <Text style={styles.pillarLabel}>{p.label}</Text>
+                        <Stars rating={Math.round(p.value)} color={p.color} />
                       </View>
                     ))}
                   </View>
                 </View>
 
-                {/* Strengths & Improvements */}
+                {/* Technical breakdown */}
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Analysis</Text>
-                  {latestStrengths.strengths.length > 0 && (
-                    <View style={styles.analysisBlock}>
+                  <View style={styles.cardTitleRow}>
+                    <MaterialIcons name="sports-cricket" size={18} color={colors.technical} />
+                    <Text style={[styles.cardTitle, { color: colors.technical }]}>Technical Breakdown</Text>
+                  </View>
+                  <MetricBar label="Shot Execution" value={latest.shotExecution || 0} color={colors.technical} />
+                  <MetricBar label="Footwork" value={latest.footwork || 0} color={colors.technical} />
+                  <MetricBar label="Timing" value={latest.timing || 0} color={colors.technical} />
+                </View>
+
+                {/* Mental breakdown */}
+                <View style={styles.card}>
+                  <View style={styles.cardTitleRow}>
+                    <MaterialIcons name="psychology" size={18} color={colors.mental} />
+                    <Text style={[styles.cardTitle, { color: colors.mental }]}>Mental Breakdown</Text>
+                  </View>
+                  <MetricBar label="Focus & Concentration" value={latest.focus || 0} color={colors.mental} />
+                  <MetricBar label="Confidence" value={latest.confidence || 0} color={colors.mental} />
+                  <MetricBar label="Pressure Handling" value={latest.pressureHandling || 0} color={colors.mental} />
+                </View>
+
+                {/* Physical breakdown */}
+                <View style={styles.card}>
+                  <View style={styles.cardTitleRow}>
+                    <MaterialIcons name="fitness-center" size={18} color={colors.physical} />
+                    <Text style={[styles.cardTitle, { color: colors.physical }]}>Physical Breakdown</Text>
+                  </View>
+                  <MetricBar label="Energy Level" value={latest.energyLevel || 0} color={colors.physical} />
+                  <MetricBar label="Reaction Speed" value={latest.reactionSpeed || 0} color={colors.physical} />
+                </View>
+
+                {/* Tactical breakdown */}
+                <View style={styles.card}>
+                  <View style={styles.cardTitleRow}>
+                    <MaterialIcons name="lightbulb" size={18} color={colors.tactical} />
+                    <Text style={[styles.cardTitle, { color: colors.tactical }]}>Tactical Breakdown</Text>
+                  </View>
+                  <MetricBar label="Shot Selection" value={latest.shotSelection || 0} color={colors.tactical} />
+                  <MetricBar label="Game Awareness" value={latest.gameAwareness || 0} color={colors.tactical} />
+                </View>
+
+                {/* AI-style analysis */}
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Session Analysis</Text>
+                  {/* Strengths */}
+                  {[
+                    { label: 'Shot Execution', value: latest.shotExecution || 0 },
+                    { label: 'Footwork', value: latest.footwork || 0 },
+                    { label: 'Timing', value: latest.timing || 0 },
+                    { label: 'Focus', value: latest.focus || 0 },
+                    { label: 'Confidence', value: latest.confidence || 0 },
+                    { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
+                    { label: 'Energy Level', value: latest.energyLevel || 0 },
+                    { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
+                    { label: 'Shot Selection', value: latest.shotSelection || 0 },
+                    { label: 'Game Awareness', value: latest.gameAwareness || 0 },
+                  ].filter(m => m.value >= 4).length > 0 && (
+                    <View style={[styles.analysisBlock, { backgroundColor: '#E8F5E9', borderLeftColor: colors.success }]}>
                       <View style={styles.analysisHeader}>
-                        <MaterialIcons name="thumb-up" size={18} color={colors.success} />
-                        <Text style={[styles.analysisTitle, { color: colors.success }]}>What went well</Text>
+                        <MaterialIcons name="thumb-up" size={16} color={colors.success} />
+                        <Text style={[styles.analysisTitle, { color: colors.success }]}>Strengths this session</Text>
                       </View>
-                      {latestStrengths.strengths.map(s => (
-                        <View key={s} style={styles.analysisBullet}>
+                      {[
+                        { label: 'Shot Execution', value: latest.shotExecution || 0 },
+                        { label: 'Footwork', value: latest.footwork || 0 },
+                        { label: 'Timing', value: latest.timing || 0 },
+                        { label: 'Focus & Concentration', value: latest.focus || 0 },
+                        { label: 'Confidence', value: latest.confidence || 0 },
+                        { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
+                        { label: 'Energy Level', value: latest.energyLevel || 0 },
+                        { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
+                        { label: 'Shot Selection', value: latest.shotSelection || 0 },
+                        { label: 'Game Awareness', value: latest.gameAwareness || 0 },
+                      ].filter(m => m.value >= 4).map(m => (
+                        <View key={m.label} style={styles.analysisBullet}>
                           <View style={[styles.bullet, { backgroundColor: colors.success }]} />
-                          <Text style={styles.analysisText}>{s} performance was strong (4–5/5)</Text>
+                          <Text style={styles.analysisText}>{m.label} — rated {m.value}/5</Text>
                         </View>
                       ))}
                     </View>
                   )}
-                  {latestStrengths.improvements.length > 0 && (
-                    <View style={[styles.analysisBlock, { backgroundColor: '#FFF4E6', borderLeftColor: colors.warning }]}>
+                  {/* Improvements */}
+                  {[
+                    { label: 'Shot Execution', value: latest.shotExecution || 0 },
+                    { label: 'Footwork', value: latest.footwork || 0 },
+                    { label: 'Timing', value: latest.timing || 0 },
+                    { label: 'Focus', value: latest.focus || 0 },
+                    { label: 'Confidence', value: latest.confidence || 0 },
+                    { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
+                    { label: 'Energy Level', value: latest.energyLevel || 0 },
+                    { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
+                    { label: 'Shot Selection', value: latest.shotSelection || 0 },
+                    { label: 'Game Awareness', value: latest.gameAwareness || 0 },
+                  ].filter(m => m.value > 0 && m.value <= 2).length > 0 && (
+                    <View style={[styles.analysisBlock, { backgroundColor: '#FFF4E6', borderLeftColor: colors.warning, marginTop: spacing.sm }]}>
                       <View style={styles.analysisHeader}>
-                        <MaterialIcons name="trending-up" size={18} color={colors.warning} />
-                        <Text style={[styles.analysisTitle, { color: colors.warning }]}>What to work on</Text>
+                        <MaterialIcons name="trending-up" size={16} color={colors.warning} />
+                        <Text style={[styles.analysisTitle, { color: colors.warning }]}>Focus for next session</Text>
                       </View>
-                      {latestStrengths.improvements.map(s => (
-                        <View key={s} style={styles.analysisBullet}>
+                      {[
+                        { label: 'Shot Execution', value: latest.shotExecution || 0 },
+                        { label: 'Footwork', value: latest.footwork || 0 },
+                        { label: 'Timing', value: latest.timing || 0 },
+                        { label: 'Focus & Concentration', value: latest.focus || 0 },
+                        { label: 'Confidence', value: latest.confidence || 0 },
+                        { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
+                        { label: 'Energy Level', value: latest.energyLevel || 0 },
+                        { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
+                        { label: 'Shot Selection', value: latest.shotSelection || 0 },
+                        { label: 'Game Awareness', value: latest.gameAwareness || 0 },
+                      ].filter(m => m.value > 0 && m.value <= 2).map(m => (
+                        <View key={m.label} style={styles.analysisBullet}>
                           <View style={[styles.bullet, { backgroundColor: colors.warning }]} />
-                          <Text style={styles.analysisText}>{s} needs attention — rated 1–2/5</Text>
+                          <Text style={styles.analysisText}>{m.label} — needs improvement ({m.value}/5)</Text>
                         </View>
                       ))}
                     </View>
-                  )}
-                  {latestStrengths.strengths.length === 0 && latestStrengths.improvements.length === 0 && (
-                    <Text style={styles.analysisNeutral}>
-                      Average performance across all pillars (3/5). Focus on consistency to improve your rating next session!
-                    </Text>
                   )}
                   {latest.sessionNotes ? (
                     <View style={styles.notesBlock}>
-                      <Text style={styles.notesLabel}>Your Notes</Text>
+                      <Text style={styles.notesLabel}>Session Notes</Text>
                       <Text style={styles.notesText}>{latest.sessionNotes}</Text>
                     </View>
                   ) : null}
                 </View>
 
-                {/* Training types */}
+                {/* Training methods */}
                 {latest.trainingTypes && latest.trainingTypes.length > 0 && (
                   <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Training Methods Used</Text>
+                    <Text style={styles.cardTitle}>Training Methods</Text>
                     <View style={styles.tagsRow}>
                       {latest.trainingTypes.map(t => (
                         <View key={t} style={styles.tag}>
-                          <MaterialIcons name="sports-cricket" size={14} color={colors.primary} />
+                          <MaterialIcons name="sports-cricket" size={12} color={colors.primary} />
                           <Text style={styles.tagText}>{t}</Text>
                         </View>
                       ))}
@@ -529,56 +530,68 @@ export default function SessionAnalyticsScreen() {
           </>
         )}
 
-        {/* ─── HISTORY ───────────────────────────────────────────── */}
+        {/* ─────────────────── HISTORY ─────────────────── */}
         {activeTab === 'history' && (
           <>
             {sessions.length === 0 ? (
               <View style={styles.emptyState}>
-                <MaterialIcons name="history" size={64} color={colors.border} />
+                <MaterialIcons name="history" size={72} color={colors.border} />
                 <Text style={styles.emptyTitle}>No history yet</Text>
                 <Text style={styles.emptySubtitle}>Your completed sessions will appear here</Text>
               </View>
             ) : (
               <>
-                <Text style={styles.sectionLabel}>{sessions.length} Freestyle Sessions</Text>
+                <Text style={styles.sectionLabel}>{sessions.length} sessions recorded</Text>
                 {sessions.map((s, idx) => {
-                  const avg = ((s.physicalRating || 0) + (s.mentalRating || 0) + (s.tacticalRating || 0) + (s.technicalRating || 0)) / 4;
-                  const perf = getPerformanceLabel(avg);
+                  const tech = avgOf([s.shotExecution, s.footwork, s.timing]) || s.technicalRating || 0;
+                  const ment = avgOf([s.focus, s.confidence, s.pressureHandling]) || s.mentalRating || 0;
+                  const phys = avgOf([s.energyLevel, s.reactionSpeed]) || s.physicalRating || 0;
+                  const tact = avgOf([s.shotSelection, s.gameAwareness]) || s.tacticalRating || 0;
+                  const overall = avgOf([tech, ment, phys, tact]);
+                  const perf = getPerformanceLabel(overall);
+                  const mPct = s.middlePercent || (s.ballsFaced && s.ballsMiddled && s.ballsFaced > 0
+                    ? Math.round((s.ballsMiddled / s.ballsFaced) * 100) : null);
                   return (
                     <View key={s.id || idx} style={styles.historyCard}>
                       <View style={styles.historyTop}>
-                        <View style={styles.historyDateBox}>
-                          <Text style={styles.historyDate}>
-                            {formatDate(s.completed_at || s.scheduled_date)}
-                          </Text>
+                        <View>
+                          <Text style={styles.historyDate}>{formatDate(s.completed_at || s.scheduled_date)}</Text>
                           <Text style={styles.historyDuration}>{s.duration_minutes || 0} min</Text>
                         </View>
-                        <View style={[styles.badge, { backgroundColor: perf.color + '20' }]}>
-                          <Text style={[styles.badgeText, { color: perf.color }]}>{perf.label}</Text>
+                        <View style={{ flex: 1, alignItems: 'center' }}>
+                          {mPct !== null && (
+                            <Text style={styles.middlePctChip}>{mPct}% middle</Text>
+                          )}
+                          {(s.ballsFaced || 0) > 0 && (
+                            <Text style={styles.ballsFacedChip}>{s.ballsFaced} balls</Text>
+                          )}
                         </View>
-                        <Text style={styles.historyAvg}>{avg.toFixed(1)}/5</Text>
+                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                          <View style={[styles.badge, { backgroundColor: perf.color + '20' }]}>
+                            <Text style={[styles.badgeText, { color: perf.color }]}>{perf.label}</Text>
+                          </View>
+                          <Text style={styles.historyAvg}>{overall > 0 ? overall.toFixed(1) : '—'}/5</Text>
+                        </View>
                       </View>
-
-                      <View style={styles.historyRatings}>
+                      <View style={styles.historyMetrics}>
                         {[
-                          { label: 'PHY', value: s.physicalRating || 0, color: colors.physical },
-                          { label: 'MNT', value: s.mentalRating || 0, color: colors.mental },
-                          { label: 'TAC', value: s.tacticalRating || 0, color: colors.tactical },
-                          { label: 'TEC', value: s.technicalRating || 0, color: colors.technical },
-                        ].map(r => (
-                          <View key={r.label} style={styles.historyRatingItem}>
-                            <Text style={styles.historyRatingLabel}>{r.label}</Text>
-                            <View style={styles.miniBarBg}>
-                              <View style={[styles.miniBar, { width: `${(r.value / 5) * 100}%`, backgroundColor: r.color }]} />
-                            </View>
-                            <Text style={[styles.historyRatingVal, { color: r.color }]}>{r.value}</Text>
+                          { label: 'Shot Exec', value: s.shotExecution || 0, color: colors.technical },
+                          { label: 'Footwork', value: s.footwork || 0, color: colors.technical },
+                          { label: 'Timing', value: s.timing || 0, color: colors.technical },
+                          { label: 'Focus', value: s.focus || 0, color: colors.mental },
+                          { label: 'Confidence', value: s.confidence || 0, color: colors.mental },
+                          { label: 'Pressure', value: s.pressureHandling || 0, color: colors.mental },
+                          { label: 'Energy', value: s.energyLevel || 0, color: colors.physical },
+                          { label: 'Reaction', value: s.reactionSpeed || 0, color: colors.physical },
+                          { label: 'Shot Sel.', value: s.shotSelection || 0, color: colors.tactical },
+                          { label: 'Game IQ', value: s.gameAwareness || 0, color: colors.tactical },
+                        ].filter(m => m.value > 0).map(m => (
+                          <View key={m.label} style={styles.historyMetricChip}>
+                            <Text style={[styles.historyMetricLabel, { color: m.color }]}>{m.label}</Text>
+                            <Text style={[styles.historyMetricVal, { color: m.color }]}>{m.value}</Text>
                           </View>
                         ))}
                       </View>
-
-                      {(s.ballsFaced || 0) > 0 && (
-                        <Text style={styles.historyBalls}>{s.ballsFaced} balls faced</Text>
-                      )}
                     </View>
                   );
                 })}
@@ -587,92 +600,127 @@ export default function SessionAnalyticsScreen() {
           </>
         )}
 
-        {/* ─── TRENDS ────────────────────────────────────────────── */}
+        {/* ─────────────────── TRENDS ─────────────────── */}
         {activeTab === 'trends' && (
           <>
             {sessions.length < 2 ? (
               <View style={styles.emptyState}>
-                <MaterialIcons name="show-chart" size={64} color={colors.border} />
+                <MaterialIcons name="show-chart" size={72} color={colors.border} />
                 <Text style={styles.emptyTitle}>Not enough data</Text>
                 <Text style={styles.emptySubtitle}>Complete at least 2 sessions to see trends</Text>
               </View>
             ) : (
               <>
-                {/* Overall averages */}
+                {/* Career stats */}
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>All-Time Averages</Text>
-                  <Text style={styles.cardSubtitle}>Based on {sessions.length} sessions</Text>
-                  <View style={styles.avgGrid}>
-                    {[
-                      { label: 'Physical', key: 'physicalRating' as const, color: colors.physical, icon: 'fitness-center' as const },
-                      { label: 'Mental', key: 'mentalRating' as const, color: colors.mental, icon: 'psychology' as const },
-                      { label: 'Tactical', key: 'tacticalRating' as const, color: colors.tactical, icon: 'lightbulb' as const },
-                      { label: 'Technical', key: 'technicalRating' as const, color: colors.technical, icon: 'sports-cricket' as const },
-                    ].map(m => {
-                      const avg = avgByMetric(m.key);
-                      return (
-                        <View key={m.label} style={[styles.avgCard, { borderTopColor: m.color }]}>
-                          <MaterialIcons name={m.icon} size={20} color={m.color} />
-                          <Text style={[styles.avgValue, { color: m.color }]}>{avg}</Text>
-                          <Text style={styles.avgLabel}>{m.label}</Text>
-                        </View>
-                      );
-                    })}
+                  <Text style={styles.cardTitle}>Career Stats</Text>
+                  <View style={styles.careerGrid}>
+                    <View style={styles.careerStat}>
+                      <MaterialIcons name="event" size={20} color={colors.primary} />
+                      <Text style={styles.careerVal}>{sessions.length}</Text>
+                      <Text style={styles.careerLabel}>Sessions</Text>
+                    </View>
+                    <View style={styles.careerStat}>
+                      <MaterialIcons name="timer" size={20} color={colors.info} />
+                      <Text style={styles.careerVal}>{sessions.reduce((a, s) => a + (s.duration_minutes || 0), 0)}</Text>
+                      <Text style={styles.careerLabel}>Total Mins</Text>
+                    </View>
+                    <View style={styles.careerStat}>
+                      <MaterialIcons name="sports-cricket" size={20} color={colors.technical} />
+                      <Text style={styles.careerVal}>{totalBallsFaced}</Text>
+                      <Text style={styles.careerLabel}>Balls Faced</Text>
+                    </View>
+                    {avgMiddlePct !== null && (
+                      <View style={styles.careerStat}>
+                        <MaterialIcons name="gps-fixed" size={20} color={colors.success} />
+                        <Text style={[styles.careerVal, { color: colors.success }]}>{avgMiddlePct}%</Text>
+                        <Text style={styles.careerLabel}>Avg Middle %</Text>
+                      </View>
+                    )}
+                    {totalBoundaries > 0 && (
+                      <View style={styles.careerStat}>
+                        <MaterialIcons name="star" size={20} color={colors.warning} />
+                        <Text style={styles.careerVal}>{totalBoundaries}</Text>
+                        <Text style={styles.careerLabel}>Boundaries</Text>
+                      </View>
+                    )}
                   </View>
                 </View>
 
-                {/* Bar chart: Physical over sessions */}
+                {/* All-time averages per metric */}
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Physical Rating Trend</Text>
-                  <Text style={styles.cardSubtitle}>Last {trendSessions.length} sessions</Text>
-                  <BarChart
-                    color={colors.physical}
-                    data={trendSessions.map((s, i) => ({
-                      label: formatDate(s.completed_at || s.scheduled_date),
-                      value: s.physicalRating || 0,
-                      max: 5,
-                    }))}
-                  />
+                  <Text style={styles.cardTitle}>All-Time Metric Averages</Text>
+                  <Text style={styles.cardSubtitle}>Across {sessions.length} sessions</Text>
+                  <View style={{ marginTop: spacing.sm }}>
+                    {[
+                      { label: 'Shot Execution', key: 'shotExecution' as const, color: colors.technical },
+                      { label: 'Footwork', key: 'footwork' as const, color: colors.technical },
+                      { label: 'Timing', key: 'timing' as const, color: colors.technical },
+                      { label: 'Focus', key: 'focus' as const, color: colors.mental },
+                      { label: 'Confidence', key: 'confidence' as const, color: colors.mental },
+                      { label: 'Pressure Handling', key: 'pressureHandling' as const, color: colors.mental },
+                      { label: 'Energy Level', key: 'energyLevel' as const, color: colors.physical },
+                      { label: 'Reaction Speed', key: 'reactionSpeed' as const, color: colors.physical },
+                      { label: 'Shot Selection', key: 'shotSelection' as const, color: colors.tactical },
+                      { label: 'Game Awareness', key: 'gameAwareness' as const, color: colors.tactical },
+                    ].map(m => (
+                      <MetricBar key={m.label} label={m.label} value={avgAcrossSessions(m.key)} color={m.color} />
+                    ))}
+                  </View>
                 </View>
 
+                {/* Technical trend chart */}
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Mental Rating Trend</Text>
-                  <Text style={styles.cardSubtitle}>Last {trendSessions.length} sessions</Text>
-                  <BarChart
-                    color={colors.mental}
-                    data={trendSessions.map(s => ({
-                      label: formatDate(s.completed_at || s.scheduled_date),
-                      value: s.mentalRating || 0,
-                      max: 5,
-                    }))}
-                  />
-                </View>
-
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Tactical Rating Trend</Text>
-                  <Text style={styles.cardSubtitle}>Last {trendSessions.length} sessions</Text>
-                  <BarChart
-                    color={colors.tactical}
-                    data={trendSessions.map(s => ({
-                      label: formatDate(s.completed_at || s.scheduled_date),
-                      value: s.tacticalRating || 0,
-                      max: 5,
-                    }))}
-                  />
-                </View>
-
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Technical Rating Trend</Text>
+                  <Text style={styles.cardTitle}>Shot Execution Trend</Text>
                   <Text style={styles.cardSubtitle}>Last {trendSessions.length} sessions</Text>
                   <BarChart
                     color={colors.technical}
-                    data={trendSessions.map(s => ({
-                      label: formatDate(s.completed_at || s.scheduled_date),
-                      value: s.technicalRating || 0,
-                      max: 5,
-                    }))}
+                    data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.shotExecution || 0 }))}
                   />
                 </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Footwork Trend</Text>
+                  <BarChart color={colors.technical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.footwork || 0 }))} />
+                </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Timing Trend</Text>
+                  <BarChart color={colors.technical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.timing || 0 }))} />
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Focus & Concentration Trend</Text>
+                  <BarChart color={colors.mental} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.focus || 0 }))} />
+                </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Confidence Trend</Text>
+                  <BarChart color={colors.mental} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.confidence || 0 }))} />
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Energy Level Trend</Text>
+                  <BarChart color={colors.physical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.energyLevel || 0 }))} />
+                </View>
+
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Shot Selection Trend</Text>
+                  <BarChart color={colors.tactical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.shotSelection || 0 }))} />
+                </View>
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Game Awareness Trend</Text>
+                  <BarChart color={colors.tactical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.gameAwareness || 0 }))} />
+                </View>
+
+                {/* Middle % trend */}
+                {sessions.some(s => (s.middlePercent || 0) > 0) && (
+                  <View style={styles.card}>
+                    <Text style={styles.cardTitle}>Middle % Trend</Text>
+                    <BarChart
+                      color={colors.success}
+                      maxVal={100}
+                      data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.middlePercent || 0 }))}
+                    />
+                  </View>
+                )}
 
                 {/* Balls faced trend */}
                 {sessions.some(s => (s.ballsFaced || 0) > 0) && (
@@ -680,40 +728,11 @@ export default function SessionAnalyticsScreen() {
                     <Text style={styles.cardTitle}>Balls Faced Trend</Text>
                     <BarChart
                       color={colors.primary}
-                      data={trendSessions.map(s => ({
-                        label: formatDate(s.completed_at || s.scheduled_date),
-                        value: s.ballsFaced || 0,
-                        max: Math.max(...trendSessions.map(x => x.ballsFaced || 0), 1),
-                      }))}
+                      maxVal={Math.max(...sessions.map(s => s.ballsFaced || 0), 1)}
+                      data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.ballsFaced || 0 }))}
                     />
                   </View>
                 )}
-
-                {/* Summary stats */}
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Training Summary</Text>
-                  <View style={styles.summaryStats}>
-                    <View style={styles.summaryStatItem}>
-                      <MaterialIcons name="event" size={22} color={colors.primary} />
-                      <Text style={styles.summaryStatValue}>{sessions.length}</Text>
-                      <Text style={styles.summaryStatLabel}>Total Sessions</Text>
-                    </View>
-                    <View style={styles.summaryStatItem}>
-                      <MaterialIcons name="timer" size={22} color={colors.info} />
-                      <Text style={styles.summaryStatValue}>
-                        {sessions.reduce((a, s) => a + (s.duration_minutes || 0), 0)}
-                      </Text>
-                      <Text style={styles.summaryStatLabel}>Total Minutes</Text>
-                    </View>
-                    <View style={styles.summaryStatItem}>
-                      <MaterialIcons name="sports-cricket" size={22} color={colors.tactical} />
-                      <Text style={styles.summaryStatValue}>
-                        {sessions.reduce((a, s) => a + (s.ballsFaced || 0), 0)}
-                      </Text>
-                      <Text style={styles.summaryStatLabel}>Total Balls</Text>
-                    </View>
-                  </View>
-                </View>
               </>
             )}
           </>
@@ -735,78 +754,67 @@ const styles = StyleSheet.create({
   },
   headerBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'center' },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
+  headerSubtitle: { ...typography.caption, color: colors.textSecondary },
 
   tabBar: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
+    flexDirection: 'row', backgroundColor: colors.surface,
     borderBottomWidth: 1, borderBottomColor: colors.border,
-    paddingHorizontal: spacing.md,
   },
   tab: {
-    flex: 1, paddingVertical: spacing.md, alignItems: 'center',
-    borderBottomWidth: 2, borderBottomColor: 'transparent',
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent',
   },
   tabActive: { borderBottomColor: colors.primary },
-  tabText: { ...typography.body, color: colors.textSecondary, fontWeight: '600' },
+  tabText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
   tabTextActive: { color: colors.primary },
 
   scroll: { flex: 1 },
-  scrollContent: { padding: spacing.md, paddingBottom: spacing.xxl },
+  scrollContent: { padding: spacing.md, paddingBottom: 60 },
 
   card: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    padding: spacing.lg, marginBottom: spacing.md,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border,
   },
-  cardTitle: { ...typography.h4, color: colors.text, fontWeight: '700', marginBottom: 4 },
-  cardSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.md },
-
-  // Overall row
-  overallRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  overallLeft: { flex: 1 },
-  overallRight: { flex: 1, alignItems: 'flex-end', gap: spacing.xs },
-  overallScore: { fontSize: 48, fontWeight: '800', color: colors.text, lineHeight: 56 },
-  overallMax: { fontSize: 20, color: colors.textSecondary },
+  heroCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  heroLeft: { flex: 1 },
+  heroRight: { flex: 1, alignItems: 'flex-end', gap: 6 },
+  heroLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
+  heroScore: { fontSize: 52, fontWeight: '800', color: colors.text, lineHeight: 60 },
+  heroMax: { fontSize: 22, color: colors.textSecondary },
+  heroStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  heroStatText: { ...typography.caption, color: colors.textSecondary },
 
   badge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full, alignSelf: 'flex-start' },
   badgeText: { ...typography.caption, fontWeight: '700' },
 
-  metaStat: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  metaStatText: { ...typography.caption, color: colors.textSecondary, maxWidth: 120 },
+  cardTitle: { ...typography.h4, color: colors.text, fontWeight: '700', marginBottom: spacing.md },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
+  cardSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: -spacing.sm, marginBottom: spacing.md },
 
-  // Pillars
-  pillarGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
+  pillarGrid: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
   pillarCard: {
-    width: '46%', backgroundColor: colors.background, borderRadius: borderRadius.md,
-    padding: spacing.md, alignItems: 'center', gap: 6,
-    borderWidth: 1, borderColor: colors.border,
+    flex: 1, minWidth: '44%', backgroundColor: colors.background, borderRadius: borderRadius.md,
+    padding: spacing.md, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderTopWidth: 3,
   },
-  pillarIcon: { width: 40, height: 40, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center' },
+  pillarScore: { fontSize: 26, fontWeight: '800' },
   pillarLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-  pillarScore: { ...typography.h3, fontWeight: '800' },
-  pillarBarBg: { width: '100%', height: 6, backgroundColor: colors.border, borderRadius: 3 },
-  pillarBar: { height: 6, borderRadius: 3 },
 
   // Analysis
   analysisBlock: {
-    backgroundColor: '#E8F5E9', borderRadius: borderRadius.md, padding: spacing.md,
-    marginTop: spacing.sm, borderLeftWidth: 3, borderLeftColor: colors.success,
+    borderRadius: borderRadius.md, padding: spacing.md, borderLeftWidth: 3,
   },
   analysisHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
-  analysisTitle: { ...typography.body, fontWeight: '700' },
+  analysisTitle: { ...typography.bodySmall, fontWeight: '700' },
   analysisBullet: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
   bullet: { width: 6, height: 6, borderRadius: 3 },
   analysisText: { ...typography.bodySmall, color: colors.text, flex: 1 },
-  analysisNeutral: { ...typography.body, color: colors.textSecondary, lineHeight: 22 },
   notesBlock: {
-    marginTop: spacing.md, backgroundColor: colors.background,
-    borderRadius: borderRadius.md, padding: spacing.md,
+    marginTop: spacing.md, backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.md,
     borderWidth: 1, borderColor: colors.border,
   },
   notesLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   notesText: { ...typography.body, color: colors.text, lineHeight: 22 },
-
-  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.sm },
+  tagsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   tag: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     backgroundColor: colors.primary + '15', paddingHorizontal: spacing.sm, paddingVertical: 6,
@@ -817,39 +825,30 @@ const styles = StyleSheet.create({
   // History
   sectionLabel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
   historyCard: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    padding: spacing.md, marginBottom: spacing.sm,
-    borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
+    marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border,
   },
-  historyTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  historyDateBox: { flex: 1 },
+  historyTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md, gap: spacing.sm },
   historyDate: { ...typography.body, color: colors.text, fontWeight: '700' },
   historyDuration: { ...typography.caption, color: colors.textSecondary },
   historyAvg: { ...typography.h4, color: colors.text, fontWeight: '800' },
-  historyRatings: { gap: 6 },
-  historyRatingItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  historyRatingLabel: { ...typography.caption, color: colors.textSecondary, width: 30, fontWeight: '600' },
-  miniBarBg: { flex: 1, height: 8, backgroundColor: colors.border, borderRadius: 4 },
-  miniBar: { height: 8, borderRadius: 4, minWidth: 4 },
-  historyRatingVal: { ...typography.caption, fontWeight: '800', width: 16, textAlign: 'right' },
-  historyBalls: { ...typography.caption, color: colors.textSecondary, marginTop: spacing.sm },
+  middlePctChip: { ...typography.caption, color: colors.success, fontWeight: '700' },
+  ballsFacedChip: { ...typography.caption, color: colors.textSecondary },
+  historyMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  historyMetricChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4,
+    backgroundColor: colors.background, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border,
+  },
+  historyMetricLabel: { fontSize: 10, fontWeight: '600' },
+  historyMetricVal: { fontSize: 11, fontWeight: '800' },
 
   // Trends
-  avgGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
-  avgCard: {
-    flex: 1, minWidth: '40%', backgroundColor: colors.background,
-    borderRadius: borderRadius.md, padding: spacing.md, alignItems: 'center', gap: 4,
-    borderTopWidth: 3, borderWidth: 1, borderColor: colors.border,
-  },
-  avgValue: { fontSize: 28, fontWeight: '800' },
-  avgLabel: { ...typography.caption, color: colors.textSecondary },
+  careerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+  careerStat: { flex: 1, minWidth: '28%', alignItems: 'center', gap: 4 },
+  careerVal: { ...typography.h3, fontWeight: '800', color: colors.text },
+  careerLabel: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
 
-  summaryStats: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
-  summaryStatItem: { flex: 1, alignItems: 'center', gap: 4 },
-  summaryStatValue: { ...typography.h3, fontWeight: '800', color: colors.text },
-  summaryStatLabel: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
-
-  emptyState: { alignItems: 'center', paddingVertical: spacing.xxl, gap: spacing.md },
+  emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
-  emptySubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
+  emptySubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl },
 });

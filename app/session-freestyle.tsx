@@ -83,13 +83,39 @@ export default function FreestyleSessionScreen() {
   const timerInterval = useRef<NodeJS.Timeout | null>(null);
   const tipRotation = useRef<NodeJS.Timeout | null>(null);
 
-  // Step 3: Post-session ratings
+  // Step 3: Post-session ratings — Batting Stats
   const [ballsFaced, setBallsFaced] = useState('');
-  const [physicalRating, setPhysicalRating] = useState(0);
-  const [mentalRating, setMentalRating] = useState(0);
-  const [tacticalRating, setTacticalRating] = useState(0);
-  const [technicalRating, setTechnicalRating] = useState(0);
+  const [ballsMiddled, setBallsMiddled] = useState('');
+  const [boundariesHit, setBoundariesHit] = useState('');
+  // Technical
+  const [shotExecution, setShotExecution] = useState(0);
+  const [footwork, setFootwork] = useState(0);
+  const [timing, setTiming] = useState(0);
+  // Mental
+  const [focus, setFocus] = useState(0);
+  const [confidence, setConfidence] = useState(0);
+  const [pressureHandling, setPressureHandling] = useState(0);
+  // Physical
+  const [energyLevel, setEnergyLevel] = useState(0);
+  const [reactionSpeed, setReactionSpeed] = useState(0);
+  // Tactical
+  const [shotSelection, setShotSelection] = useState(0);
+  const [gameAwareness, setGameAwareness] = useState(0);
   const [sessionNotes, setSessionNotes] = useState('');
+
+  // Derived averages (used for XP and analytics)
+  const physicalRating = energyLevel > 0 || reactionSpeed > 0
+    ? Math.round(((energyLevel || 0) + (reactionSpeed || 0)) / (energyLevel > 0 && reactionSpeed > 0 ? 2 : 1))
+    : 0;
+  const mentalRating = focus > 0 || confidence > 0 || pressureHandling > 0
+    ? Math.round(((focus || 0) + (confidence || 0) + (pressureHandling || 0)) / [focus, confidence, pressureHandling].filter(v => v > 0).length)
+    : 0;
+  const tacticalRating = shotSelection > 0 || gameAwareness > 0
+    ? Math.round(((shotSelection || 0) + (gameAwareness || 0)) / (shotSelection > 0 && gameAwareness > 0 ? 2 : 1))
+    : 0;
+  const technicalRating = shotExecution > 0 || footwork > 0 || timing > 0
+    ? Math.round(((shotExecution || 0) + (footwork || 0) + (timing || 0)) / [shotExecution, footwork, timing].filter(v => v > 0).length)
+    : 0;
 
   // Step 4: Summary
   const [xpBreakdown, setXpBreakdown] = useState<any>(null);
@@ -104,7 +130,7 @@ export default function FreestyleSessionScreen() {
 
       tipRotation.current = setInterval(() => {
         setCurrentTipIndex((prev) => (prev + 1) % SESSION_TIPS.length);
-      }, 15000); // Rotate tips every 15 seconds
+      }, 15000);
 
       return () => {
         if (timerInterval.current) clearInterval(timerInterval.current);
@@ -143,14 +169,10 @@ export default function FreestyleSessionScreen() {
       showAlert('Error', 'Please select at least one training type');
       return;
     }
-
-    // If scheduling for later, save as planned session
     if (sessionMode === 'later') {
       await handleScheduleForLater();
       return;
     }
-
-    // Otherwise, start session now
     setSessionStartTime(new Date());
     setBallsFacedInput('0');
     setIsPaused(false);
@@ -162,10 +184,7 @@ export default function FreestyleSessionScreen() {
       showAlert('Error', 'You must be logged in');
       return;
     }
-
     setSaving(true);
-
-    // Combine date and time
     const scheduledDateTime = new Date(
       scheduledDate.getFullYear(),
       scheduledDate.getMonth(),
@@ -173,15 +192,12 @@ export default function FreestyleSessionScreen() {
       scheduledTime.getHours(),
       scheduledTime.getMinutes()
     );
-
     const trainingTypesText = Array.from(selectedTrainingTypes)
       .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label)
       .join(', ');
-
     let notes = `Training Types: ${trainingTypesText}\n`;
     if (focusArea) notes += `Focus Area: ${focusArea}\n`;
     if (sessionGoal) notes += `Session Goal: ${sessionGoal}`;
-
     const { data: session, error } = await sessionService.createSession({
       user_id: user.id,
       title: 'Freestyle Session',
@@ -191,24 +207,18 @@ export default function FreestyleSessionScreen() {
       status: 'planned',
       notes,
     });
-
     setSaving(false);
-
     if (error) {
       showAlert('Error', error);
       return;
     }
-
     showAlert('Success', 'Session scheduled successfully');
     router.back();
   };
 
-  const togglePause = () => {
-    setIsPaused(!isPaused);
-  };
+  const togglePause = () => setIsPaused(!isPaused);
 
   const handleBallsFacedInputChange = (text: string) => {
-    // Only allow numbers
     const numericValue = text.replace(/[^0-9]/g, '');
     setBallsFacedInput(numericValue);
     setBallsFacedLive(parseInt(numericValue) || 0);
@@ -234,12 +244,12 @@ export default function FreestyleSessionScreen() {
   };
 
   const isStep3Valid = () => {
-    // Balls faced is now optional
-    if (physicalRating === 0) return false;
-    if (mentalRating === 0) return false;
-    if (tacticalRating === 0) return false;
-    if (technicalRating === 0) return false;
-    return true;
+    // Need at least one rating from each pillar
+    const hasTechnical = shotExecution > 0 || footwork > 0 || timing > 0;
+    const hasMental = focus > 0 || confidence > 0 || pressureHandling > 0;
+    const hasPhysical = energyLevel > 0 || reactionSpeed > 0;
+    const hasTactical = shotSelection > 0 || gameAwareness > 0;
+    return hasTechnical && hasMental && hasPhysical && hasTactical;
   };
 
   const handleCompleteSession = async () => {
@@ -247,32 +257,49 @@ export default function FreestyleSessionScreen() {
       showAlert('Error', 'You must be logged in');
       return;
     }
-
     if (!isStep3Valid()) {
-      showAlert('Error', 'Please complete all required fields');
+      showAlert('Incomplete', 'Please rate at least one metric in each pillar (Technical, Mental, Physical, Tactical)');
       return;
     }
-
     setSaving(true);
-
     const actualDuration = Math.floor(elapsedSeconds / 60);
     const trainingTypesText = Array.from(selectedTrainingTypes)
       .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label)
       .join(', ');
 
-    // Build session notes
+    const middlePct = ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0
+      ? Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)
+      : 0;
+
     let notes = `Training Types: ${trainingTypesText}\n`;
     if (focusArea) notes += `Focus Area: ${focusArea}\n`;
     if (sessionGoal) notes += `Session Goal: ${sessionGoal}\n`;
-    notes += `\n--- Session Data ---\n`;
+    notes += `\n--- Batting Stats ---\n`;
     if (ballsFaced) notes += `Balls Faced: ${ballsFaced}\n`;
-    notes += `Physical: ${physicalRating}/5\n`;
+    if (ballsMiddled) notes += `Balls Middled: ${ballsMiddled}\n`;
+    if (middlePct > 0) notes += `Middle %: ${middlePct}\n`;
+    if (boundariesHit) notes += `Boundaries Hit: ${boundariesHit}\n`;
+    notes += `\n--- Technical ---\n`;
+    notes += `Shot Execution: ${shotExecution}/5\n`;
+    notes += `Footwork: ${footwork}/5\n`;
+    notes += `Timing: ${timing}/5\n`;
+    notes += `\n--- Mental ---\n`;
+    notes += `Focus: ${focus}/5\n`;
+    notes += `Confidence: ${confidence}/5\n`;
+    notes += `Pressure Handling: ${pressureHandling}/5\n`;
+    notes += `\n--- Physical ---\n`;
+    notes += `Energy Level: ${energyLevel}/5\n`;
+    notes += `Reaction Speed: ${reactionSpeed}/5\n`;
+    notes += `\n--- Tactical ---\n`;
+    notes += `Shot Selection: ${shotSelection}/5\n`;
+    notes += `Game Awareness: ${gameAwareness}/5\n`;
+    // Legacy fields for backwards-compatible analytics parsing
+    notes += `\nPhysical: ${physicalRating}/5\n`;
     notes += `Mental: ${mentalRating}/5\n`;
     notes += `Tactical: ${tacticalRating}/5\n`;
     notes += `Technical: ${technicalRating}/5`;
     if (sessionNotes) notes += `\n\nNotes: ${sessionNotes}`;
 
-    // Create session
     const { data: session, error } = await sessionService.createSession({
       user_id: user.id,
       title: 'Freestyle Session',
@@ -282,31 +309,23 @@ export default function FreestyleSessionScreen() {
       status: 'completed',
       notes,
     });
-
     if (error) {
       setSaving(false);
       showAlert('Error', error);
       return;
     }
-
-    // Calculate performance rating from all ratings
     const avgRating = (physicalRating + mentalRating + tacticalRating + technicalRating) / 4;
-
-    // Award XP using the new system
     const { data: xpResult, error: xpError } = await progressService.awardDrillXP(
       user.id,
-      'Physical', // Default pillar for freestyle sessions
+      'Physical',
       Math.round(avgRating),
       actualDuration
     );
-
     if (xpError || !xpResult) {
-      console.error('XP award error:', xpError);
       setSaving(false);
       showAlert('Error', 'Failed to save progress');
       return;
     }
-
     setSaving(false);
     setXpBreakdown(xpResult.xpBreakdown);
     setCurrentStep(4);
@@ -315,25 +334,33 @@ export default function FreestyleSessionScreen() {
   const RatingStars = ({
     rating,
     onRate,
-    label
+    label,
+    sublabel,
+    color,
   }: {
     rating: number;
     onRate: (rating: number) => void;
     label: string;
+    sublabel?: string;
+    color?: string;
   }) => (
     <View style={styles.ratingContainer}>
-      <Text style={styles.ratingLabel}>{label}</Text>
+      <View style={styles.ratingLabelRow}>
+        <Text style={styles.ratingLabel}>{label}</Text>
+        {rating > 0 && (
+          <View style={[styles.ratingValueBadge, { backgroundColor: (color || colors.tactical) + '20' }]}>
+            <Text style={[styles.ratingValueText, { color: color || colors.tactical }]}>{rating}/5</Text>
+          </View>
+        )}
+      </View>
+      {sublabel && <Text style={styles.ratingSublabel}>{sublabel}</Text>}
       <View style={styles.starsRow}>
         {[1, 2, 3, 4, 5].map((star) => (
-          <Pressable
-            key={star}
-            onPress={() => onRate(star)}
-            style={styles.starButton}
-          >
+          <Pressable key={star} onPress={() => onRate(star)} style={styles.starButton}>
             <MaterialIcons
               name={star <= rating ? 'star' : 'star-border'}
-              size={32}
-              color={star <= rating ? colors.tactical : colors.border}
+              size={30}
+              color={star <= rating ? (color || colors.tactical) : colors.border}
             />
           </Pressable>
         ))}
@@ -341,107 +368,55 @@ export default function FreestyleSessionScreen() {
     </View>
   );
 
-  // Render step content
   const renderStepContent = () => {
     switch (currentStep) {
-      case 1:
-        return renderStep1();
-      case 2:
-        return renderStep2();
-      case 3:
-        return renderStep3();
-      case 4:
-        return renderStep4();
-      default:
-        return null;
+      case 1: return renderStep1();
+      case 2: return renderStep2();
+      case 3: return renderStep3();
+      case 4: return renderStep4();
+      default: return null;
     }
   };
 
   const renderStep1 = () => (
-
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-      {/* Session Mode Selection */}
       <View style={styles.modeSelection}>
         <Text style={styles.stepTitle}>When do you want to train?</Text>
         <View style={styles.modeButtons}>
           <Pressable
-            style={[
-              styles.modeButton,
-              sessionMode === 'now' && styles.modeButtonActive,
-            ]}
+            style={[styles.modeButton, sessionMode === 'now' && styles.modeButtonActive]}
             onPress={() => setSessionMode('now')}
           >
-            <MaterialIcons
-              name="play-arrow"
-              size={24}
-              color={sessionMode === 'now' ? colors.textLight : colors.primary}
-            />
-            <Text
-              style={[
-                styles.modeButtonText,
-                sessionMode === 'now' && styles.modeButtonTextActive,
-              ]}
-            >
-              Start Now
-            </Text>
+            <MaterialIcons name="play-arrow" size={24} color={sessionMode === 'now' ? colors.textLight : colors.primary} />
+            <Text style={[styles.modeButtonText, sessionMode === 'now' && styles.modeButtonTextActive]}>Start Now</Text>
           </Pressable>
           <Pressable
-            style={[
-              styles.modeButton,
-              sessionMode === 'later' && styles.modeButtonActive,
-            ]}
+            style={[styles.modeButton, sessionMode === 'later' && styles.modeButtonActive]}
             onPress={() => setSessionMode('later')}
           >
-            <MaterialIcons
-              name="schedule"
-              size={24}
-              color={sessionMode === 'later' ? colors.textLight : colors.primary}
-            />
-            <Text
-              style={[
-                styles.modeButtonText,
-                sessionMode === 'later' && styles.modeButtonTextActive,
-              ]}
-            >
-              Schedule Later
-            </Text>
+            <MaterialIcons name="schedule" size={24} color={sessionMode === 'later' ? colors.textLight : colors.primary} />
+            <Text style={[styles.modeButtonText, sessionMode === 'later' && styles.modeButtonTextActive]}>Schedule Later</Text>
           </Pressable>
         </View>
       </View>
 
-      {/* Date/Time Pickers - Only show when scheduling for later */}
       {sessionMode === 'later' && (
         <View style={styles.dateTimeSection}>
-          {/* Date row: locked if came from calendar, editable otherwise */}
           <View style={styles.formGroup}>
             <Text style={styles.label}>Date</Text>
             {prefilledDateStr ? (
-              // Locked date from calendar tap
               <View style={[styles.dateTimeButton, { backgroundColor: colors.primary + '12' }]}>
                 <MaterialIcons name="event" size={20} color={colors.primary} />
                 <Text style={[styles.dateTimeButtonText, { color: colors.primary, fontWeight: '600' }]}>
-                  {scheduledDate.toLocaleDateString('en-US', {
-                    weekday: 'short',
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {scheduledDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                 </Text>
                 <MaterialIcons name="lock" size={16} color={colors.primary} />
               </View>
             ) : (
-              <Pressable
-                style={styles.dateTimeButton}
-                onPress={() => setShowDatePicker(true)}
-              >
+              <Pressable style={styles.dateTimeButton} onPress={() => setShowDatePicker(true)}>
                 <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
                 <Text style={styles.dateTimeButtonText}>
-                  {scheduledDate.toLocaleDateString('en-US', {
-                    weekday: 'short',
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric',
-                  })}
+                  {scheduledDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                 </Text>
               </Pressable>
             )}
@@ -460,17 +435,10 @@ export default function FreestyleSessionScreen() {
           </View>
           <View style={styles.formGroup}>
             <Text style={styles.label}>Time</Text>
-            <Pressable
-              style={styles.dateTimeButton}
-              onPress={() => setShowTimePicker(true)}
-            >
+            <Pressable style={styles.dateTimeButton} onPress={() => setShowTimePicker(true)}>
               <MaterialIcons name="access-time" size={20} color={colors.primary} />
               <Text style={styles.dateTimeButtonText}>
-                {scheduledTime.toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                  hour12: true,
-                })}
+                {scheduledTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
               </Text>
             </Pressable>
             {showTimePicker && (
@@ -501,15 +469,9 @@ export default function FreestyleSessionScreen() {
               onPress={() => toggleTrainingType(type.id)}
             >
               <View style={[styles.trainingTypeIcon, isSelected && styles.trainingTypeIconSelected]}>
-                <MaterialIcons
-                  name={type.icon as any}
-                  size={32}
-                  color={isSelected ? colors.textLight : colors.primary}
-                />
+                <MaterialIcons name={type.icon as any} size={32} color={isSelected ? colors.textLight : colors.primary} />
               </View>
-              <Text style={[styles.trainingTypeLabel, isSelected && styles.trainingTypeLabelSelected]}>
-                {type.label}
-              </Text>
+              <Text style={[styles.trainingTypeLabel, isSelected && styles.trainingTypeLabelSelected]}>{type.label}</Text>
               {isSelected && (
                 <View style={styles.checkMark}>
                   <MaterialIcons name="check-circle" size={24} color={colors.success} />
@@ -531,7 +493,6 @@ export default function FreestyleSessionScreen() {
             placeholderTextColor={colors.textSecondary}
           />
         </View>
-
         <View style={styles.formGroup}>
           <Text style={styles.label}>Session Goal (Optional)</Text>
           <TextInput
@@ -542,25 +503,16 @@ export default function FreestyleSessionScreen() {
             placeholderTextColor={colors.textSecondary}
           />
         </View>
-
         <View style={styles.formGroup}>
           <Text style={styles.label}>Estimated Duration</Text>
           <View style={styles.durationOptions}>
             {['15', '30', '45', '60', '90'].map((mins) => (
               <Pressable
                 key={mins}
-                style={[
-                  styles.durationOption,
-                  estimatedDuration === mins && styles.durationOptionSelected,
-                ]}
+                style={[styles.durationOption, estimatedDuration === mins && styles.durationOptionSelected]}
                 onPress={() => setEstimatedDuration(mins)}
               >
-                <Text
-                  style={[
-                    styles.durationOptionText,
-                    estimatedDuration === mins && styles.durationOptionTextSelected,
-                  ]}
-                >
+                <Text style={[styles.durationOptionText, estimatedDuration === mins && styles.durationOptionTextSelected]}>
                   {mins} min
                 </Text>
               </Pressable>
@@ -572,28 +524,16 @@ export default function FreestyleSessionScreen() {
   );
 
   const renderStep2 = () => (
-    <ScrollView 
-      style={styles.scrollView} 
-      contentContainerStyle={styles.activeSessionContent}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Timer Display */}
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.activeSessionContent} showsVerticalScrollIndicator={false}>
       <View style={styles.timerSection}>
         <Text style={styles.timerLabel}>Session Time</Text>
         <Text style={styles.timerDisplay}>{formatElapsedTime(elapsedSeconds)}</Text>
         <Pressable style={styles.pauseButton} onPress={togglePause}>
-          <MaterialIcons 
-            name={isPaused ? 'play-arrow' : 'pause'} 
-            size={24} 
-            color={colors.textLight} 
-          />
-          <Text style={styles.pauseButtonText}>
-            {isPaused ? 'Resume' : 'Pause'}
-          </Text>
+          <MaterialIcons name={isPaused ? 'play-arrow' : 'pause'} size={24} color={colors.textLight} />
+          <Text style={styles.pauseButtonText}>{isPaused ? 'Resume' : 'Pause'}</Text>
         </Pressable>
       </View>
 
-      {/* Live Stats */}
       <View style={styles.liveStatsSection}>
         <View style={styles.liveStatCard}>
           <MaterialIcons name="sports-cricket" size={32} color={colors.primary} />
@@ -606,23 +546,16 @@ export default function FreestyleSessionScreen() {
           />
           <Text style={styles.liveStatLabel}>Balls Faced</Text>
           <View style={styles.liveStatButtons}>
-            <Pressable
-              style={styles.liveStatButton}
-              onPress={handleBallsFacedDecrement}
-            >
+            <Pressable style={styles.liveStatButton} onPress={handleBallsFacedDecrement}>
               <MaterialIcons name="remove" size={20} color={colors.textLight} />
             </Pressable>
-            <Pressable
-              style={styles.liveStatButton}
-              onPress={handleBallsFacedIncrement}
-            >
+            <Pressable style={styles.liveStatButton} onPress={handleBallsFacedIncrement}>
               <MaterialIcons name="add" size={20} color={colors.textLight} />
             </Pressable>
           </View>
         </View>
       </View>
 
-      {/* Rotating Tips */}
       <View style={styles.tipsSection}>
         <View style={styles.tipHeader}>
           <MaterialIcons name="lightbulb" size={20} color={colors.warning} />
@@ -631,7 +564,6 @@ export default function FreestyleSessionScreen() {
         <Text style={styles.tipText}>{SESSION_TIPS[currentTipIndex]}</Text>
       </View>
 
-      {/* Training Types Selected */}
       <View style={styles.selectedTypesSection}>
         <Text style={styles.selectedTypesLabel}>Today's Training</Text>
         <View style={styles.selectedTypesRow}>
@@ -651,51 +583,110 @@ export default function FreestyleSessionScreen() {
 
   const renderStep3 = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-      <Text style={styles.stepTitle}>How did your session go?</Text>
+      <Text style={styles.stepTitle}>Session Breakdown</Text>
+      <Text style={styles.stepSubtitle}>Rate each area of your performance</Text>
 
-      <View style={styles.formGroup}>
-        <Text style={styles.label}>Balls Faced (Optional)</Text>
-        <TextInput
-          style={styles.input}
-          value={ballsFaced}
-          onChangeText={setBallsFaced}
-          keyboardType="number-pad"
-          placeholder="e.g., 100"
-          placeholderTextColor={colors.textSecondary}
-        />
-      </View>
-
-      <View style={styles.ratingsSection}>
-        <View style={styles.labelRow}>
-          <Text style={styles.sectionTitle}>Rate Your Performance</Text>
-          <Text style={styles.required}>*</Text>
+      {/* Batting Stats */}
+      <View style={styles.statsSectionCard}>
+        <View style={styles.statsSectionHeader}>
+          <MaterialIcons name="sports-cricket" size={20} color={colors.primary} />
+          <Text style={styles.statsSectionTitle}>Batting Stats</Text>
         </View>
-
-        <RatingStars
-          rating={physicalRating}
-          onRate={setPhysicalRating}
-          label="How were you physically?"
-        />
-
-        <RatingStars
-          rating={mentalRating}
-          onRate={setMentalRating}
-          label="How were you mentally?"
-        />
-
-        <RatingStars
-          rating={tacticalRating}
-          onRate={setTacticalRating}
-          label="How were you tactically?"
-        />
-
-        <RatingStars
-          rating={technicalRating}
-          onRate={setTechnicalRating}
-          label="How were you technically?"
-        />
+        <View style={styles.statsRow3}>
+          <View style={styles.statInputBlock}>
+            <Text style={styles.statInputLabel}>Balls Faced</Text>
+            <TextInput
+              style={styles.statInput}
+              value={ballsFaced}
+              onChangeText={setBallsFaced}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textSecondary}
+              textAlign="center"
+            />
+          </View>
+          <View style={styles.statInputBlock}>
+            <Text style={styles.statInputLabel}>Balls Middled</Text>
+            <TextInput
+              style={styles.statInput}
+              value={ballsMiddled}
+              onChangeText={setBallsMiddled}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textSecondary}
+              textAlign="center"
+            />
+          </View>
+          <View style={styles.statInputBlock}>
+            <Text style={styles.statInputLabel}>Boundaries</Text>
+            <TextInput
+              style={styles.statInput}
+              value={boundariesHit}
+              onChangeText={setBoundariesHit}
+              keyboardType="number-pad"
+              placeholder="0"
+              placeholderTextColor={colors.textSecondary}
+              textAlign="center"
+            />
+          </View>
+        </View>
+        {ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0 && (
+          <View style={styles.middlePctBadge}>
+            <MaterialIcons name="gps-fixed" size={14} color={colors.success} />
+            <Text style={styles.middlePctText}>
+              Middle %: {Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)}%
+            </Text>
+          </View>
+        )}
       </View>
 
+      {/* Technical */}
+      <View style={styles.pillarSection}>
+        <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.technical }]}>
+          <MaterialIcons name="sports-cricket" size={18} color={colors.technical} />
+          <Text style={[styles.pillarSectionTitle, { color: colors.technical }]}>Technical</Text>
+          <Text style={styles.requiredNote}>* at least one required</Text>
+        </View>
+        <RatingStars rating={shotExecution} onRate={setShotExecution} label="Shot Execution" sublabel="How clean and correct was your technique?" color={colors.technical} />
+        <RatingStars rating={footwork} onRate={setFootwork} label="Footwork" sublabel="Was your foot movement into position good?" color={colors.technical} />
+        <RatingStars rating={timing} onRate={setTiming} label="Timing" sublabel="How well did you time the ball?" color={colors.technical} />
+      </View>
+
+      {/* Mental */}
+      <View style={styles.pillarSection}>
+        <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.mental }]}>
+          <MaterialIcons name="psychology" size={18} color={colors.mental} />
+          <Text style={[styles.pillarSectionTitle, { color: colors.mental }]}>Mental</Text>
+          <Text style={styles.requiredNote}>* at least one required</Text>
+        </View>
+        <RatingStars rating={focus} onRate={setFocus} label="Focus & Concentration" sublabel="How well did you stay in the zone?" color={colors.mental} />
+        <RatingStars rating={confidence} onRate={setConfidence} label="Confidence" sublabel="How confident did you feel at the crease?" color={colors.mental} />
+        <RatingStars rating={pressureHandling} onRate={setPressureHandling} label="Pressure Handling" sublabel="How well did you manage pressure situations?" color={colors.mental} />
+      </View>
+
+      {/* Physical */}
+      <View style={styles.pillarSection}>
+        <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.physical }]}>
+          <MaterialIcons name="fitness-center" size={18} color={colors.physical} />
+          <Text style={[styles.pillarSectionTitle, { color: colors.physical }]}>Physical</Text>
+          <Text style={styles.requiredNote}>* at least one required</Text>
+        </View>
+        <RatingStars rating={energyLevel} onRate={setEnergyLevel} label="Energy Level" sublabel="How energetic and fit did you feel?" color={colors.physical} />
+        <RatingStars rating={reactionSpeed} onRate={setReactionSpeed} label="Reaction Speed" sublabel="How quickly did you pick up the ball?" color={colors.physical} />
+      </View>
+
+      {/* Tactical */}
+      <View style={styles.pillarSection}>
+        <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.tactical }]}>
+          <MaterialIcons name="lightbulb" size={18} color={colors.tactical} />
+          <Text style={[styles.pillarSectionTitle, { color: colors.tactical }]}>Tactical</Text>
+          <Text style={styles.requiredNote}>* at least one required</Text>
+        </View>
+        <RatingStars rating={shotSelection} onRate={setShotSelection} label="Shot Selection" sublabel="Did you play the right shots at the right time?" color={colors.tactical} />
+        <RatingStars rating={gameAwareness} onRate={setGameAwareness} label="Game Awareness" sublabel="How well did you read the game situation?" color={colors.tactical} />
+      </View>
+
+      {/* Session Notes */}
       <View style={styles.formGroup}>
         <Text style={styles.label}>Session Notes (Optional)</Text>
         <TextInput
@@ -712,83 +703,114 @@ export default function FreestyleSessionScreen() {
     </ScrollView>
   );
 
-  const renderStep4 = () => (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-      <View style={styles.summaryHeader}>
-        <View style={styles.summaryIconContainer}>
-          <MaterialIcons name="check-circle" size={80} color={colors.success} />
-        </View>
-        <Text style={styles.summaryTitle}>Session Complete!</Text>
-        <Text style={styles.summarySubtitle}>Great work today</Text>
-      </View>
-
-      {/* Session Summary */}
-      <View style={styles.summarySection}>
-        <Text style={styles.summarySectionTitle}>Session Summary</Text>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Duration:</Text>
-          <Text style={styles.summaryValue}>{Math.floor(elapsedSeconds / 60)} minutes</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Balls Faced:</Text>
-          <Text style={styles.summaryValue}>{ballsFaced}</Text>
-        </View>
-        <View style={styles.summaryRow}>
-          <Text style={styles.summaryLabel}>Training Types:</Text>
-          <Text style={styles.summaryValue}>
-            {Array.from(selectedTrainingTypes)
-              .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label)
-              .join(', ')}
-          </Text>
-        </View>
-      </View>
-
-      {/* XP Breakdown */}
-      {xpBreakdown && (
-        <View style={styles.xpSection}>
-          <Text style={styles.xpSectionTitle}>XP Earned</Text>
-          <View style={styles.xpBreakdown}>
-            <View style={styles.xpItem}>
-              <Text style={styles.xpItemLabel}>Session Completion</Text>
-              <Text style={styles.xpItemValue}>+10 XP</Text>
-            </View>
-            {xpBreakdown.goodRatingBonus > 0 && (
-              <View style={styles.xpItem}>
-                <Text style={styles.xpItemLabel}>Good Performance Rating</Text>
-                <Text style={styles.xpItemValue}>+{xpBreakdown.goodRatingBonus} XP</Text>
-              </View>
-            )}
-            {xpBreakdown.consistencyBonus > 0 && (
-              <View style={styles.xpItem}>
-                <Text style={styles.xpItemLabel}>Consistency Bonus</Text>
-                <Text style={styles.xpItemValue}>+{xpBreakdown.consistencyBonus} XP</Text>
-              </View>
-            )}
-            {xpBreakdown.streakBonus > 0 && (
-              <View style={styles.xpItem}>
-                <Text style={styles.xpItemLabel}>Streak Bonus</Text>
-                <Text style={styles.xpItemValue}>+{xpBreakdown.streakBonus} XP</Text>
-              </View>
-            )}
-            <View style={styles.xpDivider} />
-            <View style={styles.xpTotal}>
-              <Text style={styles.xpTotalLabel}>Total XP Earned</Text>
-              <Text style={styles.xpTotalValue}>+{xpBreakdown.totalXP} XP</Text>
-            </View>
+  const renderStep4 = () => {
+    const middlePct = ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0
+      ? Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)
+      : null;
+    return (
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <View style={styles.summaryHeader}>
+          <View style={styles.summaryIconContainer}>
+            <MaterialIcons name="check-circle" size={80} color={colors.success} />
           </View>
-
-          {xpBreakdown.levelUp && (
-            <View style={styles.levelUpBanner}>
-              <MaterialIcons name="star" size={24} color={colors.warning} />
-              <Text style={styles.levelUpText}>
-                Level Up! You're now {xpBreakdown.newLevel}
-              </Text>
-            </View>
-          )}
+          <Text style={styles.summaryTitle}>Session Complete!</Text>
+          <Text style={styles.summarySubtitle}>Great work today</Text>
         </View>
-      )}
-    </ScrollView>
-  );
+
+        {/* Quick Stats */}
+        <View style={styles.quickStatsRow}>
+          <View style={styles.quickStatCard}>
+            <MaterialIcons name="timer" size={22} color={colors.primary} />
+            <Text style={styles.quickStatValue}>{Math.floor(elapsedSeconds / 60)}</Text>
+            <Text style={styles.quickStatLabel}>Minutes</Text>
+          </View>
+          {ballsFaced ? (
+            <View style={styles.quickStatCard}>
+              <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
+              <Text style={styles.quickStatValue}>{ballsFaced}</Text>
+              <Text style={styles.quickStatLabel}>Balls Faced</Text>
+            </View>
+          ) : null}
+          {middlePct !== null ? (
+            <View style={styles.quickStatCard}>
+              <MaterialIcons name="gps-fixed" size={22} color={colors.success} />
+              <Text style={styles.quickStatValue}>{middlePct}%</Text>
+              <Text style={styles.quickStatLabel}>Middle %</Text>
+            </View>
+          ) : null}
+          {boundariesHit ? (
+            <View style={styles.quickStatCard}>
+              <MaterialIcons name="star" size={22} color={colors.warning} />
+              <Text style={styles.quickStatValue}>{boundariesHit}</Text>
+              <Text style={styles.quickStatLabel}>Boundaries</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {/* Pillar Averages */}
+        <View style={styles.summarySection}>
+          <Text style={styles.summarySectionTitle}>Performance Summary</Text>
+          {[
+            { label: 'Technical', value: technicalRating, color: colors.technical, icon: 'sports-cricket' as const },
+            { label: 'Mental', value: mentalRating, color: colors.mental, icon: 'psychology' as const },
+            { label: 'Physical', value: physicalRating, color: colors.physical, icon: 'fitness-center' as const },
+            { label: 'Tactical', value: tacticalRating, color: colors.tactical, icon: 'lightbulb' as const },
+          ].map(p => (
+            <View key={p.label} style={styles.summaryPillarRow}>
+              <MaterialIcons name={p.icon} size={18} color={p.color} />
+              <Text style={styles.summaryLabel}>{p.label}</Text>
+              <View style={styles.summaryBarBg}>
+                <View style={[styles.summaryBar, { width: `${(p.value / 5) * 100}%`, backgroundColor: p.color }]} />
+              </View>
+              <Text style={[styles.summaryPillarVal, { color: p.color }]}>{p.value}/5</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* XP Breakdown */}
+        {xpBreakdown && (
+          <View style={styles.xpSection}>
+            <Text style={styles.xpSectionTitle}>XP Earned</Text>
+            <View style={styles.xpBreakdown}>
+              <View style={styles.xpItem}>
+                <Text style={styles.xpItemLabel}>Session Completion</Text>
+                <Text style={styles.xpItemValue}>+10 XP</Text>
+              </View>
+              {xpBreakdown.goodRatingBonus > 0 && (
+                <View style={styles.xpItem}>
+                  <Text style={styles.xpItemLabel}>Good Performance Rating</Text>
+                  <Text style={styles.xpItemValue}>+{xpBreakdown.goodRatingBonus} XP</Text>
+                </View>
+              )}
+              {xpBreakdown.consistencyBonus > 0 && (
+                <View style={styles.xpItem}>
+                  <Text style={styles.xpItemLabel}>Consistency Bonus</Text>
+                  <Text style={styles.xpItemValue}>+{xpBreakdown.consistencyBonus} XP</Text>
+                </View>
+              )}
+              {xpBreakdown.streakBonus > 0 && (
+                <View style={styles.xpItem}>
+                  <Text style={styles.xpItemLabel}>Streak Bonus</Text>
+                  <Text style={styles.xpItemValue}>+{xpBreakdown.streakBonus} XP</Text>
+                </View>
+              )}
+              <View style={styles.xpDivider} />
+              <View style={styles.xpTotal}>
+                <Text style={styles.xpTotalLabel}>Total XP Earned</Text>
+                <Text style={styles.xpTotalValue}>+{xpBreakdown.totalXP} XP</Text>
+              </View>
+            </View>
+            {xpBreakdown.levelUp && (
+              <View style={styles.levelUpBanner}>
+                <MaterialIcons name="star" size={24} color={colors.warning} />
+                <Text style={styles.levelUpText}>Level Up! You are now {xpBreakdown.newLevel}</Text>
+              </View>
+            )}
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
 
   const getStepTitle = () => {
     switch (currentStep) {
@@ -805,24 +827,13 @@ export default function FreestyleSessionScreen() {
       case 1:
         return (
           <Pressable
-            style={[
-              styles.saveButton,
-              (selectedTrainingTypes.size === 0 || saving) && styles.saveButtonDisabled,
-            ]}
+            style={[styles.saveButton, (selectedTrainingTypes.size === 0 || saving) && styles.saveButtonDisabled]}
             onPress={handleStartSession}
             disabled={selectedTrainingTypes.size === 0 || saving}
           >
-            <MaterialIcons
-              name={sessionMode === 'later' ? 'schedule' : 'play-arrow'}
-              size={20}
-              color={colors.textLight}
-            />
+            <MaterialIcons name={sessionMode === 'later' ? 'schedule' : 'play-arrow'} size={20} color={colors.textLight} />
             <Text style={styles.saveButtonText}>
-              {saving
-                ? 'Saving...'
-                : sessionMode === 'later'
-                ? 'Schedule Session'
-                : 'Start Session'}
+              {saving ? 'Saving...' : sessionMode === 'later' ? 'Schedule Session' : 'Start Session'}
             </Text>
           </Pressable>
         );
@@ -836,54 +847,62 @@ export default function FreestyleSessionScreen() {
       case 3:
         return (
           <Pressable
-            style={[
-              styles.saveButton,
-              (!isStep3Valid() || saving) && styles.saveButtonDisabled,
-            ]}
+            style={[styles.saveButton, (!isStep3Valid() || saving) && styles.saveButtonDisabled]}
             onPress={handleCompleteSession}
             disabled={!isStep3Valid() || saving}
           >
             <MaterialIcons name="check" size={20} color={colors.textLight} />
-            <Text style={styles.saveButtonText}>
-              {saving ? 'Saving...' : 'Complete Session'}
-            </Text>
+            <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Complete Session'}</Text>
           </Pressable>
         );
       case 4:
         return (
           <View style={styles.footerRow}>
-            <Pressable style={styles.analyticsButton} onPress={() => router.push({
-              pathname: '/session-analytics' as any,
-              params: {
-                physical: physicalRating,
-                mental: mentalRating,
-                tactical: tacticalRating,
-                technical: technicalRating,
-                balls: ballsFaced,
-                duration: Math.floor(elapsedSeconds / 60),
-                types: Array.from(selectedTrainingTypes).map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(','),
-                focus: focusArea,
-                goal: sessionGoal,
-                notes: sessionNotes,
-              }
-            })}>
+            <Pressable
+              style={styles.analyticsButton}
+              onPress={() => router.push({
+                pathname: '/session-analytics' as any,
+                params: {
+                  physical: physicalRating,
+                  mental: mentalRating,
+                  tactical: tacticalRating,
+                  technical: technicalRating,
+                  balls: ballsFaced,
+                  ballsMiddled: ballsMiddled,
+                  boundaries: boundariesHit,
+                  duration: Math.floor(elapsedSeconds / 60),
+                  types: Array.from(selectedTrainingTypes).map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(','),
+                  focus: focusArea,
+                  goal: sessionGoal,
+                  notes: sessionNotes,
+                  shotExecution,
+                  footwork,
+                  timing,
+                  focusRating: focus,
+                  confidence,
+                  pressureHandling,
+                  energyLevel,
+                  reactionSpeed,
+                  shotSelection,
+                  gameAwareness,
+                }
+              })}
+            >
               <MaterialIcons name="analytics" size={20} color={colors.primary} />
               <Text style={styles.analyticsButtonText}>View Analytics</Text>
             </Pressable>
-            <Pressable style={styles.saveButton} onPress={() => router.replace('/(tabs)')as any}>
-            <MaterialIcons name="home" size={20} color={colors.textLight} />
-            <Text style={styles.saveButtonText}>Done</Text>
-          </Pressable>
+            <Pressable style={styles.saveButton} onPress={() => router.replace('/(tabs)' as any)}>
+              <MaterialIcons name="home" size={20} color={colors.textLight} />
+              <Text style={styles.saveButtonText}>Done</Text>
+            </Pressable>
           </View>
         );
-      default:
-        return null;
+      default: return null;
     }
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable
           onPress={() => currentStep === 1 ? router.back() : setCurrentStep(Math.max(1, currentStep - 1))}
@@ -898,23 +917,14 @@ export default function FreestyleSessionScreen() {
         <View style={styles.headerButton} />
       </View>
 
-      {/* Progress Bar */}
       <View style={styles.progressBar}>
         {[1, 2, 3, 4].map((step) => (
-          <View
-            key={step}
-            style={[
-              styles.progressSegment,
-              step <= currentStep && styles.progressSegmentActive,
-            ]}
-          />
+          <View key={step} style={[styles.progressSegment, step <= currentStep && styles.progressSegmentActive]} />
         ))}
       </View>
 
-      {/* Step Content */}
       {renderStepContent()}
 
-      {/* Footer Button */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
         {getFooterButton()}
       </View>
@@ -923,570 +933,242 @@ export default function FreestyleSessionScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
+  container: { flex: 1, backgroundColor: colors.background },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  headerButton: {
-    padding: spacing.xs,
-    width: 40,
-  },
-  headerTitleContainer: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  headerTitle: {
-    ...typography.h3,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  headerSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
+  headerButton: { padding: spacing.xs, width: 40 },
+  headerTitleContainer: { flex: 1, alignItems: 'center' },
+  headerTitle: { ...typography.h3, color: colors.text, fontWeight: '600' },
+  headerSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
   progressBar: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    backgroundColor: colors.surface,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    flexDirection: 'row', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  progressSegment: {
-    flex: 1,
-    height: 4,
-    backgroundColor: colors.border,
-    borderRadius: 2,
-  },
-  progressSegmentActive: {
-    backgroundColor: colors.primary,
-  },
-  stepTitle: {
-    ...typography.h2,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: spacing.sm,
-  },
-  stepSubtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.lg,
-  },
-  trainingTypesGrid: {
-    gap: spacing.md,
-    marginBottom: spacing.xl,
-  },
+  progressSegment: { flex: 1, height: 4, backgroundColor: colors.border, borderRadius: 2 },
+  progressSegmentActive: { backgroundColor: colors.primary },
+  stepTitle: { ...typography.h2, color: colors.text, fontWeight: '600', marginBottom: spacing.sm },
+  stepSubtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.lg },
+
+  // Training type grid
+  trainingTypesGrid: { gap: spacing.md, marginBottom: spacing.xl },
   trainingTypeCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    borderWidth: 2,
-    borderColor: colors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.md,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    borderWidth: 2, borderColor: colors.border, flexDirection: 'row', alignItems: 'center', gap: spacing.md,
   },
-  trainingTypeCardSelected: {
-    borderColor: colors.success,
-    backgroundColor: colors.success + '10',
-  },
+  trainingTypeCardSelected: { borderColor: colors.success, backgroundColor: colors.success + '10' },
   trainingTypeIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primaryLight + '20',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 56, height: 56, borderRadius: borderRadius.md,
+    backgroundColor: colors.primaryLight + '20', justifyContent: 'center', alignItems: 'center',
   },
-  trainingTypeIconSelected: {
-    backgroundColor: colors.success,
-  },
-  trainingTypeLabel: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-    flex: 1,
-  },
-  trainingTypeLabelSelected: {
-    color: colors.success,
-  },
-  checkMark: {
-    marginLeft: 'auto',
-  },
-  additionalFields: {
-    gap: spacing.md,
-  },
-  durationOptions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    flexWrap: 'wrap',
-  },
+  trainingTypeIconSelected: { backgroundColor: colors.success },
+  trainingTypeLabel: { ...typography.body, color: colors.text, fontWeight: '600', flex: 1 },
+  trainingTypeLabelSelected: { color: colors.success },
+  checkMark: { marginLeft: 'auto' },
+
+  additionalFields: { gap: spacing.md },
+  durationOptions: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
   durationOption: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderRadius: borderRadius.md,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
   },
-  durationOptionSelected: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  durationOptionText: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  durationOptionTextSelected: {
-    color: colors.textLight,
-  },
-  modeSelection: {
-    marginBottom: spacing.xl,
-  },
-  modeButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.md,
-  },
+  durationOptionSelected: { backgroundColor: colors.primary, borderColor: colors.primary },
+  durationOptionText: { ...typography.body, color: colors.text, fontWeight: '600' },
+  durationOptionTextSelected: { color: colors.textLight },
+
+  modeSelection: { marginBottom: spacing.xl },
+  modeButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md },
   modeButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.surface,
-    borderWidth: 2,
-    borderColor: colors.border,
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm, paddingVertical: spacing.md, borderRadius: borderRadius.md,
+    backgroundColor: colors.surface, borderWidth: 2, borderColor: colors.border,
   },
-  modeButtonActive: {
-    backgroundColor: colors.primary,
-    borderColor: colors.primary,
-  },
-  modeButtonText: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  modeButtonTextActive: {
-    color: colors.textLight,
-  },
+  modeButtonActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  modeButtonText: { ...typography.body, color: colors.text, fontWeight: '600' },
+  modeButtonTextActive: { color: colors.textLight },
+
   dateTimeSection: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    gap: spacing.md,
-    marginBottom: spacing.xl,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    gap: spacing.md, marginBottom: spacing.xl,
   },
   dateTimeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.background,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.background,
+    borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
   },
-  dateTimeButtonText: {
-    ...typography.body,
-    color: colors.text,
-    flex: 1,
-  },
-  activeSessionContent: {
-    padding: spacing.lg,
-    gap: spacing.xl,
-    paddingBottom: spacing.xl * 2,
-  },
+  dateTimeButtonText: { ...typography.body, color: colors.text, flex: 1 },
+
+  // Step 2
+  activeSessionContent: { padding: spacing.lg, gap: spacing.xl, paddingBottom: spacing.xl * 2 },
   timerSection: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.xl,
-    padding: spacing.xl,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl,
+    alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1, shadowRadius: 8, elevation: 4,
   },
-  timerLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-  },
-  timerDisplay: {
-    ...typography.h1,
-    fontSize: 48,
-    color: colors.primary,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
+  timerLabel: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.sm },
+  timerDisplay: { fontSize: 48, color: colors.primary, fontWeight: '700', textAlign: 'center' },
   pauseButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.primary,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
-    marginTop: spacing.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md, marginTop: spacing.md,
   },
-  pauseButtonText: {
-    ...typography.body,
-    color: colors.textLight,
-    fontWeight: '600',
-  },
-  liveStatsSection: {
-    gap: spacing.md,
-  },
+  pauseButtonText: { ...typography.body, color: colors.textLight, fontWeight: '600' },
+  liveStatsSection: { gap: spacing.md },
   liveStatCard: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    alignItems: 'center',
-    gap: spacing.sm,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    alignItems: 'center', gap: spacing.sm,
   },
   liveStatValue: {
-    ...typography.h1,
-    fontSize: 48,
-    color: colors.text,
-    fontWeight: '700',
-    textAlign: 'center',
-    minWidth: 100,
-    paddingVertical: spacing.xs,
+    fontSize: 48, color: colors.text, fontWeight: '700', textAlign: 'center', minWidth: 100,
   },
-  liveStatLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  liveStatButtons: {
-    flexDirection: 'row',
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
+  liveStatLabel: { ...typography.body, color: colors.textSecondary },
+  liveStatButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   liveStatButton: {
-    width: 44,
-    height: 44,
-    borderRadius: borderRadius.md,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: 44, height: 44, borderRadius: borderRadius.md, backgroundColor: colors.primary,
+    justifyContent: 'center', alignItems: 'center',
   },
   tipsSection: {
-    backgroundColor: '#FFF4E6',
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    borderLeftWidth: 4,
-    borderLeftColor: colors.warning,
+    backgroundColor: '#FFF4E6', borderRadius: borderRadius.lg, padding: spacing.lg,
+    borderLeftWidth: 4, borderLeftColor: colors.warning,
   },
-  tipHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  tipHeaderText: {
-    ...typography.body,
-    color: colors.warning,
-    fontWeight: '600',
-  },
-  tipText: {
-    ...typography.body,
-    color: colors.text,
-    lineHeight: 22,
-  },
-  selectedTypesSection: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-  },
-  selectedTypesLabel: {
-    ...typography.bodySmall,
-    color: colors.textSecondary,
-    marginBottom: spacing.sm,
-    fontWeight: '600',
-  },
-  selectedTypesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.sm,
-  },
+  tipHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  tipHeaderText: { ...typography.body, color: colors.warning, fontWeight: '600' },
+  tipText: { ...typography.body, color: colors.text, lineHeight: 22 },
+  selectedTypesSection: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg },
+  selectedTypesLabel: { ...typography.bodySmall, color: colors.textSecondary, marginBottom: spacing.sm, fontWeight: '600' },
+  selectedTypesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   selectedTypeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.primaryLight + '20',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md,
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.primaryLight + '20', paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm, borderRadius: borderRadius.md,
   },
-  selectedTypeBadgeText: {
-    ...typography.caption,
-    color: colors.primary,
-    fontWeight: '600',
+  selectedTypeBadgeText: { ...typography.caption, color: colors.primary, fontWeight: '600' },
+
+  // Step 3 - Stats section
+  statsSectionCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border,
   },
-  summaryHeader: {
-    alignItems: 'center',
-    paddingVertical: spacing.xl,
+  statsSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  statsSectionTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  statsRow3: { flexDirection: 'row', gap: spacing.sm },
+  statInputBlock: { flex: 1, alignItems: 'center' },
+  statInputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.xs, textAlign: 'center' },
+  statInput: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: spacing.md, width: '100%', ...typography.h4, color: colors.text, fontWeight: '700',
+    textAlign: 'center',
   },
-  summaryIconContainer: {
-    marginBottom: spacing.md,
+  middlePctBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.md,
+    backgroundColor: colors.success + '15', paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md, alignSelf: 'flex-start',
   },
-  summaryTitle: {
-    ...typography.h1,
-    color: colors.text,
-    fontWeight: '700',
-    marginBottom: spacing.xs,
+  middlePctText: { ...typography.body, color: colors.success, fontWeight: '700' },
+
+  // Pillar section
+  pillarSection: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border,
   },
-  summarySubtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
+  pillarSectionHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg,
+    borderLeftWidth: 4, paddingLeft: spacing.sm,
   },
+  pillarSectionTitle: { ...typography.h4, fontWeight: '700', flex: 1 },
+  requiredNote: { ...typography.caption, color: colors.textSecondary, fontStyle: 'italic' },
+
+  // Rating stars
+  ratingContainer: { marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border + '60' },
+  ratingLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
+  ratingLabel: { ...typography.body, color: colors.text, fontWeight: '600' },
+  ratingValueBadge: { paddingHorizontal: spacing.sm, paddingVertical: 2, borderRadius: borderRadius.sm },
+  ratingValueText: { ...typography.caption, fontWeight: '700' },
+  ratingSublabel: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
+  starsRow: { flexDirection: 'row', gap: spacing.xs },
+  starButton: { padding: spacing.xs },
+  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  required: { ...typography.body, color: colors.error, fontWeight: '600' },
+
+  // Step 4 summary
+  summaryHeader: { alignItems: 'center', paddingVertical: spacing.xl },
+  summaryIconContainer: { marginBottom: spacing.md },
+  summaryTitle: { ...typography.h1, color: colors.text, fontWeight: '700', marginBottom: spacing.xs },
+  summarySubtitle: { ...typography.body, color: colors.textSecondary },
+  quickStatsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.lg, flexWrap: 'wrap' },
+  quickStatCard: {
+    flex: 1, minWidth: 70, backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
+    alignItems: 'center', gap: 4, borderWidth: 1, borderColor: colors.border,
+  },
+  quickStatValue: { ...typography.h3, color: colors.text, fontWeight: '800' },
+  quickStatLabel: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
   summarySection: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
-    marginBottom: spacing.lg,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg, marginBottom: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
   },
-  summarySectionTitle: {
-    ...typography.h4,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: spacing.md,
+  summarySectionTitle: { ...typography.h4, color: colors.text, fontWeight: '700', marginBottom: spacing.md },
+  summaryPillarRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm,
   },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  summaryLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  summaryValue: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'right',
-  },
+  summaryLabel: { ...typography.body, color: colors.text, fontWeight: '600', width: 70 },
+  summaryBarBg: { flex: 1, height: 10, backgroundColor: colors.border, borderRadius: 5 },
+  summaryBar: { height: 10, borderRadius: 5, minWidth: 4 },
+  summaryPillarVal: { ...typography.bodySmall, fontWeight: '800', width: 32, textAlign: 'right' },
+
   xpSection: {
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.lg,
-    padding: spacing.lg,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
   },
-  xpSectionTitle: {
-    ...typography.h4,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: spacing.md,
-  },
-  xpBreakdown: {
-    gap: spacing.sm,
-  },
-  xpItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-  },
-  xpItemLabel: {
-    ...typography.body,
-    color: colors.textSecondary,
-  },
-  xpItemValue: {
-    ...typography.body,
-    color: colors.success,
-    fontWeight: '600',
-  },
-  xpDivider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginVertical: spacing.sm,
-  },
-  xpTotal: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: spacing.sm,
-  },
-  xpTotalLabel: {
-    ...typography.h4,
-    color: colors.text,
-    fontWeight: '600',
-  },
-  xpTotalValue: {
-    ...typography.h4,
-    color: colors.success,
-    fontWeight: '700',
-  },
+  xpSectionTitle: { ...typography.h4, color: colors.text, fontWeight: '600', marginBottom: spacing.md },
+  xpBreakdown: { gap: spacing.sm },
+  xpItem: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm },
+  xpItemLabel: { ...typography.body, color: colors.textSecondary },
+  xpItemValue: { ...typography.body, color: colors.success, fontWeight: '600' },
+  xpDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
+  xpTotal: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: spacing.sm },
+  xpTotalLabel: { ...typography.h4, color: colors.text, fontWeight: '600' },
+  xpTotalValue: { ...typography.h4, color: colors.success, fontWeight: '700' },
   levelUpBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.warning + '20',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    marginTop: spacing.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.warning + '20', padding: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.md,
   },
-  levelUpText: {
-    ...typography.body,
-    color: colors.warning,
-    fontWeight: '700',
-  },
+  levelUpText: { ...typography.body, color: colors.warning, fontWeight: '700' },
   endButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.error,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.error, paddingVertical: spacing.md, borderRadius: borderRadius.md,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
-
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: spacing.lg,
-    paddingBottom: 120,
-  },
-  formGroup: {
-    marginBottom: spacing.lg,
-  },
-  label: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: spacing.sm,
-  },
-
+  scrollView: { flex: 1 },
+  scrollContent: { padding: spacing.lg, paddingBottom: 120 },
+  formGroup: { marginBottom: spacing.lg },
+  label: { ...typography.body, color: colors.text, fontWeight: '600', marginBottom: spacing.sm },
   input: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: borderRadius.md,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
-    ...typography.body,
-    color: colors.text,
+    backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.body, color: colors.text,
   },
-  textArea: {
-    minHeight: 100,
-    paddingTop: spacing.md,
-  },
+  textArea: { minHeight: 100, paddingTop: spacing.md },
+  ratingsSection: { gap: spacing.md },
+  sectionTitle: { ...typography.h4, color: colors.text, fontWeight: '600', marginBottom: spacing.sm },
 
-  ratingsSection: {
-    gap: spacing.md,
-  },
-  sectionTitle: {
-    ...typography.h4,
-    color: colors.text,
-    fontWeight: '600',
-    marginBottom: spacing.sm,
-  },
-  ratingContainer: {
-    gap: spacing.xs,
-  },
-  ratingLabel: {
-    ...typography.body,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  labelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  required: {
-    ...typography.body,
-    color: colors.error,
-    fontWeight: '600',
-  },
-  starsRow: {
-    flexDirection: 'row',
-    gap: spacing.xs,
-  },
-  starButton: {
-    padding: spacing.xs,
-  },
   footer: {
-    padding: spacing.md,
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 8,
+    padding: spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 8,
   },
   saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-    backgroundColor: colors.success,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  saveButtonDisabled: {
-    backgroundColor: colors.border,
-  },
-  saveButtonText: {
-    ...typography.body,
-    color: colors.textLight,
-    fontWeight: '600',
-  },
-  saveButtonTextDisabled: {
-    color: colors.textSecondary,
-  },
-  footerRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  analyticsButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.success, paddingVertical: spacing.md, borderRadius: borderRadius.md,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.surface,
-    paddingVertical: spacing.md,
-    borderRadius: borderRadius.md,
-    borderWidth: 2,
-    borderColor: colors.primary,
   },
-  analyticsButtonText: {
-    ...typography.body,
-    color: colors.primary,
-    fontWeight: '600',
+  saveButtonDisabled: { backgroundColor: colors.border },
+  saveButtonText: { ...typography.body, color: colors.textLight, fontWeight: '600' },
+  footerRow: { flexDirection: 'row', gap: spacing.sm },
+  analyticsButton: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
+    backgroundColor: colors.surface, paddingVertical: spacing.md, borderRadius: borderRadius.md,
+    borderWidth: 2, borderColor: colors.primary,
   },
+  analyticsButtonText: { ...typography.body, color: colors.primary, fontWeight: '600' },
 });

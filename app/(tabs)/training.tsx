@@ -191,8 +191,19 @@ export default function TrainingScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Training Pillars</Text>
-        <Text style={styles.headerSubtitle}>Select a pillar to view drills</Text>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>Training Pillars</Text>
+            <Text style={styles.headerSubtitle}>Select a pillar to view drills</Text>
+          </View>
+          <Pressable
+            style={styles.performanceHubBtn}
+            onPress={() => router.push('/session-analytics' as any)}
+          >
+            <MaterialIcons name="analytics" size={18} color={colors.primary} />
+            <Text style={styles.performanceHubText}>Performance Hub</Text>
+          </Pressable>
+        </View>
       </View>
 
       {/* Pillar Tabs - Always visible */}
@@ -548,6 +559,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   headerTitle: {
     ...typography.h2,
     color: colors.text,
@@ -556,6 +572,22 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.textSecondary,
     marginTop: spacing.xs,
+  },
+  performanceHubBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.primary + '15',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    borderWidth: 1,
+    borderColor: colors.primary + '40',
+  },
+  performanceHubText: {
+    ...typography.caption,
+    color: colors.primary,
+    fontWeight: '700',
   },
   tabsContainer: {
     flexDirection: 'row',
