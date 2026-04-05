@@ -851,10 +851,30 @@ export default function FreestyleSessionScreen() {
         );
       case 4:
         return (
-          <Pressable style={styles.saveButton} onPress={() => router.replace('/(tabs)')as any}>
+          <View style={styles.footerRow}>
+            <Pressable style={styles.analyticsButton} onPress={() => router.push({
+              pathname: '/session-analytics' as any,
+              params: {
+                physical: physicalRating,
+                mental: mentalRating,
+                tactical: tacticalRating,
+                technical: technicalRating,
+                balls: ballsFaced,
+                duration: Math.floor(elapsedSeconds / 60),
+                types: Array.from(selectedTrainingTypes).map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(','),
+                focus: focusArea,
+                goal: sessionGoal,
+                notes: sessionNotes,
+              }
+            })}>
+              <MaterialIcons name="analytics" size={20} color={colors.primary} />
+              <Text style={styles.analyticsButtonText}>View Analytics</Text>
+            </Pressable>
+            <Pressable style={styles.saveButton} onPress={() => router.replace('/(tabs)')as any}>
             <MaterialIcons name="home" size={20} color={colors.textLight} />
             <Text style={styles.saveButtonText}>Done</Text>
           </Pressable>
+          </View>
         );
       default:
         return null;
@@ -1447,5 +1467,26 @@ const styles = StyleSheet.create({
   },
   saveButtonTextDisabled: {
     color: colors.textSecondary,
+  },
+  footerRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  analyticsButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.md,
+    borderRadius: borderRadius.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+  },
+  analyticsButtonText: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '600',
   },
 });
