@@ -850,7 +850,7 @@ export default function JournalScreen() {
               onPress={saveBlock}
               disabled={!blockActivity.trim()}
             >
-              <Text style={styles.saveBlockBtnText} numberOfLines={1}>
+              <Text style={styles.saveBlockBtnText}>
                 {editingBlockId ? 'Save Changes' : 'Add Block'}
               </Text>
             </Pressable>
@@ -1024,7 +1024,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     width: '100%',
     maxWidth: 480,
-    maxHeight: '80%',
+    maxHeight: '90%',
   },
   blockModalHeader: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
@@ -1043,17 +1043,18 @@ const styles = StyleSheet.create({
   },
   timePickerBtnText: { ...typography.body, color: colors.text, flex: 1 },
   timePicker: {
-    maxHeight: 160,
+    maxHeight: 240,
     backgroundColor: colors.background,
     borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border,
     marginBottom: spacing.sm,
   },
   timeOption: {
-    paddingVertical: spacing.md, paddingHorizontal: spacing.md,
+    paddingVertical: 16, paddingHorizontal: spacing.lg,
+    minHeight: 56, justifyContent: 'center',
   },
-  timeOptionActive: { backgroundColor: colors.primary + '15' },
-  timeOptionText: { ...typography.body, color: colors.text, fontSize: 18 },
-  timeOptionTextActive: { color: colors.primary, fontWeight: '700', fontSize: 18 },
+  timeOptionActive: { backgroundColor: colors.primary + '20' },
+  timeOptionText: { ...typography.body, color: colors.text, fontSize: 20, lineHeight: 28 },
+  timeOptionTextActive: { color: colors.primary, fontWeight: '700', fontSize: 20, lineHeight: 28 },
   blockActivityInput: {
     ...typography.body, color: colors.text,
     backgroundColor: colors.background,
@@ -1063,13 +1064,13 @@ const styles = StyleSheet.create({
   },
   saveBlockBtn: {
     backgroundColor: colors.primary,
-    borderRadius: borderRadius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.md, paddingVertical: spacing.md, paddingHorizontal: spacing.xl,
     alignItems: 'center',
-    minHeight: 52,
+    minHeight: 54,
     justifyContent: 'center',
   },
   saveBlockBtnDisabled: { backgroundColor: colors.disabled },
-  saveBlockBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700', fontSize: 16 },
+  saveBlockBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700', fontSize: 16, textAlign: 'center' },
 
   wellnessGrid: {
     flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
