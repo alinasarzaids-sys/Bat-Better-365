@@ -923,7 +923,7 @@ export default function FreestyleSessionScreen() {
 
       {renderStepContent()}
 
-      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, spacing.md) }]}>
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + spacing.md, spacing.lg) }]}>
         {getFooterButton()}
       </View>
     </SafeAreaView>
