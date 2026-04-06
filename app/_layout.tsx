@@ -2,6 +2,17 @@ import { Stack } from 'expo-router';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AlertProvider, AuthProvider } from '@/template';
 import { StatusBar } from 'expo-status-bar';
+import { LogBox } from 'react-native';
+
+// Suppress Android-only expo-video SimpleCache conflict that occurs when
+// the host container already holds a VideoCache instance for the same folder.
+// This is an environment-level native conflict — the app does not use expo-video.
+LogBox.ignoreLogs([
+  'Another SimpleCache instance',
+  'ExpoVideoCache',
+  'NativeUnimoduleProxy',
+  'Exception in HostObject::get for prop',
+]);
 
 export default function RootLayout() {
   return (
