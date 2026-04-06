@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,10 @@ import {
   StyleSheet,
   Pressable,
   ActivityIndicator,
-  Dimensions,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -14,8 +17,6 @@ import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface FreestyleSession {
   id: string;
@@ -47,6 +48,22 @@ interface FreestyleSession {
   sessionNotes?: string;
 }
 
+interface EditForm {
+  ballsFaced: string;
+  ballsMiddled: string;
+  shotExecution: number;
+  footwork: number;
+  timing: number;
+  focus: number;
+  confidence: number;
+  pressureHandling: number;
+  energyLevel: number;
+  reactionSpeed: number;
+  shotSelection: number;
+  gameAwareness: number;
+  sessionNotes: string;
+}
+
 function parseSessionNotes(notes: string): Partial<FreestyleSession> {
   const result: Partial<FreestyleSession> = {};
   if (!notes) return result;
@@ -76,6 +93,49 @@ function parseSessionNotes(notes: string): Partial<FreestyleSession> {
   const notesIdx = notes.indexOf('\n\nNotes:');
   if (notesIdx !== -1) result.sessionNotes = notes.substring(notesIdx + 8).trim();
   return result;
+}
+
+function buildNotesString(session: FreestyleSession, form: EditForm): string {
+  const trainingTypesText = (session.trainingTypes || []).join(', ');
+  const middlePct = form.ballsFaced && form.ballsMiddled && parseInt(form.ballsFaced) > 0
+    ? Math.round((parseInt(form.ballsMiddled) / parseInt(form.ballsFaced)) * 100) : 0;
+
+  const physicalRating = avgOfNums([form.energyLevel, form.reactionSpeed]);
+  const mentalRating = avgOfNums([form.focus, form.confidence, form.pressureHandling]);
+  const tacticalRating = avgOfNums([form.shotSelection, form.gameAwareness]);
+  const technicalRating = avgOfNums([form.shotExecution, form.footwork, form.timing]);
+
+  let notes = `Training Types: ${trainingTypesText}\n`;
+  notes += `\n--- Batting Stats ---\n`;
+  if (form.ballsFaced) notes += `Balls Faced: ${form.ballsFaced}\n`;
+  if (form.ballsMiddled) notes += `Balls Middled: ${form.ballsMiddled}\n`;
+  if (middlePct > 0) notes += `Middle %: ${middlePct}\n`;
+  notes += `\n--- Technical ---\n`;
+  notes += `Shot Execution: ${form.shotExecution}/5\n`;
+  notes += `Footwork: ${form.footwork}/5\n`;
+  notes += `Timing: ${form.timing}/5\n`;
+  notes += `\n--- Mental ---\n`;
+  notes += `Focus: ${form.focus}/5\n`;
+  notes += `Confidence: ${form.confidence}/5\n`;
+  notes += `Pressure Handling: ${form.pressureHandling}/5\n`;
+  notes += `\n--- Physical ---\n`;
+  notes += `Energy Level: ${form.energyLevel}/5\n`;
+  notes += `Reaction Speed: ${form.reactionSpeed}/5\n`;
+  notes += `\n--- Tactical ---\n`;
+  notes += `Shot Selection: ${form.shotSelection}/5\n`;
+  notes += `Game Awareness: ${form.gameAwareness}/5\n`;
+  notes += `\nPhysical: ${physicalRating}/5\n`;
+  notes += `Mental: ${mentalRating}/5\n`;
+  notes += `Tactical: ${tacticalRating}/5\n`;
+  notes += `Technical: ${technicalRating}/5`;
+  if (form.sessionNotes) notes += `\n\nNotes: ${form.sessionNotes}`;
+  return notes;
+}
+
+function avgOfNums(vals: number[]): number {
+  const valid = vals.filter(v => v > 0);
+  if (!valid.length) return 0;
+  return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
 }
 
 function formatDate(iso: string): string {
@@ -173,12 +233,297 @@ function Stars({ rating, color }: { rating: number; color: string }) {
   );
 }
 
+// ─── Edit Modal ───────────────────────────────────────────────────────────────
+function EditSessionModal({
+  session,
+  visible,
+  onClose,
+  onSaved,
+}: {
+  session: FreestyleSession | null;
+  visible: boolean;
+  onClose: () => void;
+  onSaved: (updated: FreestyleSession) => void;
+}) {
+  const [form, setForm] = useState<EditForm>({
+    ballsFaced: '', ballsMiddled: '',
+    shotExecution: 0, footwork: 0, timing: 0,
+    focus: 0, confidence: 0, pressureHandling: 0,
+    energyLevel: 0, reactionSpeed: 0,
+    shotSelection: 0, gameAwareness: 0,
+    sessionNotes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  // Populate form when session changes
+  React.useEffect(() => {
+    if (!session) return;
+    setForm({
+      ballsFaced: session.ballsFaced ? String(session.ballsFaced) : '',
+      ballsMiddled: session.ballsMiddled ? String(session.ballsMiddled) : '',
+      shotExecution: session.shotExecution || 0,
+      footwork: session.footwork || 0,
+      timing: session.timing || 0,
+      focus: session.focus || 0,
+      confidence: session.confidence || 0,
+      pressureHandling: session.pressureHandling || 0,
+      energyLevel: session.energyLevel || 0,
+      reactionSpeed: session.reactionSpeed || 0,
+      shotSelection: session.shotSelection || 0,
+      gameAwareness: session.gameAwareness || 0,
+      sessionNotes: session.sessionNotes || '',
+    });
+  }, [session]);
+
+  const setRating = (field: keyof EditForm, val: number) =>
+    setForm(f => ({ ...f, [field]: val }));
+
+  const middlePct = form.ballsFaced && form.ballsMiddled && parseInt(form.ballsFaced) > 0
+    ? Math.round((parseInt(form.ballsMiddled) / parseInt(form.ballsFaced)) * 100) : null;
+
+  const handleSave = async () => {
+    if (!session) return;
+    setSaving(true);
+    const supabase = getSupabaseClient();
+    const newNotes = buildNotesString(session, form);
+    const { error } = await supabase
+      .from('sessions')
+      .update({ notes: newNotes })
+      .eq('id', session.id);
+    setSaving(false);
+    if (error) return;
+    const updatedSession: FreestyleSession = {
+      ...session,
+      notes: newNotes,
+      ...parseSessionNotes(newNotes),
+    };
+    onSaved(updatedSession);
+    onClose();
+  };
+
+  const StarRow = ({
+    label, sublabel, field, color,
+  }: { label: string; sublabel: string; field: keyof EditForm; color: string }) => {
+    const val = form[field] as number;
+    return (
+      <View style={editStyles.ratingRow}>
+        <View style={editStyles.ratingLabels}>
+          <Text style={editStyles.ratingLabel}>{label}</Text>
+          <Text style={editStyles.ratingSub}>{sublabel}</Text>
+        </View>
+        <View style={editStyles.starsRow}>
+          {[1, 2, 3, 4, 5].map(s => (
+            <Pressable key={s} onPress={() => setRating(field, s)} hitSlop={6}>
+              <MaterialIcons name={s <= val ? 'star' : 'star-border'} size={28} color={s <= val ? color : colors.border} />
+            </Pressable>
+          ))}
+          {val > 0 && (
+            <Text style={[editStyles.ratingVal, { color }]}>{val}/5</Text>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={editStyles.overlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={editStyles.sheet}
+        >
+          {/* Handle bar */}
+          <View style={editStyles.handle} />
+
+          {/* Header */}
+          <View style={editStyles.header}>
+            <Pressable onPress={onClose} style={editStyles.headerBtn}>
+              <MaterialIcons name="close" size={22} color={colors.text} />
+            </Pressable>
+            <Text style={editStyles.headerTitle}>Edit Session</Text>
+            <Pressable
+              onPress={handleSave}
+              style={[editStyles.saveBtn, saving && { opacity: 0.6 }]}
+            >
+              {saving
+                ? <ActivityIndicator size="small" color={colors.textLight} />
+                : <Text style={editStyles.saveBtnText}>Save</Text>}
+            </Pressable>
+          </View>
+
+          <ScrollView
+            style={editStyles.scroll}
+            contentContainerStyle={editStyles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            {/* Batting Stats */}
+            <View style={editStyles.section}>
+              <View style={editStyles.sectionHeader}>
+                <MaterialIcons name="sports-cricket" size={16} color={colors.primary} />
+                <Text style={editStyles.sectionTitle}>Batting Stats</Text>
+              </View>
+              <View style={editStyles.statsRow}>
+                <View style={editStyles.statBlock}>
+                  <Text style={editStyles.statLabel}>Balls Faced</Text>
+                  <TextInput
+                    style={editStyles.statInput}
+                    value={form.ballsFaced}
+                    onChangeText={v => setForm(f => ({ ...f, ballsFaced: v.replace(/[^0-9]/g, '') }))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+                <View style={editStyles.statBlock}>
+                  <Text style={editStyles.statLabel}>Balls Middled</Text>
+                  <TextInput
+                    style={editStyles.statInput}
+                    value={form.ballsMiddled}
+                    onChangeText={v => setForm(f => ({ ...f, ballsMiddled: v.replace(/[^0-9]/g, '') }))}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor={colors.textSecondary}
+                  />
+                </View>
+              </View>
+              {middlePct !== null && (
+                <View style={editStyles.middleBadge}>
+                  <MaterialIcons name="gps-fixed" size={13} color={colors.success} />
+                  <Text style={editStyles.middleBadgeText}>Middle %: {middlePct}%</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Technical */}
+            <View style={editStyles.section}>
+              <View style={editStyles.sectionHeader}>
+                <MaterialIcons name="sports-cricket" size={16} color={colors.technical} />
+                <Text style={[editStyles.sectionTitle, { color: colors.technical }]}>Technical</Text>
+              </View>
+              <StarRow label="Shot Execution" sublabel="How clean & correct was your technique?" field="shotExecution" color={colors.technical} />
+              <StarRow label="Footwork" sublabel="Foot movement & positioning into the ball" field="footwork" color={colors.technical} />
+              <StarRow label="Timing" sublabel="How well you timed the ball off the bat" field="timing" color={colors.technical} />
+            </View>
+
+            {/* Mental */}
+            <View style={editStyles.section}>
+              <View style={editStyles.sectionHeader}>
+                <MaterialIcons name="psychology" size={16} color={colors.mental} />
+                <Text style={[editStyles.sectionTitle, { color: colors.mental }]}>Mental</Text>
+              </View>
+              <StarRow label="Focus" sublabel="Concentration & staying in the zone" field="focus" color={colors.mental} />
+              <StarRow label="Confidence" sublabel="Overall confidence at the crease" field="confidence" color={colors.mental} />
+              <StarRow label="Pressure Handling" sublabel="Managing pressure & high-stakes moments" field="pressureHandling" color={colors.mental} />
+            </View>
+
+            {/* Physical */}
+            <View style={editStyles.section}>
+              <View style={editStyles.sectionHeader}>
+                <MaterialIcons name="fitness-center" size={16} color={colors.physical} />
+                <Text style={[editStyles.sectionTitle, { color: colors.physical }]}>Physical</Text>
+              </View>
+              <StarRow label="Energy Level" sublabel="Physical energy & fitness during session" field="energyLevel" color={colors.physical} />
+              <StarRow label="Reaction Speed" sublabel="How quickly you picked up the ball" field="reactionSpeed" color={colors.physical} />
+            </View>
+
+            {/* Tactical */}
+            <View style={editStyles.section}>
+              <View style={editStyles.sectionHeader}>
+                <MaterialIcons name="lightbulb" size={16} color={colors.tactical} />
+                <Text style={[editStyles.sectionTitle, { color: colors.tactical }]}>Tactical</Text>
+              </View>
+              <StarRow label="Shot Selection" sublabel="Choosing the right shot at the right time" field="shotSelection" color={colors.tactical} />
+              <StarRow label="Game Awareness" sublabel="Reading the game situation & field" field="gameAwareness" color={colors.tactical} />
+            </View>
+
+            {/* Notes */}
+            <View style={editStyles.section}>
+              <Text style={editStyles.sectionTitle}>Session Notes</Text>
+              <TextInput
+                style={editStyles.notesInput}
+                value={form.sessionNotes}
+                onChangeText={v => setForm(f => ({ ...f, sessionNotes: v }))}
+                multiline
+                numberOfLines={4}
+                placeholder="Any observations or key takeaways..."
+                placeholderTextColor={colors.textSecondary}
+                textAlignVertical="top"
+              />
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </View>
+    </Modal>
+  );
+}
+
+const editStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: {
+    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    maxHeight: '92%',
+  },
+  handle: {
+    width: 40, height: 4, backgroundColor: colors.border,
+    borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 4,
+  },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  headerBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  saveBtn: {
+    backgroundColor: colors.primary, paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 60, alignItems: 'center',
+  },
+  saveBtnText: { ...typography.bodySmall, color: colors.textLight, fontWeight: '700' },
+  scroll: { flex: 1 },
+  scrollContent: { padding: spacing.md, paddingBottom: 40 },
+  section: {
+    backgroundColor: colors.background, borderRadius: borderRadius.lg,
+    padding: spacing.md, marginBottom: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
+  sectionTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
+  statsRow: { flexDirection: 'row', gap: spacing.sm },
+  statBlock: { flex: 1 },
+  statLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.xs, textAlign: 'center' },
+  statInput: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.md, borderWidth: 1,
+    borderColor: colors.border, paddingVertical: spacing.md,
+    ...typography.h4, color: colors.text, fontWeight: '700', textAlign: 'center',
+  },
+  middleBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm,
+    backgroundColor: colors.success + '15', paddingHorizontal: spacing.sm,
+    paddingVertical: 5, borderRadius: borderRadius.sm, alignSelf: 'flex-start',
+  },
+  middleBadgeText: { ...typography.caption, color: colors.success, fontWeight: '700' },
+  ratingRow: { marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border + '60' },
+  ratingLabels: { marginBottom: spacing.sm },
+  ratingLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '600' },
+  ratingSub: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  starsRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  ratingVal: { ...typography.caption, fontWeight: '800', marginLeft: spacing.sm },
+  notesInput: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.md, borderWidth: 1,
+    borderColor: colors.border, padding: spacing.md, ...typography.body, color: colors.text,
+    minHeight: 90, marginTop: spacing.sm,
+  },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AnalyticsScreen() {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<FreestyleSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'latest' | 'history' | 'trends'>('latest');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
+  const [editingSession, setEditingSession] = useState<FreestyleSession | null>(null);
 
   const loadSessions = useCallback(async () => {
     if (!user) return;
@@ -200,6 +545,10 @@ export default function AnalyticsScreen() {
   }, [user]);
 
   useFocusEffect(useCallback(() => { loadSessions(); }, [loadSessions]));
+
+  const handleSessionSaved = (updated: FreestyleSession) => {
+    setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
+  };
 
   const latest = sessions[0] || null;
   const latestTechnical = avgOf([latest?.shotExecution, latest?.footwork, latest?.timing]) || latest?.technicalRating || 0;
@@ -231,7 +580,6 @@ export default function AnalyticsScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.headerBar}>
           <Text style={styles.headerTitle}>Performance Hub</Text>
-          <Text style={styles.headerSub}>Freestyle session analytics</Text>
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -285,7 +633,7 @@ export default function AnalyticsScreen() {
           {activeTab === 'latest'
             ? 'Your most recent session breakdown — 10 metrics self-rated 1–5 immediately after each session'
             : activeTab === 'history'
-            ? 'All completed freestyle sessions — tap a session card to see its individual metric scores'
+            ? 'All completed freestyle sessions — tap a card to expand, then tap Edit to correct your data'
             : 'Long-term performance patterns across all sessions — averages and per-session bar charts for every metric'}
         </Text>
       </View>
@@ -330,12 +678,6 @@ export default function AnalyticsScreen() {
                       <View style={styles.statChip}>
                         <MaterialIcons name="gps-fixed" size={13} color={colors.success} />
                         <Text style={[styles.statChipText, { color: colors.success, fontWeight: '700' }]}>{latestMiddlePct}% middle</Text>
-                      </View>
-                    ) : null}
-                    {(latest.boundariesHit || 0) > 0 ? (
-                      <View style={styles.statChip}>
-                        <MaterialIcons name="star" size={13} color={colors.warning} />
-                        <Text style={styles.statChipText}>{latest.boundariesHit} boundaries</Text>
                       </View>
                     ) : null}
                   </View>
@@ -596,6 +938,15 @@ export default function AnalyticsScreen() {
                       {/* Expanded full breakdown */}
                       {isExpanded && (
                         <View style={styles.expandedContent}>
+                          {/* Edit button */}
+                          <Pressable
+                            style={styles.editBtn}
+                            onPress={(e) => { e.stopPropagation(); setEditingSession(s); }}
+                          >
+                            <MaterialIcons name="edit" size={15} color={colors.primary} />
+                            <Text style={styles.editBtnText}>Edit Session Data</Text>
+                          </Pressable>
+
                           {/* Pillar summary row */}
                           <View style={styles.expandedPillarRow}>
                             {[
@@ -746,6 +1097,14 @@ export default function AnalyticsScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Edit Modal */}
+      <EditSessionModal
+        session={editingSession}
+        visible={editingSession !== null}
+        onClose={() => setEditingSession(null)}
+        onSaved={handleSessionSaved}
+      />
     </SafeAreaView>
   );
 }
@@ -826,9 +1185,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
     marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border,
   },
-  historyCardExpanded: {
-    borderColor: colors.primary + '50', borderWidth: 1.5,
-  },
+  historyCardExpanded: { borderColor: colors.primary + '50', borderWidth: 1.5 },
   historyTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 0 },
   historyLeft: { flex: 1 },
   historyRight: { alignItems: 'flex-end', gap: 4 },
@@ -851,8 +1208,17 @@ const styles = StyleSheet.create({
   },
   historyMetricLabel: { fontSize: 10, fontWeight: '600' },
   historyMetricVal: { fontSize: 11, fontWeight: '800' },
+
   // Expanded session
   expandedContent: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
+  editBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    alignSelf: 'flex-end', marginBottom: spacing.md,
+    backgroundColor: colors.primary + '15', paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs + 2, borderRadius: borderRadius.full,
+    borderWidth: 1, borderColor: colors.primary + '40',
+  },
+  editBtnText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
   expandedPillarRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   expandedPillarCard: {
     flex: 1, alignItems: 'center', backgroundColor: colors.background,
