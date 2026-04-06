@@ -109,12 +109,30 @@ function avgOf(vals: (number | undefined)[]): number {
   return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
 }
 
+const METRIC_DESCRIPTIONS: Record<string, string> = {
+  'Shot Execution': 'How clean & correct your technique was',
+  'Footwork': 'Foot movement & positioning into the ball',
+  'Timing': 'How well you timed the ball off the bat',
+  'Focus & Concentration': 'Concentration & staying in the zone',
+  'Focus': 'Concentration & staying in the zone',
+  'Confidence': 'Overall confidence at the crease',
+  'Pressure Handling': 'Managing pressure & high-stakes moments',
+  'Energy Level': 'Physical energy & fitness during session',
+  'Reaction Speed': 'How quickly you picked up the ball',
+  'Shot Selection': 'Choosing the right shot at the right time',
+  'Game Awareness': 'Reading the game situation & field',
+};
+
 // ── Mini horizontal bar ───────────────────────────────────────────────────────
 function MetricBar({ label, value, max = 5, color }: { label: string; value: number; max?: number; color: string }) {
   const pct = max > 0 ? Math.min(1, value / max) * 100 : 0;
+  const desc = METRIC_DESCRIPTIONS[label];
   return (
-    <View style={barStyles.row}>
-      <Text style={barStyles.label}>{label}</Text>
+    <View style={barStyles.wrapper}>
+      <View style={barStyles.labelCol}>
+        <Text style={barStyles.label}>{label}</Text>
+        {desc ? <Text style={barStyles.desc}>{desc}</Text> : null}
+      </View>
       <View style={barStyles.track}>
         <View style={[barStyles.fill, { width: `${pct}%`, backgroundColor: color }]} />
       </View>
@@ -123,8 +141,10 @@ function MetricBar({ label, value, max = 5, color }: { label: string; value: num
   );
 }
 const barStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 10 },
-  label: { ...typography.bodySmall, color: colors.text, width: 120 },
+  wrapper: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 14 },
+  labelCol: { width: 128 },
+  label: { ...typography.bodySmall, color: colors.text, fontWeight: '600' },
+  desc: { fontSize: 10, color: colors.textSecondary, lineHeight: 13, marginTop: 1 },
   track: { flex: 1, height: 8, backgroundColor: colors.border, borderRadius: 4 },
   fill: { height: 8, borderRadius: 4, minWidth: 4 },
   val: { ...typography.bodySmall, fontWeight: '800', width: 36, textAlign: 'right' },
@@ -310,6 +330,22 @@ export default function SessionAnalyticsScreen() {
             </Text>
           </Pressable>
         ))}
+      </View>
+
+      {/* Tab description banner */}
+      <View style={styles.tabInfoBanner}>
+        <MaterialIcons
+          name={activeTab === 'latest' ? 'info-outline' : activeTab === 'history' ? 'history' : 'show-chart'}
+          size={14}
+          color={colors.primary}
+        />
+        <Text style={styles.tabInfoText}>
+          {activeTab === 'latest'
+            ? 'Your most recent session breakdown — 10 metrics self-rated 1–5 immediately after each session'
+            : activeTab === 'history'
+            ? 'All completed freestyle sessions — full metric scores recorded after every session'
+            : 'Long-term patterns across all sessions — averages and bar charts for each metric over time'}
+        </Text>
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -767,6 +803,13 @@ const styles = StyleSheet.create({
   tabActive: { borderBottomColor: colors.primary },
   tabText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
   tabTextActive: { color: colors.primary },
+
+  tabInfoBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs,
+    backgroundColor: colors.primary + '08', paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  tabInfoText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 16 },
 
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 60 },
