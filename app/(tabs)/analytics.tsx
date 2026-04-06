@@ -117,24 +117,27 @@ function MetricBar({ label, value, max = 5, color }: { label: string; value: num
   return (
     <View style={barStyles.wrapper}>
       <View style={barStyles.labelCol}>
-        <Text style={barStyles.label}>{label}</Text>
-        {desc ? <Text style={barStyles.desc}>{desc}</Text> : null}
+        <Text style={barStyles.label} numberOfLines={1}>{label}</Text>
+        {desc ? <Text style={barStyles.desc} numberOfLines={2}>{desc}</Text> : null}
       </View>
-      <View style={barStyles.track}>
-        <View style={[barStyles.fill, { width: `${pct}%`, backgroundColor: color }]} />
+      <View style={barStyles.trackCol}>
+        <View style={barStyles.track}>
+          <View style={[barStyles.fill, { width: `${pct}%`, backgroundColor: color }]} />
+        </View>
       </View>
       <Text style={[barStyles.val, { color }]}>{value > 0 ? `${value}/5` : '—'}</Text>
     </View>
   );
 }
 const barStyles = StyleSheet.create({
-  wrapper: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 14 },
-  labelCol: { width: 128 },
-  label: { ...typography.bodySmall, color: colors.text, fontWeight: '600' },
+  wrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
+  labelCol: { width: 120, marginRight: spacing.sm },
+  label: { ...typography.caption, color: colors.text, fontWeight: '700', fontSize: 13 },
   desc: { fontSize: 10, color: colors.textSecondary, lineHeight: 13, marginTop: 1 },
-  track: { flex: 1, height: 8, backgroundColor: colors.border, borderRadius: 4 },
+  trackCol: { flex: 1, justifyContent: 'center' },
+  track: { height: 8, backgroundColor: colors.border, borderRadius: 4 },
   fill: { height: 8, borderRadius: 4, minWidth: 4 },
-  val: { ...typography.bodySmall, fontWeight: '800', width: 36, textAlign: 'right' },
+  val: { ...typography.caption, fontWeight: '800', width: 38, textAlign: 'right', fontSize: 13, marginLeft: 4 },
 });
 
 function BarChart({ data, color, maxVal = 5 }: { data: { label: string; value: number }[]; color: string; maxVal?: number }) {
@@ -397,6 +400,21 @@ export default function AnalyticsScreen() {
 
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Session Analysis</Text>
+                  <Text style={styles.cardSubtitle}>Based on your self-rated metrics from this session</Text>
+                  {(
+                    [latest?.shotExecution, latest?.footwork, latest?.timing,
+                     latest?.focus, latest?.confidence, latest?.pressureHandling,
+                     latest?.energyLevel, latest?.reactionSpeed,
+                     latest?.shotSelection, latest?.gameAwareness].every(v => !v || v === 0)
+                  ) && (
+                    <View style={[styles.analysisBlock, { backgroundColor: colors.background, borderLeftColor: colors.border }]}>
+                      <View style={styles.analysisHeader}>
+                        <MaterialIcons name="info-outline" size={16} color={colors.textSecondary} />
+                        <Text style={[styles.analysisTitle, { color: colors.textSecondary }]}>No detailed metrics recorded</Text>
+                      </View>
+                      <Text style={styles.analysisText}>This session was logged before per-metric tracking was introduced. Complete a new freestyle session to see your strengths and areas for improvement.</Text>
+                    </View>
+                  )}
                   {[
                     { label: 'Shot Execution', value: latest.shotExecution || 0 },
                     { label: 'Footwork', value: latest.footwork || 0 },
@@ -762,13 +780,13 @@ const styles = StyleSheet.create({
 
   tabInfoBanner: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs,
-    backgroundColor: colors.primary + '08', paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    backgroundColor: colors.primary + '10', paddingHorizontal: spacing.md, paddingVertical: 10,
     borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  tabInfoText: { ...typography.caption, color: colors.textSecondary, flex: 1, lineHeight: 16 },
+  tabInfoText: { fontSize: 11, color: colors.textSecondary, flex: 1, lineHeight: 15 },
 
   scroll: { flex: 1 },
-  scrollContent: { padding: spacing.md, paddingBottom: 24 },
+  scrollContent: { padding: spacing.md, paddingBottom: 48 },
 
   card: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
@@ -787,10 +805,11 @@ const styles = StyleSheet.create({
   badgeSmall: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.full, alignSelf: 'flex-start' },
   badgeSmallText: { ...typography.caption, fontWeight: '700' },
 
-  pillarGrid: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  pillarGrid: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: 4 },
   pillarCard: {
     flex: 1, minWidth: '44%', backgroundColor: colors.background, borderRadius: borderRadius.md,
-    padding: spacing.md, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, borderTopWidth: 3,
+    padding: spacing.md, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border,
+    borderTopWidth: 3, overflow: 'visible',
   },
   pillarScore: { fontSize: 24, fontWeight: '800' },
   pillarLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
@@ -802,7 +821,7 @@ const styles = StyleSheet.create({
   bullet: { width: 6, height: 6, borderRadius: 3 },
   analysisText: { ...typography.bodySmall, color: colors.text, flex: 1 },
 
-  sectionLabel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
+  sectionLabel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.md },
   historyCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
     marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border,
