@@ -175,6 +175,7 @@ export default function AnalyticsScreen() {
   const [sessions, setSessions] = useState<FreestyleSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'latest' | 'history' | 'trends'>('latest');
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
 
   const loadSessions = useCallback(async () => {
     if (!user) return;
@@ -485,8 +486,10 @@ export default function AnalyticsScreen() {
               </View>
             ) : (
               <>
-                <Text style={styles.sectionLabel}>{sessions.length} sessions recorded</Text>
+                <Text style={styles.sectionLabel}>{sessions.length} sessions recorded — tap a card to expand</Text>
                 {sessions.map((s, idx) => {
+                  const sessionKey = s.id || String(idx);
+                  const isExpanded = expandedSessionId === sessionKey;
                   const tech = avgOf([s.shotExecution, s.footwork, s.timing]) || s.technicalRating || 0;
                   const ment = avgOf([s.focus, s.confidence, s.pressureHandling]) || s.mentalRating || 0;
                   const phys = avgOf([s.energyLevel, s.reactionSpeed]) || s.physicalRating || 0;
@@ -495,44 +498,129 @@ export default function AnalyticsScreen() {
                   const perf = getPerformanceLabel(overall);
                   const mPct = s.middlePercent || (s.ballsFaced && s.ballsMiddled && (s.ballsFaced || 0) > 0
                     ? Math.round(((s.ballsMiddled || 0) / (s.ballsFaced || 1)) * 100) : null);
+                  const allMetrics = [
+                    { label: 'Shot Execution', value: s.shotExecution || 0, color: colors.technical, group: 'Technical' },
+                    { label: 'Footwork', value: s.footwork || 0, color: colors.technical, group: 'Technical' },
+                    { label: 'Timing', value: s.timing || 0, color: colors.technical, group: 'Technical' },
+                    { label: 'Focus', value: s.focus || 0, color: colors.mental, group: 'Mental' },
+                    { label: 'Confidence', value: s.confidence || 0, color: colors.mental, group: 'Mental' },
+                    { label: 'Pressure Handling', value: s.pressureHandling || 0, color: colors.mental, group: 'Mental' },
+                    { label: 'Energy Level', value: s.energyLevel || 0, color: colors.physical, group: 'Physical' },
+                    { label: 'Reaction Speed', value: s.reactionSpeed || 0, color: colors.physical, group: 'Physical' },
+                    { label: 'Shot Selection', value: s.shotSelection || 0, color: colors.tactical, group: 'Tactical' },
+                    { label: 'Game Awareness', value: s.gameAwareness || 0, color: colors.tactical, group: 'Tactical' },
+                  ];
+                  const hasDetailedMetrics = allMetrics.some(m => m.value > 0);
                   return (
-                    <View key={s.id || idx} style={styles.historyCard}>
+                    <Pressable
+                      key={sessionKey}
+                      style={[styles.historyCard, isExpanded && styles.historyCardExpanded]}
+                      onPress={() => setExpandedSessionId(isExpanded ? null : sessionKey)}
+                    >
+                      {/* Card header row */}
                       <View style={styles.historyTop}>
-                        <View>
+                        <View style={styles.historyLeft}>
                           <Text style={styles.historyDate}>{formatDate(s.completed_at || s.scheduled_date)}</Text>
-                          <Text style={styles.historyDuration}>{s.duration_minutes || 0} min</Text>
+                          <View style={styles.historyMeta}>
+                            {(s.duration_minutes || 0) > 0 && (
+                              <View style={styles.metaChip}>
+                                <MaterialIcons name="timer" size={11} color={colors.textSecondary} />
+                                <Text style={styles.metaChipText}>{s.duration_minutes} min</Text>
+                              </View>
+                            )}
+                            {(s.ballsFaced || 0) > 0 && (
+                              <View style={styles.metaChip}>
+                                <MaterialIcons name="sports-cricket" size={11} color={colors.textSecondary} />
+                                <Text style={styles.metaChipText}>{s.ballsFaced} balls</Text>
+                              </View>
+                            )}
+                            {mPct !== null && (
+                              <View style={[styles.metaChip, { backgroundColor: colors.success + '15' }]}>
+                                <MaterialIcons name="gps-fixed" size={11} color={colors.success} />
+                                <Text style={[styles.metaChipText, { color: colors.success, fontWeight: '700' }]}>{mPct}% mid</Text>
+                              </View>
+                            )}
+                          </View>
                         </View>
-                        <View style={{ flex: 1, alignItems: 'center' }}>
-                          {mPct !== null && <Text style={styles.middlePctChip}>{mPct}% middle</Text>}
-                          {(s.ballsFaced || 0) > 0 && <Text style={styles.ballsFacedChip}>{s.ballsFaced} balls</Text>}
-                        </View>
-                        <View style={{ alignItems: 'flex-end', gap: 4 }}>
+                        <View style={styles.historyRight}>
                           <View style={[styles.badgeSmall, { backgroundColor: perf.color + '20' }]}>
                             <Text style={[styles.badgeSmallText, { color: perf.color }]}>{perf.label}</Text>
                           </View>
-                          <Text style={styles.historyAvg}>{overall > 0 ? overall.toFixed(1) : '—'}/5</Text>
+                          <Text style={[styles.historyAvg, { color: perf.color }]}>{overall > 0 ? overall.toFixed(1) : '—'}<Text style={styles.historyAvgMax}>/5</Text></Text>
                         </View>
+                        <MaterialIcons
+                          name={isExpanded ? 'expand-less' : 'expand-more'}
+                          size={20}
+                          color={colors.textSecondary}
+                          style={{ marginLeft: 4 }}
+                        />
                       </View>
-                      <View style={styles.historyMetrics}>
-                        {[
-                          { label: 'Shot Exec', value: s.shotExecution || 0, color: colors.technical },
-                          { label: 'Footwork', value: s.footwork || 0, color: colors.technical },
-                          { label: 'Timing', value: s.timing || 0, color: colors.technical },
-                          { label: 'Focus', value: s.focus || 0, color: colors.mental },
-                          { label: 'Confidence', value: s.confidence || 0, color: colors.mental },
-                          { label: 'Pressure', value: s.pressureHandling || 0, color: colors.mental },
-                          { label: 'Energy', value: s.energyLevel || 0, color: colors.physical },
-                          { label: 'Reaction', value: s.reactionSpeed || 0, color: colors.physical },
-                          { label: 'Shot Sel.', value: s.shotSelection || 0, color: colors.tactical },
-                          { label: 'Game IQ', value: s.gameAwareness || 0, color: colors.tactical },
-                        ].filter(m => m.value > 0).map(m => (
-                          <View key={m.label} style={styles.historyMetricChip}>
-                            <Text style={[styles.historyMetricLabel, { color: m.color }]}>{m.label}</Text>
-                            <Text style={[styles.historyMetricVal, { color: m.color }]}>{m.value}</Text>
+
+                      {/* Compact metric chips (collapsed) */}
+                      {!isExpanded && hasDetailedMetrics && (
+                        <View style={styles.historyMetrics}>
+                          {allMetrics.filter(m => m.value > 0).map(m => (
+                            <View key={m.label} style={styles.historyMetricChip}>
+                              <Text style={[styles.historyMetricLabel, { color: m.color }]}>
+                                {m.label === 'Shot Execution' ? 'Shot Exec' :
+                                 m.label === 'Pressure Handling' ? 'Pressure' :
+                                 m.label === 'Energy Level' ? 'Energy' :
+                                 m.label === 'Reaction Speed' ? 'Reaction' :
+                                 m.label === 'Shot Selection' ? 'Shot Sel.' :
+                                 m.label === 'Game Awareness' ? 'Game IQ' : m.label}
+                              </Text>
+                              <Text style={[styles.historyMetricVal, { color: m.color }]}>{m.value}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Expanded full breakdown */}
+                      {isExpanded && (
+                        <View style={styles.expandedContent}>
+                          {/* Pillar summary row */}
+                          <View style={styles.expandedPillarRow}>
+                            {[
+                              { label: 'Technical', value: tech, color: colors.technical },
+                              { label: 'Mental', value: ment, color: colors.mental },
+                              { label: 'Physical', value: phys, color: colors.physical },
+                              { label: 'Tactical', value: tact, color: colors.tactical },
+                            ].map(p => (
+                              <View key={p.label} style={styles.expandedPillarCard}>
+                                <Text style={[styles.expandedPillarVal, { color: p.color }]}>{p.value > 0 ? p.value.toFixed(1) : '—'}</Text>
+                                <Text style={styles.expandedPillarLabel}>{p.label}</Text>
+                              </View>
+                            ))}
                           </View>
-                        ))}
-                      </View>
-                    </View>
+                          {/* Detailed metric bars grouped by pillar */}
+                          {(['Technical', 'Mental', 'Physical', 'Tactical'] as const).map(group => {
+                            const groupMetrics = allMetrics.filter(m => m.group === group && m.value > 0);
+                            if (!groupMetrics.length) return null;
+                            const groupColor = groupMetrics[0].color;
+                            return (
+                              <View key={group} style={styles.expandedGroup}>
+                                <Text style={[styles.expandedGroupTitle, { color: groupColor }]}>{group}</Text>
+                                {groupMetrics.map(m => (
+                                  <View key={m.label} style={styles.expandedMetricRow}>
+                                    <Text style={styles.expandedMetricLabel}>{m.label}</Text>
+                                    <View style={styles.expandedTrack}>
+                                      <View style={[styles.expandedFill, { width: `${(m.value / 5) * 100}%`, backgroundColor: m.color }]} />
+                                    </View>
+                                    <Text style={[styles.expandedMetricVal, { color: m.color }]}>{m.value}/5</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            );
+                          })}
+                          {s.sessionNotes ? (
+                            <View style={styles.expandedNotes}>
+                              <Text style={styles.expandedNotesLabel}>Notes</Text>
+                              <Text style={styles.expandedNotesText}>{s.sessionNotes}</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      )}
+                    </Pressable>
                   );
                 })}
               </>
@@ -719,19 +807,53 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
     marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border,
   },
-  historyTop: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: spacing.md, gap: spacing.sm },
-  historyDate: { ...typography.body, color: colors.text, fontWeight: '700' },
-  historyDuration: { ...typography.caption, color: colors.textSecondary },
-  historyAvg: { ...typography.h4, color: colors.text, fontWeight: '800' },
+  historyCardExpanded: {
+    borderColor: colors.primary + '50', borderWidth: 1.5,
+  },
+  historyTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 0 },
+  historyLeft: { flex: 1 },
+  historyRight: { alignItems: 'flex-end', gap: 4 },
+  historyDate: { ...typography.body, color: colors.text, fontWeight: '700', marginBottom: 4 },
+  historyMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  metaChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: colors.background, borderRadius: borderRadius.sm,
+    paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderColor: colors.border,
+  },
+  metaChipText: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  historyAvg: { fontSize: 22, color: colors.text, fontWeight: '800', lineHeight: 26 },
+  historyAvgMax: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
   middlePctChip: { ...typography.caption, color: colors.success, fontWeight: '700' },
   ballsFacedChip: { ...typography.caption, color: colors.textSecondary },
-  historyMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  historyMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: spacing.sm },
   historyMetricChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, paddingVertical: 4,
+    flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3,
     backgroundColor: colors.background, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border,
   },
   historyMetricLabel: { fontSize: 10, fontWeight: '600' },
   historyMetricVal: { fontSize: 11, fontWeight: '800' },
+  // Expanded session
+  expandedContent: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
+  expandedPillarRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  expandedPillarCard: {
+    flex: 1, alignItems: 'center', backgroundColor: colors.background,
+    borderRadius: borderRadius.md, paddingVertical: spacing.sm, borderWidth: 1, borderColor: colors.border,
+  },
+  expandedPillarVal: { fontSize: 18, fontWeight: '800' },
+  expandedPillarLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
+  expandedGroup: { marginBottom: spacing.md },
+  expandedGroupTitle: { ...typography.bodySmall, fontWeight: '700', marginBottom: spacing.sm },
+  expandedMetricRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 8 },
+  expandedMetricLabel: { ...typography.caption, color: colors.text, fontWeight: '500', width: 110 },
+  expandedTrack: { flex: 1, height: 6, backgroundColor: colors.border, borderRadius: 3 },
+  expandedFill: { height: 6, borderRadius: 3, minWidth: 4 },
+  expandedMetricVal: { ...typography.caption, fontWeight: '800', width: 30, textAlign: 'right' },
+  expandedNotes: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.sm,
+    borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs,
+  },
+  expandedNotesLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: 2 },
+  expandedNotesText: { ...typography.caption, color: colors.text, lineHeight: 16 },
 
   careerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
   careerStat: { flex: 1, minWidth: '28%', alignItems: 'center', gap: 4 },
