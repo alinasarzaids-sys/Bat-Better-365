@@ -2,6 +2,18 @@ import React, { createContext, useRef, useState, useEffect, useCallback, ReactNo
 
 export type TrainingType = 'bowling_machine' | 'bowler_spinner' | 'bowler_fast' | 'side_arm' | 'over_arm' | 'under_arm';
 
+export interface DrillSessionState {
+  isActive: boolean;
+  isMinimized: boolean;
+  drillId: string;
+  drillName: string;
+  pillar: string;
+  elapsedSeconds: number;
+  isPaused: boolean;
+  returnPath: string; // e.g. '/technical-tracking' or '/workout-tracking'
+  returnParams: Record<string, string>;
+}
+
 export interface ActiveSessionState {
   isActive: boolean;          // Step 2 session in progress
   isMinimized: boolean;       // Minimized but still running
@@ -37,6 +49,12 @@ export interface ActiveSessionState {
 }
 
 interface SessionContextType extends ActiveSessionState {
+  drillSession: DrillSessionState;
+  startDrillSession: (drillId: string, drillName: string, pillar: string, returnPath: string, returnParams?: Record<string, string>) => void;
+  minimizeDrillSession: () => void;
+  maximizeDrillSession: () => void;
+  endDrillSession: () => void;
+  setDrillIsPaused: (val: boolean) => void;
   startActiveSession: (startTime: Date) => void;
   minimizeSession: () => void;
   maximizeSession: () => void;
@@ -69,6 +87,18 @@ interface SessionContextType extends ActiveSessionState {
   setXpBreakdown: (val: any) => void;
   setSaving: (val: boolean) => void;
 }
+
+const defaultDrillSession: DrillSessionState = {
+  isActive: false,
+  isMinimized: false,
+  drillId: '',
+  drillName: '',
+  pillar: '',
+  elapsedSeconds: 0,
+  isPaused: false,
+  returnPath: '',
+  returnParams: {},
+};
 
 const defaultState: ActiveSessionState = {
   isActive: false,
@@ -107,9 +137,11 @@ export const SessionContext = createContext<SessionContextType | undefined>(unde
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ActiveSessionState>(defaultState);
+  const [drillSession, setDrillSession] = useState<DrillSessionState>(defaultDrillSession);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const drillTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Run timer globally in context — keeps ticking even when session modal is closed
+  // Run freestyle timer globally in context
   useEffect(() => {
     if (state.isActive && !state.isPaused && state.currentStep === 2) {
       timerRef.current = setInterval(() => {
@@ -128,6 +160,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
     };
   }, [state.isActive, state.isPaused, state.currentStep]);
+
+  // Run drill timer globally in context
+  useEffect(() => {
+    if (drillSession.isActive && !drillSession.isPaused) {
+      drillTimerRef.current = setInterval(() => {
+        setDrillSession(prev => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
+      }, 1000);
+    } else {
+      if (drillTimerRef.current) {
+        clearInterval(drillTimerRef.current);
+        drillTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (drillTimerRef.current) {
+        clearInterval(drillTimerRef.current);
+        drillTimerRef.current = null;
+      }
+    };
+  }, [drillSession.isActive, drillSession.isPaused]);
 
   const startActiveSession = useCallback((startTime: Date) => {
     setState(prev => ({
@@ -159,12 +211,35 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setState({ ...defaultState, scheduledDate: new Date(), scheduledTime: new Date() });
   }, []);
 
-  const makeSimpleSetter = <K extends keyof ActiveSessionState>(key: K) =>
-    useCallback((val: ActiveSessionState[K]) => setState(prev => ({ ...prev, [key]: val })), []);
+  const startDrillSession = useCallback((drillId: string, drillName: string, pillar: string, returnPath: string, returnParams: Record<string, string> = {}) => {
+    setDrillSession({ isActive: true, isMinimized: false, drillId, drillName, pillar, elapsedSeconds: 0, isPaused: false, returnPath, returnParams });
+  }, []);
+
+  const minimizeDrillSession = useCallback(() => {
+    setDrillSession(prev => ({ ...prev, isMinimized: true }));
+  }, []);
+
+  const maximizeDrillSession = useCallback(() => {
+    setDrillSession(prev => ({ ...prev, isMinimized: false }));
+  }, []);
+
+  const endDrillSession = useCallback(() => {
+    setDrillSession(defaultDrillSession);
+  }, []);
+
+  const setDrillIsPaused = useCallback((val: boolean) => {
+    setDrillSession(prev => ({ ...prev, isPaused: val }));
+  }, []);
 
   return (
     <SessionContext.Provider value={{
       ...state,
+      drillSession,
+      startDrillSession,
+      minimizeDrillSession,
+      maximizeDrillSession,
+      endDrillSession,
+      setDrillIsPaused,
       startActiveSession,
       minimizeSession,
       maximizeSession,

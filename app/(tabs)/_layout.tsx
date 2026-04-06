@@ -11,22 +11,72 @@ function formatTime(seconds: number) {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+const PILLAR_COLORS: Record<string, string> = {
+  Technical: colors.technical || '#2196F3',
+  Physical: colors.physical || '#4CAF50',
+  Mental: colors.mental || '#9C27B0',
+  Tactical: colors.tactical || '#FF9800',
+};
+
 function MiniSessionBar() {
   const router = useRouter();
-  const { isActive, isMinimized, currentStep, elapsedSeconds, isPaused, ballsFacedLive, maximizeSession, setIsPaused } = useActiveSession();
+  const insets = useSafeAreaInsets();
+  const {
+    isActive, isMinimized, currentStep, elapsedSeconds, isPaused,
+    ballsFacedLive, maximizeSession, setIsPaused,
+    drillSession, minimizeDrillSession, maximizeDrillSession, setDrillIsPaused,
+  } = useActiveSession();
 
-  if (!isActive || !isMinimized || currentStep !== 2) return null;
+  const tabBarHeight = Platform.select({ ios: insets.bottom + 60, android: insets.bottom + 60, default: 70 }) as number;
+  const barBottom = tabBarHeight + 8;
+
+  const showFreestyle = isActive && isMinimized && currentStep === 2;
+  const showDrill = drillSession.isActive && drillSession.isMinimized;
+
+  if (!showFreestyle && !showDrill) return null;
+
+  if (showDrill) {
+    const pillarColor = PILLAR_COLORS[drillSession.pillar] || colors.primary;
+    return (
+      <Pressable
+        style={[styles.miniBar, { bottom: barBottom, backgroundColor: pillarColor }]}
+        onPress={() => {
+          maximizeDrillSession();
+          router.push({ pathname: drillSession.returnPath as any, params: drillSession.returnParams });
+        }}
+      >
+        <View style={styles.miniBarLeft}>
+          <View style={[styles.miniDot, { backgroundColor: drillSession.isPaused ? 'rgba(255,255,255,0.5)' : '#fff' }]} />
+          <View>
+            <Text style={styles.miniBarTitle} numberOfLines={1}>{drillSession.drillName}</Text>
+            <Text style={styles.miniBarSub}>{drillSession.isPaused ? 'Paused' : 'Live'} · {drillSession.pillar}</Text>
+          </View>
+        </View>
+        <View style={styles.miniBarRight}>
+          <Text style={styles.miniBarTimer}>{formatTime(drillSession.elapsedSeconds)}</Text>
+          <Pressable
+            style={styles.miniPauseBtn}
+            onPress={(e) => { e.stopPropagation(); setDrillIsPaused(!drillSession.isPaused); }}
+            hitSlop={8}
+          >
+            <MaterialIcons name={drillSession.isPaused ? 'play-arrow' : 'pause'} size={18} color={colors.textLight} />
+          </Pressable>
+          <MaterialIcons name="expand-less" size={18} color={colors.textLight} style={{ opacity: 0.8 }} />
+        </View>
+      </Pressable>
+    );
+  }
 
   return (
     <Pressable
-      style={styles.miniBar}
+      style={[styles.miniBar, { bottom: barBottom }]}
       onPress={() => {
         maximizeSession();
         router.push('/session-freestyle' as any);
       }}
     >
       <View style={styles.miniBarLeft}>
-        <View style={[styles.miniDot, { backgroundColor: isPaused ? colors.warning : colors.success }]} />
+        <View style={[styles.miniDot, { backgroundColor: isPaused ? colors.warning : '#fff' }]} />
         <View>
           <Text style={styles.miniBarTitle}>Freestyle Session</Text>
           <Text style={styles.miniBarSub}>{isPaused ? 'Paused' : 'Live'} · {ballsFacedLive} balls</Text>
@@ -151,7 +201,6 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   miniBar: {
     position: 'absolute',
-    bottom: Platform.select({ ios: 84, android: 72, default: 78 }),
     left: spacing.sm,
     right: spacing.sm,
     backgroundColor: colors.primaryDark,

@@ -29,6 +29,11 @@ export default function TechnicalTrackingScreen() {
   const [isRunning, setIsRunning] = useState(true);
   const [isPaused, setIsPaused] = useState(false);
 
+  // Use global drill session timer so it ticks while minimized
+  const timeElapsed = drillSession.isActive && drillSession.drillId === drillId
+    ? drillSession.elapsedSeconds
+    : 0;
+
   // Technical tracking metrics
   const [ballsFaced, setBallsFaced] = useState(0);
   const [successfulShots, setSuccessfulShots] = useState(0);
