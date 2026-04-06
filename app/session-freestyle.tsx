@@ -829,7 +829,6 @@ export default function FreestyleSessionScreen() {
           <Pressable
             style={[styles.saveButton, (selectedTrainingTypes.size === 0 || saving) && styles.saveButtonDisabled]}
             onPress={handleStartSession}
-            disabled={selectedTrainingTypes.size === 0 || saving}
           >
             <MaterialIcons name={sessionMode === 'later' ? 'schedule' : 'play-arrow'} size={20} color={colors.textLight} />
             <Text style={styles.saveButtonText}>
@@ -849,7 +848,6 @@ export default function FreestyleSessionScreen() {
           <Pressable
             style={[styles.saveButton, (!isStep3Valid() || saving) && styles.saveButtonDisabled]}
             onPress={handleCompleteSession}
-            disabled={!isStep3Valid() || saving}
           >
             <MaterialIcons name="check" size={20} color={colors.textLight} />
             <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Complete Session'}</Text>
@@ -1160,7 +1158,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
     backgroundColor: colors.success, paddingVertical: spacing.md, borderRadius: borderRadius.md,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
-    flex: 1,
+    flex: 1, minHeight: 52,
   },
   saveButtonDisabled: { backgroundColor: colors.border },
   saveButtonText: { ...typography.body, color: colors.textLight, fontWeight: '600' },
