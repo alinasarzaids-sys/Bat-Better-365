@@ -86,7 +86,6 @@ export default function FreestyleSessionScreen() {
   // Step 3: Post-session ratings — Batting Stats
   const [ballsFaced, setBallsFaced] = useState('');
   const [ballsMiddled, setBallsMiddled] = useState('');
-  const [boundariesHit, setBoundariesHit] = useState('');
   // Technical
   const [shotExecution, setShotExecution] = useState(0);
   const [footwork, setFootwork] = useState(0);
@@ -278,7 +277,6 @@ export default function FreestyleSessionScreen() {
     if (ballsFaced) notes += `Balls Faced: ${ballsFaced}\n`;
     if (ballsMiddled) notes += `Balls Middled: ${ballsMiddled}\n`;
     if (middlePct > 0) notes += `Middle %: ${middlePct}\n`;
-    if (boundariesHit) notes += `Boundaries Hit: ${boundariesHit}\n`;
     notes += `\n--- Technical ---\n`;
     notes += `Shot Execution: ${shotExecution}/5\n`;
     notes += `Footwork: ${footwork}/5\n`;
@@ -617,18 +615,6 @@ export default function FreestyleSessionScreen() {
               textAlign="center"
             />
           </View>
-          <View style={styles.statInputBlock}>
-            <Text style={styles.statInputLabel}>Boundaries</Text>
-            <TextInput
-              style={styles.statInput}
-              value={boundariesHit}
-              onChangeText={setBoundariesHit}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={colors.textSecondary}
-              textAlign="center"
-            />
-          </View>
         </View>
         {ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0 && (
           <View style={styles.middlePctBadge}>
@@ -738,13 +724,7 @@ export default function FreestyleSessionScreen() {
               <Text style={styles.quickStatLabel}>Middle %</Text>
             </View>
           ) : null}
-          {boundariesHit ? (
-            <View style={styles.quickStatCard}>
-              <MaterialIcons name="star" size={22} color={colors.warning} />
-              <Text style={styles.quickStatValue}>{boundariesHit}</Text>
-              <Text style={styles.quickStatLabel}>Boundaries</Text>
-            </View>
-          ) : null}
+
         </View>
 
         {/* Pillar Averages */}
@@ -867,7 +847,6 @@ export default function FreestyleSessionScreen() {
                   technical: technicalRating,
                   balls: ballsFaced,
                   ballsMiddled: ballsMiddled,
-                  boundaries: boundariesHit,
                   duration: Math.floor(elapsedSeconds / 60),
                   types: Array.from(selectedTrainingTypes).map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(','),
                   focus: focusArea,
