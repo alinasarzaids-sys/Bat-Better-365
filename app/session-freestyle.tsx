@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,6 @@ import {
   Pressable,
   TextInput,
   Platform,
-  Animated,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -16,6 +15,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { sessionService } from '@/services/sessionService';
 import { progressService } from '@/services/progressService';
 import { useAuth, useAlert } from '@/template';
+import { useActiveSession } from '@/hooks/useActiveSession';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 type TrainingType = 'bowling_machine' | 'bowler_spinner' | 'bowler_fast' | 'side_arm' | 'over_arm' | 'under_arm';
@@ -36,9 +36,17 @@ const SESSION_TIPS = [
   '👁️ Visualize each delivery and your response',
   '⚡ Maintain high intensity but listen to your body',
   '📝 Mental rehearsal between deliveries is key',
-  '🎪 Vary your practice - don\'t just groove one shot',
+  '🎪 Vary your practice — don\'t just groove one shot',
   '🔄 Reset after mistakes - champions have short memories',
 ];
+
+function formatElapsedTime(seconds: number) {
+  const hrs = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  if (hrs > 0) return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
 
 export default function FreestyleSessionScreen() {
   const router = useRouter();
@@ -46,302 +54,159 @@ export default function FreestyleSessionScreen() {
   const { user } = useAuth();
   const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
-
-  // Step management (1: Setup, 2: Active, 3: Ratings, 4: Summary)
-  const [currentStep, setCurrentStep] = useState(1);
-
-  // If a date was passed from the calendar, pre-fill it and switch to 'later' mode
-  const prefilledDateStr = params.date as string | undefined;
-  const getInitialScheduledDate = () => {
-    if (prefilledDateStr) {
-      const [y, m, d] = prefilledDateStr.split('-').map(Number);
-      return new Date(y, m - 1, d);
-    }
-    return new Date();
-  };
-
-  // Session timing mode
-  const [sessionMode, setSessionMode] = useState<'now' | 'later'>(prefilledDateStr ? 'later' : 'now');
-  const [scheduledDate, setScheduledDate] = useState<Date>(getInitialScheduledDate());
-  const [scheduledTime, setScheduledTime] = useState<Date>(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-
-  // Step 1: Pre-session setup
-  const [selectedTrainingTypes, setSelectedTrainingTypes] = useState<Set<TrainingType>>(new Set());
-  const [focusArea, setFocusArea] = useState('');
-  const [sessionGoal, setSessionGoal] = useState('');
-  const [estimatedDuration, setEstimatedDuration] = useState('60');
-
-  // Step 2: Active session
-  const [sessionStartTime, setSessionStartTime] = useState<Date | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [ballsFacedLive, setBallsFacedLive] = useState(0);
-  const [ballsFacedInput, setBallsFacedInput] = useState('0');
-  const [currentTipIndex, setCurrentTipIndex] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
-  const timerInterval = useRef<NodeJS.Timeout | null>(null);
+  const session = useActiveSession();
   const tipRotation = useRef<NodeJS.Timeout | null>(null);
+  const [currentTipIndex, setCurrentTipIndex] = React.useState(0);
 
-  // Step 3: Post-session ratings — Batting Stats
-  const [ballsFaced, setBallsFaced] = useState('');
-  const [ballsMiddled, setBallsMiddled] = useState('');
-  // Technical
-  const [shotExecution, setShotExecution] = useState(0);
-  const [footwork, setFootwork] = useState(0);
-  const [timing, setTiming] = useState(0);
-  // Mental
-  const [focus, setFocus] = useState(0);
-  const [confidence, setConfidence] = useState(0);
-  const [pressureHandling, setPressureHandling] = useState(0);
-  // Physical
-  const [energyLevel, setEnergyLevel] = useState(0);
-  const [reactionSpeed, setReactionSpeed] = useState(0);
-  // Tactical
-  const [shotSelection, setShotSelection] = useState(0);
-  const [gameAwareness, setGameAwareness] = useState(0);
-  const [sessionNotes, setSessionNotes] = useState('');
-
-  // Derived averages (used for XP and analytics)
-  const physicalRating = energyLevel > 0 || reactionSpeed > 0
-    ? Math.round(((energyLevel || 0) + (reactionSpeed || 0)) / (energyLevel > 0 && reactionSpeed > 0 ? 2 : 1))
-    : 0;
-  const mentalRating = focus > 0 || confidence > 0 || pressureHandling > 0
-    ? Math.round(((focus || 0) + (confidence || 0) + (pressureHandling || 0)) / [focus, confidence, pressureHandling].filter(v => v > 0).length)
-    : 0;
-  const tacticalRating = shotSelection > 0 || gameAwareness > 0
-    ? Math.round(((shotSelection || 0) + (gameAwareness || 0)) / (shotSelection > 0 && gameAwareness > 0 ? 2 : 1))
-    : 0;
-  const technicalRating = shotExecution > 0 || footwork > 0 || timing > 0
-    ? Math.round(((shotExecution || 0) + (footwork || 0) + (timing || 0)) / [shotExecution, footwork, timing].filter(v => v > 0).length)
-    : 0;
-
-  // Step 4: Summary
-  const [xpBreakdown, setXpBreakdown] = useState<any>(null);
-  const [saving, setSaving] = useState(false);
-
-  // Timer effect for active session
+  // Pre-fill date from calendar params if provided (only on first mount when not active)
+  const prefilledDateStr = params.date as string | undefined;
   useEffect(() => {
-    if (currentStep === 2 && sessionStartTime && !isPaused) {
-      timerInterval.current = setInterval(() => {
-        setElapsedSeconds((prev) => prev + 1);
-      }, 1000);
-
-      tipRotation.current = setInterval(() => {
-        setCurrentTipIndex((prev) => (prev + 1) % SESSION_TIPS.length);
-      }, 15000);
-
-      return () => {
-        if (timerInterval.current) clearInterval(timerInterval.current);
-        if (tipRotation.current) clearInterval(tipRotation.current);
-      };
+    if (prefilledDateStr && !session.isActive) {
+      const [y, m, d] = prefilledDateStr.split('-').map(Number);
+      session.setScheduledDate(new Date(y, m - 1, d));
+      session.setSessionMode('later');
     }
+  }, [prefilledDateStr]);
 
-    if (isPaused) {
-      if (timerInterval.current) clearInterval(timerInterval.current);
+  // Tip rotation only while step 2 is active and visible
+  useEffect(() => {
+    if (session.currentStep === 2 && !session.isPaused) {
+      tipRotation.current = setInterval(() => {
+        setCurrentTipIndex(prev => (prev + 1) % SESSION_TIPS.length);
+      }, 15000);
+    } else {
       if (tipRotation.current) clearInterval(tipRotation.current);
     }
-  }, [currentStep, sessionStartTime, isPaused]);
+    return () => { if (tipRotation.current) clearInterval(tipRotation.current); };
+  }, [session.currentStep, session.isPaused]);
 
-  const formatElapsedTime = (seconds: number) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    if (hrs > 0) {
-      return `${hrs}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-    }
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  // Derived averages
+  const physicalRating = session.energyLevel > 0 || session.reactionSpeed > 0
+    ? Math.round(((session.energyLevel || 0) + (session.reactionSpeed || 0)) / ([session.energyLevel, session.reactionSpeed].filter(v => v > 0).length))
+    : 0;
+  const mentalRating = session.focus > 0 || session.confidence > 0 || session.pressureHandling > 0
+    ? Math.round(((session.focus || 0) + (session.confidence || 0) + (session.pressureHandling || 0)) / [session.focus, session.confidence, session.pressureHandling].filter(v => v > 0).length)
+    : 0;
+  const tacticalRating = session.shotSelection > 0 || session.gameAwareness > 0
+    ? Math.round(((session.shotSelection || 0) + (session.gameAwareness || 0)) / ([session.shotSelection, session.gameAwareness].filter(v => v > 0).length))
+    : 0;
+  const technicalRating = session.shotExecution > 0 || session.footwork > 0 || session.timing > 0
+    ? Math.round(((session.shotExecution || 0) + (session.footwork || 0) + (session.timing || 0)) / [session.shotExecution, session.footwork, session.timing].filter(v => v > 0).length)
+    : 0;
 
   const toggleTrainingType = (type: TrainingType) => {
-    const newSet = new Set(selectedTrainingTypes);
-    if (newSet.has(type)) {
-      newSet.delete(type);
-    } else {
-      newSet.add(type);
-    }
-    setSelectedTrainingTypes(newSet);
+    const newSet = new Set(session.selectedTrainingTypes);
+    if (newSet.has(type)) newSet.delete(type);
+    else newSet.add(type);
+    session.setSelectedTrainingTypes(newSet);
   };
 
   const handleStartSession = async () => {
-    if (selectedTrainingTypes.size === 0) {
+    if (session.selectedTrainingTypes.size === 0) {
       showAlert('Error', 'Please select at least one training type');
       return;
     }
-    if (sessionMode === 'later') {
+    if (session.sessionMode === 'later') {
       await handleScheduleForLater();
       return;
     }
-    setSessionStartTime(new Date());
-    setBallsFacedInput('0');
-    setIsPaused(false);
-    setCurrentStep(2);
+    session.startActiveSession(new Date());
   };
 
   const handleScheduleForLater = async () => {
-    if (!user) {
-      showAlert('Error', 'You must be logged in');
-      return;
-    }
-    setSaving(true);
+    if (!user) { showAlert('Error', 'You must be logged in'); return; }
+    session.setSaving(true);
     const scheduledDateTime = new Date(
-      scheduledDate.getFullYear(),
-      scheduledDate.getMonth(),
-      scheduledDate.getDate(),
-      scheduledTime.getHours(),
-      scheduledTime.getMinutes()
+      session.scheduledDate.getFullYear(), session.scheduledDate.getMonth(), session.scheduledDate.getDate(),
+      session.scheduledTime.getHours(), session.scheduledTime.getMinutes()
     );
-    const trainingTypesText = Array.from(selectedTrainingTypes)
-      .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label)
-      .join(', ');
+    const trainingTypesText = Array.from(session.selectedTrainingTypes)
+      .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(', ');
     let notes = `Training Types: ${trainingTypesText}\n`;
-    if (focusArea) notes += `Focus Area: ${focusArea}\n`;
-    if (sessionGoal) notes += `Session Goal: ${sessionGoal}`;
-    const { data: session, error } = await sessionService.createSession({
-      user_id: user.id,
-      title: 'Freestyle Session',
+    if (session.focusArea) notes += `Focus Area: ${session.focusArea}\n`;
+    if (session.sessionGoal) notes += `Session Goal: ${session.sessionGoal}`;
+    const { error } = await sessionService.createSession({
+      user_id: user.id, title: 'Freestyle Session',
       scheduled_date: scheduledDateTime.toISOString(),
-      duration_minutes: parseInt(estimatedDuration),
-      session_type: 'Freestyle',
-      status: 'planned',
-      notes,
+      duration_minutes: parseInt(session.estimatedDuration),
+      session_type: 'Freestyle', status: 'planned', notes,
     });
-    setSaving(false);
-    if (error) {
-      showAlert('Error', error);
-      return;
-    }
+    session.setSaving(false);
+    if (error) { showAlert('Error', error); return; }
     showAlert('Success', 'Session scheduled successfully');
+    session.resetSession();
     router.back();
   };
 
-  const togglePause = () => setIsPaused(!isPaused);
-
-  const handleBallsFacedInputChange = (text: string) => {
-    const numericValue = text.replace(/[^0-9]/g, '');
-    setBallsFacedInput(numericValue);
-    setBallsFacedLive(parseInt(numericValue) || 0);
-  };
-
-  const handleBallsFacedIncrement = () => {
-    const newValue = ballsFacedLive + 1;
-    setBallsFacedLive(newValue);
-    setBallsFacedInput(newValue.toString());
-  };
-
-  const handleBallsFacedDecrement = () => {
-    const newValue = Math.max(0, ballsFacedLive - 1);
-    setBallsFacedLive(newValue);
-    setBallsFacedInput(newValue.toString());
+  const handleMinimize = () => {
+    session.minimizeSession();
+    router.back();
   };
 
   const handleEndSession = () => {
-    if (timerInterval.current) clearInterval(timerInterval.current);
     if (tipRotation.current) clearInterval(tipRotation.current);
-    setBallsFaced(ballsFacedLive.toString());
-    setCurrentStep(3);
+    session.setBallsFaced(session.ballsFacedLive.toString());
+    session.endActiveSession();
   };
 
   const isStep3Valid = () => {
-    // Need at least one rating from each pillar
-    const hasTechnical = shotExecution > 0 || footwork > 0 || timing > 0;
-    const hasMental = focus > 0 || confidence > 0 || pressureHandling > 0;
-    const hasPhysical = energyLevel > 0 || reactionSpeed > 0;
-    const hasTactical = shotSelection > 0 || gameAwareness > 0;
+    const hasTechnical = session.shotExecution > 0 || session.footwork > 0 || session.timing > 0;
+    const hasMental = session.focus > 0 || session.confidence > 0 || session.pressureHandling > 0;
+    const hasPhysical = session.energyLevel > 0 || session.reactionSpeed > 0;
+    const hasTactical = session.shotSelection > 0 || session.gameAwareness > 0;
     return hasTechnical && hasMental && hasPhysical && hasTactical;
   };
 
   const handleCompleteSession = async () => {
-    if (!user) {
-      showAlert('Error', 'You must be logged in');
-      return;
-    }
+    if (!user) { showAlert('Error', 'You must be logged in'); return; }
     if (!isStep3Valid()) {
       showAlert('Incomplete', 'Please rate at least one metric in each pillar (Technical, Mental, Physical, Tactical)');
       return;
     }
-    setSaving(true);
-    const actualDuration = Math.floor(elapsedSeconds / 60);
-    const trainingTypesText = Array.from(selectedTrainingTypes)
-      .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label)
-      .join(', ');
-
-    const middlePct = ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0
-      ? Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)
-      : 0;
+    session.setSaving(true);
+    const actualDuration = Math.floor(session.elapsedSeconds / 60);
+    const trainingTypesText = Array.from(session.selectedTrainingTypes)
+      .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(', ');
+    const middlePct = session.ballsFaced && session.ballsMiddled && parseInt(session.ballsFaced) > 0
+      ? Math.round((parseInt(session.ballsMiddled) / parseInt(session.ballsFaced)) * 100) : 0;
 
     let notes = `Training Types: ${trainingTypesText}\n`;
-    if (focusArea) notes += `Focus Area: ${focusArea}\n`;
-    if (sessionGoal) notes += `Session Goal: ${sessionGoal}\n`;
+    if (session.focusArea) notes += `Focus Area: ${session.focusArea}\n`;
+    if (session.sessionGoal) notes += `Session Goal: ${session.sessionGoal}\n`;
     notes += `\n--- Batting Stats ---\n`;
-    if (ballsFaced) notes += `Balls Faced: ${ballsFaced}\n`;
-    if (ballsMiddled) notes += `Balls Middled: ${ballsMiddled}\n`;
+    if (session.ballsFaced) notes += `Balls Faced: ${session.ballsFaced}\n`;
+    if (session.ballsMiddled) notes += `Balls Middled: ${session.ballsMiddled}\n`;
     if (middlePct > 0) notes += `Middle %: ${middlePct}\n`;
     notes += `\n--- Technical ---\n`;
-    notes += `Shot Execution: ${shotExecution}/5\n`;
-    notes += `Footwork: ${footwork}/5\n`;
-    notes += `Timing: ${timing}/5\n`;
+    notes += `Shot Execution: ${session.shotExecution}/5\nFootwork: ${session.footwork}/5\nTiming: ${session.timing}/5\n`;
     notes += `\n--- Mental ---\n`;
-    notes += `Focus: ${focus}/5\n`;
-    notes += `Confidence: ${confidence}/5\n`;
-    notes += `Pressure Handling: ${pressureHandling}/5\n`;
+    notes += `Focus: ${session.focus}/5\nConfidence: ${session.confidence}/5\nPressure Handling: ${session.pressureHandling}/5\n`;
     notes += `\n--- Physical ---\n`;
-    notes += `Energy Level: ${energyLevel}/5\n`;
-    notes += `Reaction Speed: ${reactionSpeed}/5\n`;
+    notes += `Energy Level: ${session.energyLevel}/5\nReaction Speed: ${session.reactionSpeed}/5\n`;
     notes += `\n--- Tactical ---\n`;
-    notes += `Shot Selection: ${shotSelection}/5\n`;
-    notes += `Game Awareness: ${gameAwareness}/5\n`;
-    // Legacy fields for backwards-compatible analytics parsing
-    notes += `\nPhysical: ${physicalRating}/5\n`;
-    notes += `Mental: ${mentalRating}/5\n`;
-    notes += `Tactical: ${tacticalRating}/5\n`;
-    notes += `Technical: ${technicalRating}/5`;
-    if (sessionNotes) notes += `\n\nNotes: ${sessionNotes}`;
+    notes += `Shot Selection: ${session.shotSelection}/5\nGame Awareness: ${session.gameAwareness}/5\n`;
+    notes += `\nPhysical: ${physicalRating}/5\nMental: ${mentalRating}/5\nTactical: ${tacticalRating}/5\nTechnical: ${technicalRating}/5`;
+    if (session.sessionNotes) notes += `\n\nNotes: ${session.sessionNotes}`;
 
-    const { data: session, error } = await sessionService.createSession({
-      user_id: user.id,
-      title: 'Freestyle Session',
-      scheduled_date: sessionStartTime?.toISOString() || new Date().toISOString(),
-      duration_minutes: actualDuration,
-      session_type: 'Freestyle',
-      status: 'completed',
-      notes,
+    const { error } = await sessionService.createSession({
+      user_id: user.id, title: 'Freestyle Session',
+      scheduled_date: session.sessionStartTime?.toISOString() || new Date().toISOString(),
+      duration_minutes: actualDuration, session_type: 'Freestyle', status: 'completed', notes,
     });
-    if (error) {
-      setSaving(false);
-      showAlert('Error', error);
-      return;
-    }
+    if (error) { session.setSaving(false); showAlert('Error', error); return; }
+
     const avgRating = (physicalRating + mentalRating + tacticalRating + technicalRating) / 4;
-    const { data: xpResult, error: xpError } = await progressService.awardDrillXP(
-      user.id,
-      'Physical',
-      Math.round(avgRating),
-      actualDuration
-    );
-    if (xpError || !xpResult) {
-      setSaving(false);
-      showAlert('Error', 'Failed to save progress');
-      return;
-    }
-    setSaving(false);
-    setXpBreakdown(xpResult.xpBreakdown);
-    setCurrentStep(4);
+    const { data: xpResult, error: xpError } = await progressService.awardDrillXP(user.id, 'Physical', Math.round(avgRating), actualDuration);
+    if (xpError || !xpResult) { session.setSaving(false); showAlert('Error', 'Failed to save progress'); return; }
+
+    session.setSaving(false);
+    session.setXpBreakdown(xpResult.xpBreakdown);
+    session.setCurrentStep(4);
   };
 
   const RatingStars = ({
-    rating,
-    onRate,
-    label,
-    sublabel,
-    color,
-  }: {
-    rating: number;
-    onRate: (rating: number) => void;
-    label: string;
-    sublabel?: string;
-    color?: string;
-  }) => (
+    rating, onRate, label, sublabel, color,
+  }: { rating: number; onRate: (r: number) => void; label: string; sublabel?: string; color?: string }) => (
     <View style={styles.ratingContainer}>
       <View style={styles.ratingLabelRow}>
         <Text style={styles.ratingLabel}>{label}</Text>
@@ -353,52 +218,34 @@ export default function FreestyleSessionScreen() {
       </View>
       {sublabel && <Text style={styles.ratingSublabel}>{sublabel}</Text>}
       <View style={styles.starsRow}>
-        {[1, 2, 3, 4, 5].map((star) => (
+        {[1, 2, 3, 4, 5].map(star => (
           <Pressable key={star} onPress={() => onRate(star)} style={styles.starButton}>
-            <MaterialIcons
-              name={star <= rating ? 'star' : 'star-border'}
-              size={30}
-              color={star <= rating ? (color || colors.tactical) : colors.border}
-            />
+            <MaterialIcons name={star <= rating ? 'star' : 'star-border'} size={30} color={star <= rating ? (color || colors.tactical) : colors.border} />
           </Pressable>
         ))}
       </View>
     </View>
   );
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 1: return renderStep1();
-      case 2: return renderStep2();
-      case 3: return renderStep3();
-      case 4: return renderStep4();
-      default: return null;
-    }
-  };
+  // ─── Step renders ───────────────────────────────────────────────────────────
 
   const renderStep1 = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
       <View style={styles.modeSelection}>
         <Text style={styles.stepTitle}>When do you want to train?</Text>
         <View style={styles.modeButtons}>
-          <Pressable
-            style={[styles.modeButton, sessionMode === 'now' && styles.modeButtonActive]}
-            onPress={() => setSessionMode('now')}
-          >
-            <MaterialIcons name="play-arrow" size={24} color={sessionMode === 'now' ? colors.textLight : colors.primary} />
-            <Text style={[styles.modeButtonText, sessionMode === 'now' && styles.modeButtonTextActive]}>Start Now</Text>
+          <Pressable style={[styles.modeButton, session.sessionMode === 'now' && styles.modeButtonActive]} onPress={() => session.setSessionMode('now')}>
+            <MaterialIcons name="play-arrow" size={24} color={session.sessionMode === 'now' ? colors.textLight : colors.primary} />
+            <Text style={[styles.modeButtonText, session.sessionMode === 'now' && styles.modeButtonTextActive]}>Start Now</Text>
           </Pressable>
-          <Pressable
-            style={[styles.modeButton, sessionMode === 'later' && styles.modeButtonActive]}
-            onPress={() => setSessionMode('later')}
-          >
-            <MaterialIcons name="schedule" size={24} color={sessionMode === 'later' ? colors.textLight : colors.primary} />
-            <Text style={[styles.modeButtonText, sessionMode === 'later' && styles.modeButtonTextActive]}>Schedule Later</Text>
+          <Pressable style={[styles.modeButton, session.sessionMode === 'later' && styles.modeButtonActive]} onPress={() => session.setSessionMode('later')}>
+            <MaterialIcons name="schedule" size={24} color={session.sessionMode === 'later' ? colors.textLight : colors.primary} />
+            <Text style={[styles.modeButtonText, session.sessionMode === 'later' && styles.modeButtonTextActive]}>Schedule Later</Text>
           </Pressable>
         </View>
       </View>
 
-      {sessionMode === 'later' && (
+      {session.sessionMode === 'later' && (
         <View style={styles.dateTimeSection}>
           <View style={styles.formGroup}>
             <Text style={styles.label}>Date</Text>
@@ -406,75 +253,43 @@ export default function FreestyleSessionScreen() {
               <View style={[styles.dateTimeButton, { backgroundColor: colors.primary + '12' }]}>
                 <MaterialIcons name="event" size={20} color={colors.primary} />
                 <Text style={[styles.dateTimeButtonText, { color: colors.primary, fontWeight: '600' }]}>
-                  {scheduledDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                  {session.scheduledDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                 </Text>
                 <MaterialIcons name="lock" size={16} color={colors.primary} />
               </View>
             ) : (
-              <Pressable style={styles.dateTimeButton} onPress={() => setShowDatePicker(true)}>
+              <Pressable style={styles.dateTimeButton} onPress={() => {}}>
                 <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
                 <Text style={styles.dateTimeButtonText}>
-                  {scheduledDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                  {session.scheduledDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
                 </Text>
               </Pressable>
-            )}
-            {showDatePicker && !prefilledDateStr && (
-              <DateTimePicker
-                value={scheduledDate}
-                mode="date"
-                display="default"
-                onChange={(event, selectedDate) => {
-                  setShowDatePicker(Platform.OS === 'ios');
-                  if (selectedDate) setScheduledDate(selectedDate);
-                }}
-                minimumDate={new Date()}
-              />
             )}
           </View>
           <View style={styles.formGroup}>
             <Text style={styles.label}>Time</Text>
-            <Pressable style={styles.dateTimeButton} onPress={() => setShowTimePicker(true)}>
+            <Pressable style={styles.dateTimeButton}>
               <MaterialIcons name="access-time" size={20} color={colors.primary} />
               <Text style={styles.dateTimeButtonText}>
-                {scheduledTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                {session.scheduledTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
               </Text>
             </Pressable>
-            {showTimePicker && (
-              <DateTimePicker
-                value={scheduledTime}
-                mode="time"
-                display="default"
-                onChange={(event, selectedTime) => {
-                  setShowTimePicker(Platform.OS === 'ios');
-                  if (selectedTime) setScheduledTime(selectedTime);
-                }}
-              />
-            )}
           </View>
         </View>
       )}
 
       <Text style={styles.stepTitle}>What are you training with today?</Text>
       <Text style={styles.stepSubtitle}>Select all that apply</Text>
-
       <View style={styles.trainingTypesGrid}>
-        {TRAINING_TYPES.map((type) => {
-          const isSelected = selectedTrainingTypes.has(type.id);
+        {TRAINING_TYPES.map(type => {
+          const isSelected = session.selectedTrainingTypes.has(type.id);
           return (
-            <Pressable
-              key={type.id}
-              style={[styles.trainingTypeCard, isSelected && styles.trainingTypeCardSelected]}
-              onPress={() => toggleTrainingType(type.id)}
-            >
+            <Pressable key={type.id} style={[styles.trainingTypeCard, isSelected && styles.trainingTypeCardSelected]} onPress={() => toggleTrainingType(type.id)}>
               <View style={[styles.trainingTypeIcon, isSelected && styles.trainingTypeIconSelected]}>
                 <MaterialIcons name={type.icon as any} size={32} color={isSelected ? colors.textLight : colors.primary} />
               </View>
               <Text style={[styles.trainingTypeLabel, isSelected && styles.trainingTypeLabelSelected]}>{type.label}</Text>
-              {isSelected && (
-                <View style={styles.checkMark}>
-                  <MaterialIcons name="check-circle" size={24} color={colors.success} />
-                </View>
-              )}
+              {isSelected && <View style={styles.checkMark}><MaterialIcons name="check-circle" size={24} color={colors.success} /></View>}
             </Pressable>
           );
         })}
@@ -483,36 +298,18 @@ export default function FreestyleSessionScreen() {
       <View style={styles.additionalFields}>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Focus Area (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            value={focusArea}
-            onChangeText={setFocusArea}
-            placeholder="e.g., Cover drives, Pull shots"
-            placeholderTextColor={colors.textSecondary}
-          />
+          <TextInput style={styles.input} value={session.focusArea} onChangeText={session.setFocusArea} placeholder="e.g., Cover drives, Pull shots" placeholderTextColor={colors.textSecondary} />
         </View>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Session Goal (Optional)</Text>
-          <TextInput
-            style={styles.input}
-            value={sessionGoal}
-            onChangeText={setSessionGoal}
-            placeholder="e.g., Improve timing"
-            placeholderTextColor={colors.textSecondary}
-          />
+          <TextInput style={styles.input} value={session.sessionGoal} onChangeText={session.setSessionGoal} placeholder="e.g., Improve timing" placeholderTextColor={colors.textSecondary} />
         </View>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Estimated Duration</Text>
           <View style={styles.durationOptions}>
-            {['15', '30', '45', '60', '90'].map((mins) => (
-              <Pressable
-                key={mins}
-                style={[styles.durationOption, estimatedDuration === mins && styles.durationOptionSelected]}
-                onPress={() => setEstimatedDuration(mins)}
-              >
-                <Text style={[styles.durationOptionText, estimatedDuration === mins && styles.durationOptionTextSelected]}>
-                  {mins} min
-                </Text>
+            {['15', '30', '45', '60', '90'].map(mins => (
+              <Pressable key={mins} style={[styles.durationOption, session.estimatedDuration === mins && styles.durationOptionSelected]} onPress={() => session.setEstimatedDuration(mins)}>
+                <Text style={[styles.durationOptionText, session.estimatedDuration === mins && styles.durationOptionTextSelected]}>{mins} min</Text>
               </Pressable>
             ))}
           </View>
@@ -525,11 +322,17 @@ export default function FreestyleSessionScreen() {
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.activeSessionContent} showsVerticalScrollIndicator={false}>
       <View style={styles.timerSection}>
         <Text style={styles.timerLabel}>Session Time</Text>
-        <Text style={styles.timerDisplay}>{formatElapsedTime(elapsedSeconds)}</Text>
-        <Pressable style={styles.pauseButton} onPress={togglePause}>
-          <MaterialIcons name={isPaused ? 'play-arrow' : 'pause'} size={24} color={colors.textLight} />
-          <Text style={styles.pauseButtonText}>{isPaused ? 'Resume' : 'Pause'}</Text>
-        </Pressable>
+        <Text style={styles.timerDisplay}>{formatElapsedTime(session.elapsedSeconds)}</Text>
+        <View style={styles.timerButtonRow}>
+          <Pressable style={styles.pauseButton} onPress={() => session.setIsPaused(!session.isPaused)}>
+            <MaterialIcons name={session.isPaused ? 'play-arrow' : 'pause'} size={24} color={colors.textLight} />
+            <Text style={styles.pauseButtonText}>{session.isPaused ? 'Resume' : 'Pause'}</Text>
+          </Pressable>
+          <Pressable style={styles.minimizeButton} onPress={handleMinimize}>
+            <MaterialIcons name="minimize" size={20} color={colors.primary} />
+            <Text style={styles.minimizeButtonText}>Minimise</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={styles.liveStatsSection}>
@@ -537,17 +340,29 @@ export default function FreestyleSessionScreen() {
           <MaterialIcons name="sports-cricket" size={32} color={colors.primary} />
           <TextInput
             style={styles.liveStatValue}
-            value={ballsFacedInput}
-            onChangeText={handleBallsFacedInputChange}
+            value={session.ballsFacedInput}
+            onChangeText={v => {
+              const n = v.replace(/[^0-9]/g, '');
+              session.setBallsFacedInput(n);
+              session.setBallsFacedLive(parseInt(n) || 0);
+            }}
             keyboardType="number-pad"
             selectTextOnFocus
           />
           <Text style={styles.liveStatLabel}>Balls Faced</Text>
           <View style={styles.liveStatButtons}>
-            <Pressable style={styles.liveStatButton} onPress={handleBallsFacedDecrement}>
+            <Pressable style={styles.liveStatButton} onPress={() => {
+              const n = Math.max(0, session.ballsFacedLive - 1);
+              session.setBallsFacedLive(n);
+              session.setBallsFacedInput(n.toString());
+            }}>
               <MaterialIcons name="remove" size={20} color={colors.textLight} />
             </Pressable>
-            <Pressable style={styles.liveStatButton} onPress={handleBallsFacedIncrement}>
+            <Pressable style={styles.liveStatButton} onPress={() => {
+              const n = session.ballsFacedLive + 1;
+              session.setBallsFacedLive(n);
+              session.setBallsFacedInput(n.toString());
+            }}>
               <MaterialIcons name="add" size={20} color={colors.textLight} />
             </Pressable>
           </View>
@@ -565,7 +380,7 @@ export default function FreestyleSessionScreen() {
       <View style={styles.selectedTypesSection}>
         <Text style={styles.selectedTypesLabel}>Today's Training</Text>
         <View style={styles.selectedTypesRow}>
-          {Array.from(selectedTrainingTypes).map((typeId) => {
+          {Array.from(session.selectedTrainingTypes).map(typeId => {
             const type = TRAINING_TYPES.find(t => t.id === typeId);
             return (
               <View key={typeId} style={styles.selectedTypeBadge}>
@@ -584,7 +399,6 @@ export default function FreestyleSessionScreen() {
       <Text style={styles.stepTitle}>Session Breakdown</Text>
       <Text style={styles.stepSubtitle}>Rate each area of your performance</Text>
 
-      {/* Batting Stats */}
       <View style={styles.statsSectionCard}>
         <View style={styles.statsSectionHeader}>
           <MaterialIcons name="sports-cricket" size={20} color={colors.primary} />
@@ -593,94 +407,70 @@ export default function FreestyleSessionScreen() {
         <View style={styles.statsRow3}>
           <View style={styles.statInputBlock}>
             <Text style={styles.statInputLabel}>Balls Faced</Text>
-            <TextInput
-              style={styles.statInput}
-              value={ballsFaced}
-              onChangeText={setBallsFaced}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={colors.textSecondary}
-              textAlign="center"
-            />
+            <TextInput style={styles.statInput} value={session.ballsFaced} onChangeText={session.setBallsFaced} keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.textSecondary} textAlign="center" />
           </View>
           <View style={styles.statInputBlock}>
             <Text style={styles.statInputLabel}>Balls Middled</Text>
-            <TextInput
-              style={styles.statInput}
-              value={ballsMiddled}
-              onChangeText={setBallsMiddled}
-              keyboardType="number-pad"
-              placeholder="0"
-              placeholderTextColor={colors.textSecondary}
-              textAlign="center"
-            />
+            <TextInput style={styles.statInput} value={session.ballsMiddled} onChangeText={session.setBallsMiddled} keyboardType="number-pad" placeholder="0" placeholderTextColor={colors.textSecondary} textAlign="center" />
           </View>
         </View>
-        {ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0 && (
+        {session.ballsFaced && session.ballsMiddled && parseInt(session.ballsFaced) > 0 && (
           <View style={styles.middlePctBadge}>
             <MaterialIcons name="gps-fixed" size={14} color={colors.success} />
-            <Text style={styles.middlePctText}>
-              Middle %: {Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)}%
-            </Text>
+            <Text style={styles.middlePctText}>Middle %: {Math.round((parseInt(session.ballsMiddled) / parseInt(session.ballsFaced)) * 100)}%</Text>
           </View>
         )}
       </View>
 
-      {/* Technical */}
       <View style={styles.pillarSection}>
         <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.technical }]}>
           <MaterialIcons name="sports-cricket" size={18} color={colors.technical} />
           <Text style={[styles.pillarSectionTitle, { color: colors.technical }]}>Technical</Text>
           <Text style={styles.requiredNote}>* at least one required</Text>
         </View>
-        <RatingStars rating={shotExecution} onRate={setShotExecution} label="Shot Execution" sublabel="How clean and correct was your technique?" color={colors.technical} />
-        <RatingStars rating={footwork} onRate={setFootwork} label="Footwork" sublabel="Was your foot movement into position good?" color={colors.technical} />
-        <RatingStars rating={timing} onRate={setTiming} label="Timing" sublabel="How well did you time the ball?" color={colors.technical} />
+        <RatingStars rating={session.shotExecution} onRate={session.setShotExecution} label="Shot Execution" sublabel="How clean and correct was your technique?" color={colors.technical} />
+        <RatingStars rating={session.footwork} onRate={session.setFootwork} label="Footwork" sublabel="Was your foot movement into position good?" color={colors.technical} />
+        <RatingStars rating={session.timing} onRate={session.setTiming} label="Timing" sublabel="How well did you time the ball?" color={colors.technical} />
       </View>
 
-      {/* Mental */}
       <View style={styles.pillarSection}>
         <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.mental }]}>
           <MaterialIcons name="psychology" size={18} color={colors.mental} />
           <Text style={[styles.pillarSectionTitle, { color: colors.mental }]}>Mental</Text>
           <Text style={styles.requiredNote}>* at least one required</Text>
         </View>
-        <RatingStars rating={focus} onRate={setFocus} label="Focus & Concentration" sublabel="How well did you stay in the zone?" color={colors.mental} />
-        <RatingStars rating={confidence} onRate={setConfidence} label="Confidence" sublabel="How confident did you feel at the crease?" color={colors.mental} />
-        <RatingStars rating={pressureHandling} onRate={setPressureHandling} label="Pressure Handling" sublabel="How well did you manage pressure situations?" color={colors.mental} />
+        <RatingStars rating={session.focus} onRate={session.setFocus} label="Focus & Concentration" sublabel="How well did you stay in the zone?" color={colors.mental} />
+        <RatingStars rating={session.confidence} onRate={session.setConfidence} label="Confidence" sublabel="How confident did you feel at the crease?" color={colors.mental} />
+        <RatingStars rating={session.pressureHandling} onRate={session.setPressureHandling} label="Pressure Handling" sublabel="How well did you manage pressure situations?" color={colors.mental} />
       </View>
 
-      {/* Physical */}
       <View style={styles.pillarSection}>
         <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.physical }]}>
           <MaterialIcons name="fitness-center" size={18} color={colors.physical} />
           <Text style={[styles.pillarSectionTitle, { color: colors.physical }]}>Physical</Text>
           <Text style={styles.requiredNote}>* at least one required</Text>
         </View>
-        <RatingStars rating={energyLevel} onRate={setEnergyLevel} label="Energy Level" sublabel="How energetic and fit did you feel?" color={colors.physical} />
-        <RatingStars rating={reactionSpeed} onRate={setReactionSpeed} label="Reaction Speed" sublabel="How quickly did you pick up the ball?" color={colors.physical} />
+        <RatingStars rating={session.energyLevel} onRate={session.setEnergyLevel} label="Energy Level" sublabel="How energetic and fit did you feel?" color={colors.physical} />
+        <RatingStars rating={session.reactionSpeed} onRate={session.setReactionSpeed} label="Reaction Speed" sublabel="How quickly did you pick up the ball?" color={colors.physical} />
       </View>
 
-      {/* Tactical */}
       <View style={styles.pillarSection}>
         <View style={[styles.pillarSectionHeader, { borderLeftColor: colors.tactical }]}>
           <MaterialIcons name="lightbulb" size={18} color={colors.tactical} />
           <Text style={[styles.pillarSectionTitle, { color: colors.tactical }]}>Tactical</Text>
           <Text style={styles.requiredNote}>* at least one required</Text>
         </View>
-        <RatingStars rating={shotSelection} onRate={setShotSelection} label="Shot Selection" sublabel="Did you play the right shots at the right time?" color={colors.tactical} />
-        <RatingStars rating={gameAwareness} onRate={setGameAwareness} label="Game Awareness" sublabel="How well did you read the game situation?" color={colors.tactical} />
+        <RatingStars rating={session.shotSelection} onRate={session.setShotSelection} label="Shot Selection" sublabel="Did you play the right shots at the right time?" color={colors.tactical} />
+        <RatingStars rating={session.gameAwareness} onRate={session.setGameAwareness} label="Game Awareness" sublabel="How well did you read the game situation?" color={colors.tactical} />
       </View>
 
-      {/* Session Notes */}
       <View style={styles.formGroup}>
         <Text style={styles.label}>Session Notes (Optional)</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
-          value={sessionNotes}
-          onChangeText={setSessionNotes}
-          multiline
-          numberOfLines={4}
+          value={session.sessionNotes}
+          onChangeText={session.setSessionNotes}
+          multiline numberOfLines={4}
           placeholder="Any observations or key takeaways?"
           placeholderTextColor={colors.textSecondary}
           textAlignVertical="top"
@@ -690,9 +480,8 @@ export default function FreestyleSessionScreen() {
   );
 
   const renderStep4 = () => {
-    const middlePct = ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0
-      ? Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)
-      : null;
+    const middlePct = session.ballsFaced && session.ballsMiddled && parseInt(session.ballsFaced) > 0
+      ? Math.round((parseInt(session.ballsMiddled) / parseInt(session.ballsFaced)) * 100) : null;
     return (
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.summaryHeader}>
@@ -702,18 +491,16 @@ export default function FreestyleSessionScreen() {
           <Text style={styles.summaryTitle}>Session Complete!</Text>
           <Text style={styles.summarySubtitle}>Great work today</Text>
         </View>
-
-        {/* Quick Stats */}
         <View style={styles.quickStatsRow}>
           <View style={styles.quickStatCard}>
             <MaterialIcons name="timer" size={22} color={colors.primary} />
-            <Text style={styles.quickStatValue}>{Math.floor(elapsedSeconds / 60)}</Text>
+            <Text style={styles.quickStatValue}>{Math.floor(session.elapsedSeconds / 60)}</Text>
             <Text style={styles.quickStatLabel}>Minutes</Text>
           </View>
-          {ballsFaced ? (
+          {session.ballsFaced ? (
             <View style={styles.quickStatCard}>
               <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
-              <Text style={styles.quickStatValue}>{ballsFaced}</Text>
+              <Text style={styles.quickStatValue}>{session.ballsFaced}</Text>
               <Text style={styles.quickStatLabel}>Balls Faced</Text>
             </View>
           ) : null}
@@ -724,10 +511,8 @@ export default function FreestyleSessionScreen() {
               <Text style={styles.quickStatLabel}>Middle %</Text>
             </View>
           ) : null}
-
         </View>
 
-        {/* Pillar Averages */}
         <View style={styles.summarySection}>
           <Text style={styles.summarySectionTitle}>Performance Summary</Text>
           {[
@@ -747,43 +532,21 @@ export default function FreestyleSessionScreen() {
           ))}
         </View>
 
-        {/* XP Breakdown */}
-        {xpBreakdown && (
+        {session.xpBreakdown && (
           <View style={styles.xpSection}>
             <Text style={styles.xpSectionTitle}>XP Earned</Text>
             <View style={styles.xpBreakdown}>
-              <View style={styles.xpItem}>
-                <Text style={styles.xpItemLabel}>Session Completion</Text>
-                <Text style={styles.xpItemValue}>+10 XP</Text>
-              </View>
-              {xpBreakdown.goodRatingBonus > 0 && (
-                <View style={styles.xpItem}>
-                  <Text style={styles.xpItemLabel}>Good Performance Rating</Text>
-                  <Text style={styles.xpItemValue}>+{xpBreakdown.goodRatingBonus} XP</Text>
-                </View>
-              )}
-              {xpBreakdown.consistencyBonus > 0 && (
-                <View style={styles.xpItem}>
-                  <Text style={styles.xpItemLabel}>Consistency Bonus</Text>
-                  <Text style={styles.xpItemValue}>+{xpBreakdown.consistencyBonus} XP</Text>
-                </View>
-              )}
-              {xpBreakdown.streakBonus > 0 && (
-                <View style={styles.xpItem}>
-                  <Text style={styles.xpItemLabel}>Streak Bonus</Text>
-                  <Text style={styles.xpItemValue}>+{xpBreakdown.streakBonus} XP</Text>
-                </View>
-              )}
+              <View style={styles.xpItem}><Text style={styles.xpItemLabel}>Session Completion</Text><Text style={styles.xpItemValue}>+10 XP</Text></View>
+              {session.xpBreakdown.goodRatingBonus > 0 && <View style={styles.xpItem}><Text style={styles.xpItemLabel}>Good Performance Rating</Text><Text style={styles.xpItemValue}>+{session.xpBreakdown.goodRatingBonus} XP</Text></View>}
+              {session.xpBreakdown.consistencyBonus > 0 && <View style={styles.xpItem}><Text style={styles.xpItemLabel}>Consistency Bonus</Text><Text style={styles.xpItemValue}>+{session.xpBreakdown.consistencyBonus} XP</Text></View>}
+              {session.xpBreakdown.streakBonus > 0 && <View style={styles.xpItem}><Text style={styles.xpItemLabel}>Streak Bonus</Text><Text style={styles.xpItemValue}>+{session.xpBreakdown.streakBonus} XP</Text></View>}
               <View style={styles.xpDivider} />
-              <View style={styles.xpTotal}>
-                <Text style={styles.xpTotalLabel}>Total XP Earned</Text>
-                <Text style={styles.xpTotalValue}>+{xpBreakdown.totalXP} XP</Text>
-              </View>
+              <View style={styles.xpTotal}><Text style={styles.xpTotalLabel}>Total XP Earned</Text><Text style={styles.xpTotalValue}>+{session.xpBreakdown.totalXP} XP</Text></View>
             </View>
-            {xpBreakdown.levelUp && (
+            {session.xpBreakdown.levelUp && (
               <View style={styles.levelUpBanner}>
                 <MaterialIcons name="star" size={24} color={colors.warning} />
-                <Text style={styles.levelUpText}>Level Up! You are now {xpBreakdown.newLevel}</Text>
+                <Text style={styles.levelUpText}>Level Up! You are now {session.xpBreakdown.newLevel}</Text>
               </View>
             )}
           </View>
@@ -793,7 +556,7 @@ export default function FreestyleSessionScreen() {
   };
 
   const getStepTitle = () => {
-    switch (currentStep) {
+    switch (session.currentStep) {
       case 1: return 'Setup Session';
       case 2: return 'Active Session';
       case 3: return 'Session Feedback';
@@ -803,16 +566,16 @@ export default function FreestyleSessionScreen() {
   };
 
   const getFooterButton = () => {
-    switch (currentStep) {
+    switch (session.currentStep) {
       case 1:
         return (
           <Pressable
-            style={[styles.saveButton, (selectedTrainingTypes.size === 0 || saving) && styles.saveButtonDisabled]}
+            style={[styles.saveButton, (session.selectedTrainingTypes.size === 0 || session.saving) && styles.saveButtonDisabled]}
             onPress={handleStartSession}
           >
-            <MaterialIcons name={sessionMode === 'later' ? 'schedule' : 'play-arrow'} size={20} color={colors.textLight} />
+            <MaterialIcons name={session.sessionMode === 'later' ? 'schedule' : 'play-arrow'} size={20} color={colors.textLight} />
             <Text style={styles.saveButtonText}>
-              {saving ? 'Saving...' : sessionMode === 'later' ? 'Schedule Session' : 'Start Session'}
+              {session.saving ? 'Saving...' : session.sessionMode === 'later' ? 'Schedule Session' : 'Start Session'}
             </Text>
           </Pressable>
         );
@@ -826,11 +589,11 @@ export default function FreestyleSessionScreen() {
       case 3:
         return (
           <Pressable
-            style={[styles.saveButton, (!isStep3Valid() || saving) && styles.saveButtonDisabled]}
+            style={[styles.saveButton, (!isStep3Valid() || session.saving) && styles.saveButtonDisabled]}
             onPress={handleCompleteSession}
           >
             <MaterialIcons name="check" size={20} color={colors.textLight} />
-            <Text style={styles.saveButtonText}>{saving ? 'Saving...' : 'Complete Session'}</Text>
+            <Text style={styles.saveButtonText}>{session.saving ? 'Saving...' : 'Complete Session'}</Text>
           </Pressable>
         );
       case 4:
@@ -838,37 +601,15 @@ export default function FreestyleSessionScreen() {
           <View style={styles.footerRow}>
             <Pressable
               style={styles.analyticsButton}
-              onPress={() => router.push({
-                pathname: '/session-analytics' as any,
-                params: {
-                  physical: physicalRating,
-                  mental: mentalRating,
-                  tactical: tacticalRating,
-                  technical: technicalRating,
-                  balls: ballsFaced,
-                  ballsMiddled: ballsMiddled,
-                  duration: Math.floor(elapsedSeconds / 60),
-                  types: Array.from(selectedTrainingTypes).map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(','),
-                  focus: focusArea,
-                  goal: sessionGoal,
-                  notes: sessionNotes,
-                  shotExecution,
-                  footwork,
-                  timing,
-                  focusRating: focus,
-                  confidence,
-                  pressureHandling,
-                  energyLevel,
-                  reactionSpeed,
-                  shotSelection,
-                  gameAwareness,
-                }
-              })}
+              onPress={() => {
+                session.resetSession();
+                router.replace('/(tabs)/analytics' as any);
+              }}
             >
               <MaterialIcons name="analytics" size={20} color={colors.primary} />
               <Text style={styles.analyticsButtonText}>View Analytics</Text>
             </Pressable>
-            <Pressable style={styles.saveButton} onPress={() => router.replace('/(tabs)' as any)}>
+            <Pressable style={styles.saveButton} onPress={() => { session.resetSession(); router.replace('/(tabs)' as any); }}>
               <MaterialIcons name="home" size={20} color={colors.textLight} />
               <Text style={styles.saveButtonText}>Done</Text>
             </Pressable>
@@ -878,29 +619,46 @@ export default function FreestyleSessionScreen() {
     }
   };
 
+  const handleBack = () => {
+    if (session.currentStep === 1) {
+      session.resetSession();
+      router.back();
+    } else if (session.currentStep === 2) {
+      handleMinimize();
+    } else {
+      session.setCurrentStep(Math.max(1, session.currentStep - 1));
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable
-          onPress={() => currentStep === 1 ? router.back() : setCurrentStep(Math.max(1, currentStep - 1))}
-          style={styles.headerButton}
-        >
-          <MaterialIcons name={currentStep === 1 ? 'close' : 'arrow-back'} size={24} color={colors.text} />
+        <Pressable onPress={handleBack} style={styles.headerButton}>
+          <MaterialIcons name={session.currentStep === 2 ? 'minimize' : session.currentStep === 1 ? 'close' : 'arrow-back'} size={24} color={colors.text} />
         </Pressable>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>{getStepTitle()}</Text>
-          <Text style={styles.headerSubtitle}>Step {currentStep} of 4</Text>
+          <Text style={styles.headerSubtitle}>Step {session.currentStep} of 4</Text>
         </View>
-        <View style={styles.headerButton} />
+        {session.currentStep === 2 ? (
+          <Pressable onPress={handleMinimize} style={[styles.headerButton, styles.headerMinimizeBtn]}>
+            <MaterialIcons name="open-in-new" size={20} color={colors.primary} />
+          </Pressable>
+        ) : (
+          <View style={styles.headerButton} />
+        )}
       </View>
 
       <View style={styles.progressBar}>
-        {[1, 2, 3, 4].map((step) => (
-          <View key={step} style={[styles.progressSegment, step <= currentStep && styles.progressSegmentActive]} />
+        {[1, 2, 3, 4].map(step => (
+          <View key={step} style={[styles.progressSegment, step <= session.currentStep && styles.progressSegmentActive]} />
         ))}
       </View>
 
-      {renderStepContent()}
+      {session.currentStep === 1 && renderStep1()}
+      {session.currentStep === 2 && renderStep2()}
+      {session.currentStep === 3 && renderStep3()}
+      {session.currentStep === 4 && renderStep4()}
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + spacing.md, spacing.lg) }]}>
         {getFooterButton()}
@@ -917,6 +675,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   headerButton: { padding: spacing.xs, width: 40 },
+  headerMinimizeBtn: { alignItems: 'flex-end' },
   headerTitleContainer: { flex: 1, alignItems: 'center' },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '600' },
   headerSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
@@ -926,10 +685,10 @@ const styles = StyleSheet.create({
   },
   progressSegment: { flex: 1, height: 4, backgroundColor: colors.border, borderRadius: 2 },
   progressSegmentActive: { backgroundColor: colors.primary },
+
   stepTitle: { ...typography.h2, color: colors.text, fontWeight: '600', marginBottom: spacing.sm },
   stepSubtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.lg },
 
-  // Training type grid
   trainingTypesGrid: { gap: spacing.md, marginBottom: spacing.xl },
   trainingTypeCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
@@ -986,20 +745,25 @@ const styles = StyleSheet.create({
   },
   timerLabel: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.sm },
   timerDisplay: { fontSize: 48, color: colors.primary, fontWeight: '700', textAlign: 'center' },
+  timerButtonRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.md, alignItems: 'center' },
   pauseButton: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
     backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-    borderRadius: borderRadius.md, marginTop: spacing.md,
+    borderRadius: borderRadius.md, flex: 1,
   },
   pauseButtonText: { ...typography.body, color: colors.textLight, fontWeight: '600' },
+  minimizeButton: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary + '15', paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.primary,
+  },
+  minimizeButtonText: { ...typography.bodySmall, color: colors.primary, fontWeight: '700' },
   liveStatsSection: { gap: spacing.md },
   liveStatCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
     alignItems: 'center', gap: spacing.sm,
   },
-  liveStatValue: {
-    fontSize: 48, color: colors.text, fontWeight: '700', textAlign: 'center', minWidth: 100,
-  },
+  liveStatValue: { fontSize: 48, color: colors.text, fontWeight: '700', textAlign: 'center', minWidth: 100 },
   liveStatLabel: { ...typography.body, color: colors.textSecondary },
   liveStatButtons: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.sm },
   liveStatButton: {
@@ -1023,7 +787,7 @@ const styles = StyleSheet.create({
   },
   selectedTypeBadgeText: { ...typography.caption, color: colors.primary, fontWeight: '600' },
 
-  // Step 3 - Stats section
+  // Step 3
   statsSectionCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
     marginBottom: spacing.lg, borderWidth: 1, borderColor: colors.border,
@@ -1035,8 +799,7 @@ const styles = StyleSheet.create({
   statInputLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.xs, textAlign: 'center' },
   statInput: {
     backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border,
-    paddingVertical: spacing.md, width: '100%', ...typography.h4, color: colors.text, fontWeight: '700',
-    textAlign: 'center',
+    paddingVertical: spacing.md, width: '100%', ...typography.h4, color: colors.text, fontWeight: '700', textAlign: 'center',
   },
   middlePctBadge: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.md,
@@ -1044,8 +807,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md, alignSelf: 'flex-start',
   },
   middlePctText: { ...typography.body, color: colors.success, fontWeight: '700' },
-
-  // Pillar section
   pillarSection: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
     marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border,
@@ -1056,8 +817,6 @@ const styles = StyleSheet.create({
   },
   pillarSectionTitle: { ...typography.h4, fontWeight: '700', flex: 1 },
   requiredNote: { ...typography.caption, color: colors.textSecondary, fontStyle: 'italic' },
-
-  // Rating stars
   ratingContainer: { marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border + '60' },
   ratingLabelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 },
   ratingLabel: { ...typography.body, color: colors.text, fontWeight: '600' },
@@ -1066,10 +825,8 @@ const styles = StyleSheet.create({
   ratingSublabel: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm },
   starsRow: { flexDirection: 'row', gap: spacing.xs },
   starButton: { padding: spacing.xs },
-  labelRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  required: { ...typography.body, color: colors.error, fontWeight: '600' },
 
-  // Step 4 summary
+  // Step 4
   summaryHeader: { alignItems: 'center', paddingVertical: spacing.xl },
   summaryIconContainer: { marginBottom: spacing.md },
   summaryTitle: { ...typography.h1, color: colors.text, fontWeight: '700', marginBottom: spacing.xs },
@@ -1086,14 +843,11 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border,
   },
   summarySectionTitle: { ...typography.h4, color: colors.text, fontWeight: '700', marginBottom: spacing.md },
-  summaryPillarRow: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm,
-  },
+  summaryPillarRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   summaryLabel: { ...typography.body, color: colors.text, fontWeight: '600', width: 70 },
   summaryBarBg: { flex: 1, height: 10, backgroundColor: colors.border, borderRadius: 5 },
   summaryBar: { height: 10, borderRadius: 5, minWidth: 4 },
   summaryPillarVal: { ...typography.bodySmall, fontWeight: '800', width: 32, textAlign: 'right' },
-
   xpSection: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
     borderWidth: 1, borderColor: colors.border,
@@ -1126,9 +880,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.body, color: colors.text,
   },
   textArea: { minHeight: 100, paddingTop: spacing.md },
-  ratingsSection: { gap: spacing.md },
-  sectionTitle: { ...typography.h4, color: colors.text, fontWeight: '600', marginBottom: spacing.sm },
-
   footer: {
     padding: spacing.md, backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border,
     shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 8,

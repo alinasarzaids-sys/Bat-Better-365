@@ -3,6 +3,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AlertProvider, AuthProvider } from '@/template';
 import { StatusBar } from 'expo-status-bar';
 import { LogBox } from 'react-native';
+import { SessionProvider } from '@/contexts/SessionContext';
 
 // Suppress Android-only expo-video SimpleCache conflict that occurs when
 // the host container already holds a VideoCache instance for the same folder.
@@ -18,6 +19,7 @@ export default function RootLayout() {
   return (
     <AlertProvider>
       <AuthProvider>
+        <SessionProvider>
         <SafeAreaProvider>
           <StatusBar style="auto" />
           <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
@@ -138,6 +140,7 @@ export default function RootLayout() {
             />
           </Stack>
         </SafeAreaProvider>
+        </SessionProvider>
       </AuthProvider>
     </AlertProvider>
   );
