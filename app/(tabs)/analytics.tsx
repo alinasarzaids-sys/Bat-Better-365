@@ -328,9 +328,10 @@ function EditSessionModal({
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={editStyles.overlay}>
+        <View style={editStyles.sheet}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={editStyles.sheet}
+          style={{ flex: 1 }}
         >
           {/* Handle bar */}
           <View style={editStyles.handle} />
@@ -453,6 +454,7 @@ function EditSessionModal({
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
+        </View>
       </View>
     </Modal>
   );
@@ -462,7 +464,7 @@ const editStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    maxHeight: '92%',
+    maxHeight: '92%', minHeight: 420,
   },
   handle: {
     width: 40, height: 4, backgroundColor: colors.border,
