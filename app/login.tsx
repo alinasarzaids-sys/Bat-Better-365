@@ -109,8 +109,8 @@ export default function LoginScreen() {
     // Small delay to ensure auth state updates
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Navigate to mode selection
-    router.replace('/mode-selection');
+    // Navigate to profile setup
+    router.replace('/profile-setup');
   };
 
   const handleForgotPassword = async () => {

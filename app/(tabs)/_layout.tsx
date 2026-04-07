@@ -160,6 +160,15 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="academy"
+          options={{
+            title: 'Academy',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="shield" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="journal"
           options={{
             title: 'Journal',
@@ -184,12 +193,6 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="bar-chart" size={size} color={color} />
             ),
-          }}
-        />
-        <Tabs.Screen
-          name="academy"
-          options={{
-            href: null,
           }}
         />
         <Tabs.Screen
