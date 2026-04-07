@@ -1,0 +1,551 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, StyleSheet, Pressable,
+  ActivityIndicator, RefreshControl, Modal, TextInput,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { MaterialIcons } from '@expo/vector-icons';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useAuth, useAlert } from '@/template';
+import { academyService, AcademyMember, AcademyTrainingLog } from '@/services/academyService';
+import { colors, spacing, typography, borderRadius } from '@/constants/theme';
+
+function getPositionColor(position: string): string {
+  switch (position) {
+    case 'Batsman': return colors.technical;
+    case 'Bowler': return colors.physical;
+    case 'All-Rounder': return colors.primary;
+    case 'Wicket-Keeper': return colors.mental;
+    case 'Fielder': return colors.tactical;
+    default: return colors.textSecondary;
+  }
+}
+
+function getIntensityColor(intensity: number): string {
+  if (intensity <= 3) return colors.success;
+  if (intensity <= 6) return colors.warning;
+  return colors.error;
+}
+
+function MiniHeatmap({ logs }: { logs: AcademyTrainingLog[] }) {
+  const days = 7;
+  const today = new Date();
+  const intensityByDay: number[] = Array(days).fill(0);
+  for (let i = 0; i < days; i++) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - (days - 1 - i));
+    const dStr = d.toISOString().split('T')[0];
+    const dayLogs = logs.filter(l => l.log_date === dStr);
+    if (dayLogs.length > 0) {
+      intensityByDay[i] = Math.round(dayLogs.reduce((a, l) => a + l.intensity, 0) / dayLogs.length);
+    }
+  }
+  return (
+    <View style={{ flexDirection: 'row', gap: 3 }}>
+      {intensityByDay.map((v, i) => (
+        <View key={i} style={{
+          width: 14, height: 14, borderRadius: 3,
+          backgroundColor: v > 0 ? getIntensityColor(v) : colors.border,
+          opacity: v > 0 ? 0.6 + (v / 10) * 0.4 : 1,
+        }} />
+      ))}
+    </View>
+  );
+}
+
+export default function AcademyCoachScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const { user } = useAuth();
+  const { showAlert } = useAlert();
+
+  const academyId = params.academyId as string;
+  const initialTab = params.tab as string || 'squad';
+
+  const [activeTab, setActiveTab] = useState<'squad' | 'analytics'>(initialTab as any || 'squad');
+  const [members, setMembers] = useState<AcademyMember[]>([]);
+  const [allLogs, setAllLogs] = useState<Array<AcademyTrainingLog & { user_profiles: any }>>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<AcademyMember | null>(null);
+  const [playerLogs, setPlayerLogs] = useState<AcademyTrainingLog[]>([]);
+  const [showPlayerModal, setShowPlayerModal] = useState(false);
+  const [aiReport, setAiReport] = useState('');
+  const [aiLoading, setAiLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    const [membersRes, logsRes] = await Promise.all([
+      academyService.getAcademyMembers(academyId),
+      academyService.getAcademyLogs(academyId, 30),
+    ]);
+    setMembers(membersRes.data || []);
+    setAllLogs(logsRes.data || []);
+    setLoading(false);
+  }, [academyId]);
+
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
+
+  const handleViewPlayer = async (member: AcademyMember) => {
+    setSelectedPlayer(member);
+    setAiReport('');
+    const logs = allLogs.filter(l => l.user_id === member.user_id);
+    setPlayerLogs(logs);
+    setShowPlayerModal(true);
+  };
+
+  const handleGenerateAI = async () => {
+    if (!selectedPlayer || playerLogs.length === 0) return;
+    setAiLoading(true);
+    const name = selectedPlayer.display_name || selectedPlayer.user_profiles?.username || 'Player';
+    const { data, error } = await academyService.getAIAnalytics(playerLogs, name, selectedPlayer.position);
+    setAiLoading(false);
+    if (error) { showAlert('Error', error); return; }
+    setAiReport(data || '');
+  };
+
+  const players = members.filter(m => m.role === 'player');
+  const coaches = members.filter(m => m.role === 'coach');
+
+  // Team analytics aggregation
+  const totalSessions = allLogs.length;
+  const totalMinutes = allLogs.reduce((a, l) => a + l.duration_minutes, 0);
+  const avgIntensity = allLogs.length > 0
+    ? (allLogs.reduce((a, l) => a + l.intensity, 0) / allLogs.length).toFixed(1) : '—';
+  const totalBallsFaced = allLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+  const totalBallsBowled = allLogs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
+
+  // Sessions per player
+  const sessionCounts = players.map(m => ({
+    member: m,
+    count: allLogs.filter(l => l.user_id === m.user_id).length,
+    avgIntensity: (() => {
+      const logs = allLogs.filter(l => l.user_id === m.user_id);
+      if (!logs.length) return 0;
+      return logs.reduce((a, l) => a + l.intensity, 0) / logs.length;
+    })(),
+    lastLog: allLogs.filter(l => l.user_id === m.user_id)[0] || null,
+  })).sort((a, b) => b.count - a.count);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <MaterialIcons name="arrow-back" size={24} color={colors.text} />
+          </Pressable>
+          <Text style={styles.headerTitle}>Coach Dashboard</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <View style={styles.centered}><ActivityIndicator size="large" color={colors.primary} /></View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container} edges={['top']}>
+      <View style={styles.header}>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+          <MaterialIcons name="arrow-back" size={24} color={colors.text} />
+        </Pressable>
+        <Text style={styles.headerTitle}>Coach Dashboard</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* Sub tabs */}
+      <View style={styles.tabBar}>
+        {(['squad', 'analytics'] as const).map(tab => (
+          <Pressable key={tab} style={[styles.tab, activeTab === tab && styles.tabActive]} onPress={() => setActiveTab(tab)}>
+            <MaterialIcons name={tab === 'squad' ? 'people' : 'analytics'} size={16} color={activeTab === tab ? colors.primary : colors.textSecondary} />
+            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
+              {tab === 'squad' ? 'Squad' : 'Team Analytics'}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
+
+        {activeTab === 'squad' && (
+          <>
+            {/* Quick stats */}
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statVal}>{players.length}</Text>
+                <Text style={styles.statLabel}>Players</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statVal}>{totalSessions}</Text>
+                <Text style={styles.statLabel}>Logs (30d)</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={[styles.statVal, { color: parseFloat(avgIntensity as string) >= 7 ? colors.error : colors.warning }]}>{avgIntensity}</Text>
+                <Text style={styles.statLabel}>Avg Intensity</Text>
+              </View>
+              <View style={styles.statCard}>
+                <Text style={styles.statVal}>{Math.round(totalMinutes / 60)}h</Text>
+                <Text style={styles.statLabel}>Total Hours</Text>
+              </View>
+            </View>
+
+            {/* Player List */}
+            <Text style={styles.sectionLabel}>Players — tap to view training details</Text>
+            {sessionCounts.map(({ member, count, avgIntensity: ai, lastLog }) => {
+              const name = member.display_name || member.user_profiles?.username || member.user_profiles?.email || 'Player';
+              const daysSinceLast = lastLog
+                ? Math.floor((Date.now() - new Date(lastLog.log_date).getTime()) / 86400000) : null;
+              return (
+                <Pressable key={member.id} style={styles.playerCard} onPress={() => handleViewPlayer(member)}>
+                  <View style={styles.playerTop}>
+                    <View style={[styles.positionDot, { backgroundColor: getPositionColor(member.position) }]}>
+                      <Text style={styles.positionDotText}>{name.charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.playerNameRow}>
+                        <Text style={styles.playerName}>{name}</Text>
+                        {member.jersey_number ? <Text style={styles.jerseyBadge}>#{member.jersey_number}</Text> : null}
+                      </View>
+                      <Text style={[styles.playerPosition, { color: getPositionColor(member.position) }]}>{member.position}</Text>
+                    </View>
+                    <View style={styles.playerStats}>
+                      <Text style={styles.playerSessionCount}>{count}</Text>
+                      <Text style={styles.playerSessionLabel}>sessions</Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
+                  </View>
+                  <View style={styles.playerBottom}>
+                    <MiniHeatmap logs={allLogs.filter(l => l.user_id === member.user_id)} />
+                    <View style={{ flex: 1 }} />
+                    {daysSinceLast !== null ? (
+                      <Text style={[styles.lastSeen, daysSinceLast > 7 ? { color: colors.error } : {}]}>
+                        {daysSinceLast === 0 ? 'Today' : daysSinceLast === 1 ? 'Yesterday' : `${daysSinceLast}d ago`}
+                      </Text>
+                    ) : (
+                      <Text style={[styles.lastSeen, { color: colors.error }]}>No logs</Text>
+                    )}
+                    {ai > 0 && (
+                      <View style={[styles.intensityPill, { backgroundColor: getIntensityColor(Math.round(ai)) + '25' }]}>
+                        <Text style={[styles.intensityPillText, { color: getIntensityColor(Math.round(ai)) }]}>
+                          Avg {ai.toFixed(1)}/10
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </Pressable>
+              );
+            })}
+
+            {players.length === 0 && (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="people-outline" size={48} color={colors.border} />
+                <Text style={styles.emptyText}>No players yet. Share the player code!</Text>
+              </View>
+            )}
+
+            {coaches.length > 0 && (
+              <>
+                <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Coaching Staff</Text>
+                {coaches.map(c => {
+                  const name = c.display_name || c.user_profiles?.username || c.user_profiles?.email || 'Coach';
+                  return (
+                    <View key={c.id} style={[styles.playerCard, { opacity: 0.85 }]}>
+                      <View style={styles.playerTop}>
+                        <View style={[styles.positionDot, { backgroundColor: colors.warning }]}>
+                          <Text style={styles.positionDotText}>{name.charAt(0).toUpperCase()}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.playerName}>{name}</Text>
+                          <Text style={[styles.playerPosition, { color: colors.warning }]}>Coach</Text>
+                        </View>
+                        <MaterialIcons name="school" size={20} color={colors.warning} />
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
+            )}
+          </>
+        )}
+
+        {activeTab === 'analytics' && (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Team Overview (Last 30 Days)</Text>
+              <View style={styles.analyticsGrid}>
+                <View style={styles.analyticsItem}>
+                  <MaterialIcons name="event" size={22} color={colors.primary} />
+                  <Text style={styles.analyticsVal}>{totalSessions}</Text>
+                  <Text style={styles.analyticsLabel}>Total Logs</Text>
+                </View>
+                <View style={styles.analyticsItem}>
+                  <MaterialIcons name="timer" size={22} color={colors.mental} />
+                  <Text style={styles.analyticsVal}>{Math.round(totalMinutes / 60)}h</Text>
+                  <Text style={styles.analyticsLabel}>Training Time</Text>
+                </View>
+                <View style={styles.analyticsItem}>
+                  <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
+                  <Text style={styles.analyticsVal}>{totalBallsFaced}</Text>
+                  <Text style={styles.analyticsLabel}>Balls Faced</Text>
+                </View>
+                <View style={styles.analyticsItem}>
+                  <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
+                  <Text style={styles.analyticsVal}>{totalBallsBowled}</Text>
+                  <Text style={styles.analyticsLabel}>Balls Bowled</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Training load per player (bar chart) */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Training Volume by Player</Text>
+              <Text style={styles.cardSub}>Sessions in last 30 days</Text>
+              {sessionCounts.map(({ member, count }) => {
+                const name = member.display_name || member.user_profiles?.username || 'Player';
+                const maxCount = Math.max(...sessionCounts.map(s => s.count), 1);
+                return (
+                  <View key={member.id} style={styles.barRow}>
+                    <Text style={styles.barLabel} numberOfLines={1}>{name}</Text>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { width: `${(count / maxCount) * 100}%`, backgroundColor: getPositionColor(member.position) }]} />
+                    </View>
+                    <Text style={[styles.barVal, { color: getPositionColor(member.position) }]}>{count}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Avg intensity per player */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Average Training Intensity</Text>
+              <Text style={styles.cardSub}>Self-reported, scale 1–10</Text>
+              {sessionCounts.filter(s => s.count > 0).map(({ member, avgIntensity: ai }) => {
+                const name = member.display_name || member.user_profiles?.username || 'Player';
+                return (
+                  <View key={member.id} style={styles.barRow}>
+                    <Text style={styles.barLabel} numberOfLines={1}>{name}</Text>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { width: `${(ai / 10) * 100}%`, backgroundColor: getIntensityColor(Math.round(ai)) }]} />
+                    </View>
+                    <Text style={[styles.barVal, { color: getIntensityColor(Math.round(ai)) }]}>{ai.toFixed(1)}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Session type breakdown */}
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Session Types</Text>
+              {(() => {
+                const types: Record<string, number> = {};
+                allLogs.forEach(l => { types[l.session_type] = (types[l.session_type] || 0) + 1; });
+                return Object.entries(types).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
+                  <View key={type} style={styles.barRow}>
+                    <Text style={styles.barLabel} numberOfLines={1}>{type}</Text>
+                    <View style={styles.barTrack}>
+                      <View style={[styles.barFill, { width: `${(count / totalSessions) * 100}%`, backgroundColor: colors.primary }]} />
+                    </View>
+                    <Text style={[styles.barVal, { color: colors.primary }]}>{count}</Text>
+                  </View>
+                ));
+              })()}
+            </View>
+          </>
+        )}
+      </ScrollView>
+
+      {/* Player Detail Modal */}
+      <Modal visible={showPlayerModal} animationType="slide" transparent onRequestClose={() => setShowPlayerModal(false)}>
+        <View style={modalStyles.overlay}>
+          <View style={modalStyles.sheet}>
+            <View style={modalStyles.handle} />
+            <View style={modalStyles.header}>
+              <Text style={modalStyles.headerTitle}>
+                {selectedPlayer?.display_name || selectedPlayer?.user_profiles?.username || 'Player'}
+              </Text>
+              <Pressable onPress={() => setShowPlayerModal(false)} style={modalStyles.closeBtn}>
+                <MaterialIcons name="close" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+
+            {selectedPlayer && (
+              <ScrollView contentContainerStyle={modalStyles.content} showsVerticalScrollIndicator={false}>
+                <View style={modalStyles.playerMeta}>
+                  <Text style={[modalStyles.positionBadge, { color: getPositionColor(selectedPlayer.position) }]}>{selectedPlayer.position}</Text>
+                  {selectedPlayer.jersey_number ? <Text style={modalStyles.jerseyText}>#{selectedPlayer.jersey_number}</Text> : null}
+                  <Text style={modalStyles.sessionCount}>{playerLogs.length} sessions logged</Text>
+                </View>
+
+                {playerLogs.length === 0 ? (
+                  <View style={modalStyles.emptyPlayer}>
+                    <MaterialIcons name="event-busy" size={40} color={colors.border} />
+                    <Text style={modalStyles.emptyPlayerText}>No training logs yet</Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* Stats summary */}
+                    <View style={modalStyles.statsRow}>
+                      <View style={modalStyles.statBlock}>
+                        <Text style={modalStyles.statVal}>{Math.round(playerLogs.reduce((a, l) => a + l.duration_minutes, 0) / 60)}h</Text>
+                        <Text style={modalStyles.statLabel}>Total Time</Text>
+                      </View>
+                      <View style={modalStyles.statBlock}>
+                        <Text style={modalStyles.statVal}>{(playerLogs.reduce((a, l) => a + l.intensity, 0) / playerLogs.length).toFixed(1)}</Text>
+                        <Text style={modalStyles.statLabel}>Avg Intensity</Text>
+                      </View>
+                      <View style={modalStyles.statBlock}>
+                        <Text style={modalStyles.statVal}>{playerLogs.reduce((a, l) => a + (l.balls_faced || l.balls_bowled || 0), 0)}</Text>
+                        <Text style={modalStyles.statLabel}>Total Balls</Text>
+                      </View>
+                    </View>
+
+                    {/* AI Report */}
+                    {!aiReport ? (
+                      <Pressable style={[modalStyles.aiBtn, aiLoading && { opacity: 0.6 }]} onPress={handleGenerateAI}>
+                        {aiLoading ? (
+                          <>
+                            <ActivityIndicator color={colors.textLight} size="small" />
+                            <Text style={modalStyles.aiBtnText}>Generating AI Report...</Text>
+                          </>
+                        ) : (
+                          <>
+                            <MaterialIcons name="auto-awesome" size={18} color={colors.textLight} />
+                            <Text style={modalStyles.aiBtnText}>Generate AI Coaching Report</Text>
+                          </>
+                        )}
+                      </Pressable>
+                    ) : (
+                      <View style={modalStyles.aiReport}>
+                        <View style={modalStyles.aiReportHeader}>
+                          <MaterialIcons name="auto-awesome" size={16} color={colors.primary} />
+                          <Text style={modalStyles.aiReportTitle}>AI Coaching Report</Text>
+                        </View>
+                        <Text style={modalStyles.aiReportText}>{aiReport}</Text>
+                      </View>
+                    )}
+
+                    {/* Recent logs */}
+                    <Text style={modalStyles.recentLabel}>Recent Sessions</Text>
+                    {playerLogs.slice(0, 8).map(log => (
+                      <View key={log.id} style={modalStyles.logRow}>
+                        <View style={[modalStyles.logDot, { backgroundColor: getIntensityColor(log.intensity) }]} />
+                        <View style={{ flex: 1 }}>
+                          <Text style={modalStyles.logType}>{log.session_type}</Text>
+                          <Text style={modalStyles.logMeta}>
+                            {log.log_date} · {log.duration_minutes}min · Intensity {log.intensity}/10
+                          </Text>
+                          {(log.balls_faced || log.balls_bowled) ? (
+                            <Text style={modalStyles.logStats}>
+                              {log.balls_faced ? `${log.balls_faced} faced` : ''}
+                              {log.balls_bowled ? `${log.balls_bowled} bowled` : ''}
+                              {log.wickets ? ` · ${log.wickets}wkt` : ''}
+                              {log.catches ? ` · ${log.catches} catches` : ''}
+                            </Text>
+                          ) : null}
+                          {log.notes ? <Text style={modalStyles.logNotes} numberOfLines={1}>{log.notes}</Text> : null}
+                        </View>
+                        <View style={[modalStyles.intensityBadge, { backgroundColor: getIntensityColor(log.intensity) + '20' }]}>
+                          <Text style={[modalStyles.intensityBadgeText, { color: getIntensityColor(log.intensity) }]}>{log.intensity}/10</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}
+
+const modalStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
+  handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  closeBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
+  content: { padding: spacing.md, paddingBottom: 40 },
+  playerMeta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  positionBadge: { ...typography.bodySmall, fontWeight: '700' },
+  jerseyText: { ...typography.bodySmall, color: colors.textSecondary },
+  sessionCount: { ...typography.caption, color: colors.textSecondary, marginLeft: 'auto' },
+  statsRow: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.sm, marginBottom: spacing.md, gap: spacing.sm },
+  statBlock: { flex: 1, alignItems: 'center' },
+  statVal: { ...typography.h4, color: colors.text, fontWeight: '800' },
+  statLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
+  aiBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginBottom: spacing.md },
+  aiBtnText: { ...typography.bodySmall, color: colors.textLight, fontWeight: '700' },
+  aiReport: { backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.primary + '30' },
+  aiReportHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
+  aiReportTitle: { ...typography.bodySmall, color: colors.primary, fontWeight: '700' },
+  aiReportText: { ...typography.bodySmall, color: colors.text, lineHeight: 20 },
+  recentLabel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
+  logRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border + '50' },
+  logDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
+  logType: { ...typography.bodySmall, color: colors.text, fontWeight: '600' },
+  logMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  logStats: { fontSize: 11, color: colors.primary, fontWeight: '600', marginTop: 1 },
+  logNotes: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 1 },
+  intensityBadge: { paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: borderRadius.sm },
+  intensityBadgeText: { fontSize: 11, fontWeight: '800' },
+  emptyPlayer: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyPlayerText: { ...typography.body, color: colors.textSecondary },
+});
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  backBtn: { width: 40, height: 40, justifyContent: 'center' },
+  headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  tabBar: { flexDirection: 'row', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  tabActive: { borderBottomColor: colors.primary },
+  tabText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
+  tabTextActive: { color: colors.primary },
+  scroll: { flex: 1 },
+  scrollContent: { padding: spacing.md, paddingBottom: 80 },
+  statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  statCard: { flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
+  statVal: { ...typography.h4, color: colors.text, fontWeight: '800' },
+  statLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
+  sectionLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
+  playerCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  playerTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  positionDot: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  positionDotText: { color: colors.textLight, fontWeight: '800', fontSize: 16 },
+  playerNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  playerName: { ...typography.body, color: colors.text, fontWeight: '700' },
+  jerseyBadge: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  playerPosition: { ...typography.caption, fontWeight: '600', marginTop: 1 },
+  playerStats: { alignItems: 'center', marginRight: spacing.xs },
+  playerSessionCount: { ...typography.h4, color: colors.text, fontWeight: '800' },
+  playerSessionLabel: { fontSize: 9, color: colors.textSecondary },
+  playerBottom: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  lastSeen: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  intensityPill: { paddingHorizontal: spacing.xs + 2, paddingVertical: 2, borderRadius: borderRadius.sm },
+  intensityPillText: { fontSize: 10, fontWeight: '700' },
+  emptyState: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyText: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
+  cardTitle: { ...typography.body, color: colors.text, fontWeight: '700', marginBottom: 4 },
+  cardSub: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.md },
+  analyticsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  analyticsItem: { flex: 1, minWidth: '40%', alignItems: 'center', backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.sm, gap: 4, borderWidth: 1, borderColor: colors.border },
+  analyticsVal: { ...typography.h4, color: colors.text, fontWeight: '800' },
+  analyticsLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
+  barRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  barLabel: { width: 90, fontSize: 12, color: colors.text, fontWeight: '500' },
+  barTrack: { flex: 1, height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: 'hidden' },
+  barFill: { height: 8, borderRadius: 4, minWidth: 4 },
+  barVal: { width: 28, fontSize: 12, fontWeight: '700', textAlign: 'right' },
+});

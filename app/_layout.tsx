@@ -138,6 +138,54 @@ export default function RootLayout() {
                 presentation: 'card'
               }} 
             />
+            <Stack.Screen 
+              name="academy-log" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_bottom',
+                presentation: 'modal'
+              }} 
+            />
+            <Stack.Screen 
+              name="academy-coach" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
+            <Stack.Screen 
+              name="academy-attendance" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
+            <Stack.Screen 
+              name="academy-analytics" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
+            <Stack.Screen 
+              name="academy-history" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
+            <Stack.Screen 
+              name="academy-schedule" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
           </Stack>
         </SafeAreaProvider>
         </SessionProvider>

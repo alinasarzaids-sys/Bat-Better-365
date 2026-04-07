@@ -187,6 +187,15 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
+          name="academy"
+          options={{
+            title: 'Academy',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="shield" size={size} color={color} />
+            ),
+          }}
+        />
+        <Tabs.Screen
           name="leaderboard"
           options={{
             href: null,
