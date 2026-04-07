@@ -1,10 +1,10 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, TextInput,
-  Modal, ActivityIndicator, RefreshControl, Animated, Dimensions,
+  Modal, ActivityIndicator, RefreshControl,
   KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
@@ -13,7 +13,52 @@ import {
 } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// ─── Mock data for demo/preview ─────────────────────────────────────────────
+const DEMO_ACADEMY: Academy = {
+  id: 'demo',
+  name: 'Demo Cricket Academy',
+  description: 'Preview mode',
+  sport: 'Cricket',
+  player_code: 'DEMO01',
+  coach_code: 'DEMO02',
+  created_by: 'demo',
+  created_at: new Date().toISOString(),
+};
+
+const DEMO_PLAYER_MEMBER: AcademyMember = {
+  id: 'demo-member',
+  academy_id: 'demo',
+  user_id: 'demo',
+  role: 'player',
+  position: 'Batsman',
+  display_name: 'Demo Player',
+  joined_at: new Date().toISOString(),
+};
+
+const DEMO_COACH_MEMBER: AcademyMember = {
+  id: 'demo-coach',
+  academy_id: 'demo',
+  user_id: 'demo',
+  role: 'coach',
+  position: 'Coach',
+  display_name: 'Demo Coach',
+  joined_at: new Date().toISOString(),
+};
+
+const today = new Date();
+const dStr = (daysAgo: number) => {
+  const d = new Date(today);
+  d.setDate(d.getDate() - daysAgo);
+  return d.toISOString().split('T')[0];
+};
+
+const DEMO_LOGS: AcademyTrainingLog[] = [
+  { id: '1', user_id: 'demo', academy_id: 'demo', log_date: dStr(0), session_type: 'Nets', duration_minutes: 90, intensity: 7, balls_faced: 120, runs_scored: 58, created_at: new Date().toISOString() },
+  { id: '2', user_id: 'demo', academy_id: 'demo', log_date: dStr(1), session_type: 'Fitness', duration_minutes: 60, intensity: 8, created_at: new Date().toISOString() },
+  { id: '3', user_id: 'demo', academy_id: 'demo', log_date: dStr(2), session_type: 'Match', duration_minutes: 120, intensity: 9, balls_faced: 44, runs_scored: 32, created_at: new Date().toISOString() },
+  { id: '4', user_id: 'demo', academy_id: 'demo', log_date: dStr(4), session_type: 'Nets', duration_minutes: 75, intensity: 6, balls_faced: 90, created_at: new Date().toISOString() },
+  { id: '5', user_id: 'demo', academy_id: 'demo', log_date: dStr(6), session_type: 'Fielding', duration_minutes: 45, intensity: 5, catches: 12, created_at: new Date().toISOString() },
+];
 
 // ─── Quick Session Types ────────────────────────────────────────────────────
 const QUICK_TYPES = [
@@ -33,11 +78,31 @@ function getIntensityColor(n: number) {
   return colors.error;
 }
 
+// ─── Demo Banner ─────────────────────────────────────────────────────────────
+function DemoBanner({ onExit }: { onExit: () => void }) {
+  return (
+    <View style={demo.bar}>
+      <MaterialIcons name="visibility" size={14} color={colors.textLight} />
+      <Text style={demo.barText}>Preview Mode — Join with a real code to activate</Text>
+      <Pressable onPress={onExit} hitSlop={8}>
+        <MaterialIcons name="close" size={16} color={colors.textLight} />
+      </Pressable>
+    </View>
+  );
+}
+const demo = StyleSheet.create({
+  bar: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
+    backgroundColor: colors.warning, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+  },
+  barText: { flex: 1, fontSize: 11, color: colors.textLight, fontWeight: '700' },
+});
+
 // ─── Weekly Activity Bar ────────────────────────────────────────────────────
 function WeekBar({ logs }: { logs: AcademyTrainingLog[] }) {
-  const today = new Date();
-  const monday = new Date(today);
-  monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+  const now = new Date();
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   const counts = Array(7).fill(0);
   logs.forEach(log => {
@@ -62,7 +127,7 @@ const wb = StyleSheet.create({
   label: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
 });
 
-// ─── Intensity Ring ─────────────────────────────────────────────────────────
+// ─── Intensity Picker ────────────────────────────────────────────────────────
 function IntensityPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
   return (
     <View style={{ flexDirection: 'row', gap: 4, flexWrap: 'wrap' }}>
@@ -86,10 +151,10 @@ const ip = StyleSheet.create({
 
 // ─── Quick Log Sheet ────────────────────────────────────────────────────────
 function QuickLogSheet({
-  visible, onClose, onSave, academyId, userId, position,
+  visible, onClose, onSave, academyId, userId, position, isDemo,
 }: {
   visible: boolean; onClose: () => void; onSave: () => void;
-  academyId: string; userId: string; position: string;
+  academyId: string; userId: string; position: string; isDemo?: boolean;
 }) {
   const { showAlert } = useAlert();
   const [sessionType, setSessionType] = useState('Nets');
@@ -101,6 +166,10 @@ function QuickLogSheet({
   const isBatter = ['Batsman', 'All-Rounder', 'Wicket-Keeper'].includes(position);
 
   const handleSave = async () => {
+    if (isDemo) {
+      showAlert('Preview Mode', 'Join a real academy with your code to log sessions.');
+      return;
+    }
     setSaving(true);
     const { error } = await academyService.logTraining({
       user_id: userId,
@@ -127,7 +196,6 @@ function QuickLogSheet({
           <Text style={ql.title}>Log Training</Text>
           <Text style={ql.subtitle}>Tap, type, done — under 10 seconds</Text>
 
-          {/* Session Type */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
             <View style={{ flexDirection: 'row', gap: spacing.sm, paddingHorizontal: 2 }}>
               {QUICK_TYPES.map(t => (
@@ -143,7 +211,6 @@ function QuickLogSheet({
             </View>
           </ScrollView>
 
-          {/* Duration */}
           <Text style={ql.label}>Duration (min)</Text>
           <View style={ql.durationRow}>
             {['30', '45', '60', '90', '120'].map(d => (
@@ -153,7 +220,6 @@ function QuickLogSheet({
             ))}
           </View>
 
-          {/* Balls */}
           <Text style={ql.label}>{isBatter ? 'Balls Faced' : 'Balls Bowled'} (optional)</Text>
           <TextInput
             style={ql.input}
@@ -164,7 +230,6 @@ function QuickLogSheet({
             placeholderTextColor={colors.textSecondary}
           />
 
-          {/* Intensity */}
           <Text style={ql.label}>Intensity: <Text style={{ color: getIntensityColor(intensity), fontWeight: '800' }}>{intensity}/10</Text></Text>
           <IntensityPicker value={intensity} onChange={setIntensity} />
 
@@ -181,10 +246,7 @@ function QuickLogSheet({
 
 const ql = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' },
-  sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
-    padding: spacing.lg, paddingBottom: 40,
-  },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 40 },
   handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.md },
   title: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center' },
   subtitle: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg },
@@ -204,7 +266,7 @@ const ql = StyleSheet.create({
 });
 
 // ─── Join Screen ─────────────────────────────────────────────────────────────
-function JoinScreen({ onJoined }: { onJoined: () => void }) {
+function JoinScreen({ onJoined, onPreview }: { onJoined: () => void; onPreview: (role: 'player' | 'coach') => void }) {
   const { user } = useAuth();
   const { showAlert } = useAlert();
   const [code, setCode] = useState('');
@@ -235,7 +297,7 @@ function JoinScreen({ onJoined }: { onJoined: () => void }) {
           </View>
           <Text style={js.heroTitle}>Join Your Academy</Text>
           <Text style={js.heroSub}>
-            Enter the code from your coach to connect with your cricket program. Individual features stay fully accessible.
+            Enter the code provided by your administrator. Coaches and players each receive a unique code.
           </Text>
         </View>
 
@@ -250,9 +312,8 @@ function JoinScreen({ onJoined }: { onJoined: () => void }) {
             placeholderTextColor={colors.textSecondary}
             autoCapitalize="characters"
             maxLength={6}
-            autoFocus
           />
-          <Text style={js.hint}>Your coach will give you this 6-character code</Text>
+          <Text style={js.hint}>6-character code provided by your academy administrator</Text>
         </View>
 
         <View style={js.card}>
@@ -280,10 +341,31 @@ function JoinScreen({ onJoined }: { onJoined: () => void }) {
           )}
         </Pressable>
 
+        {/* Divider */}
+        <View style={js.divRow}>
+          <View style={js.divLine} />
+          <Text style={js.divText}>PREVIEW FEATURES</Text>
+          <View style={js.divLine} />
+        </View>
+
+        {/* Preview buttons */}
+        <View style={js.previewRow}>
+          <Pressable style={js.previewCard} onPress={() => onPreview('player')}>
+            <MaterialIcons name="person" size={26} color={colors.primary} />
+            <Text style={js.previewTitle}>Player View</Text>
+            <Text style={js.previewSub}>See player dashboard, training log, stats</Text>
+          </Pressable>
+          <Pressable style={[js.previewCard, { borderColor: colors.warning + '60' }]} onPress={() => onPreview('coach')}>
+            <MaterialIcons name="school" size={26} color={colors.warning} />
+            <Text style={[js.previewTitle, { color: colors.warning }]}>Coach View</Text>
+            <Text style={js.previewSub}>See squad dashboard, analytics, attendance</Text>
+          </Pressable>
+        </View>
+
         {/* Info row */}
         <View style={js.infoRow}>
           <MaterialIcons name="info-outline" size={16} color={colors.textSecondary} />
-          <Text style={js.infoText}>Academy mode adds a team layer — all your drills, journal, and training tools still work.</Text>
+          <Text style={js.infoText}>Academy mode is an additional layer — all your drills, journal, and training tools stay fully accessible.</Text>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -316,27 +398,37 @@ const js = StyleSheet.create({
   posTextActive: { color: colors.textLight },
   joinBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    backgroundColor: colors.primary, paddingVertical: spacing.md + 4, borderRadius: borderRadius.xl, marginBottom: spacing.md,
+    backgroundColor: colors.primary, paddingVertical: spacing.md + 4, borderRadius: borderRadius.xl, marginBottom: spacing.lg,
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
   joinBtnText: { ...typography.h4, color: colors.textLight, fontWeight: '800' },
+  divRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  divLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  divText: { fontSize: 10, color: colors.textSecondary, fontWeight: '700', letterSpacing: 1 },
+  previewRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  previewCard: {
+    flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    alignItems: 'center', gap: 6, borderWidth: 1.5, borderColor: colors.primary + '40',
+  },
+  previewTitle: { ...typography.bodySmall, color: colors.primary, fontWeight: '800' },
+  previewSub: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', lineHeight: 14 },
   infoRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   infoText: { ...typography.bodySmall, color: colors.textSecondary, flex: 1, lineHeight: 18 },
 });
 
 // ─── Player Dashboard ────────────────────────────────────────────────────────
 function PlayerDashboard({
-  academy, member, logs, onRefresh, refreshing, onLogPress, onJoinMore,
+  academy, member, logs, onRefresh, refreshing, onLogPress, onJoinMore, isDemo,
 }: {
   academy: Academy; member: AcademyMember; logs: AcademyTrainingLog[];
   onRefresh: () => void; refreshing: boolean; onLogPress: () => void; onJoinMore: () => void;
+  isDemo?: boolean;
 }) {
   const router = useRouter();
   const weekLogs = logs.filter(l => {
     const d = new Date(l.log_date);
     const now = new Date();
-    const diff = (now.getTime() - d.getTime()) / 86400000;
-    return diff <= 7;
+    return (now.getTime() - d.getTime()) / 86400000 <= 7;
   });
   const totalBalls = weekLogs.reduce((a, l) => a + (l.balls_faced || l.balls_bowled || 0), 0);
   const avgIntensity = weekLogs.length > 0
@@ -347,106 +439,109 @@ function PlayerDashboard({
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
+      contentContainerStyle={{ paddingBottom: 100 }}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}
     >
-      {/* Academy Banner */}
-      <View style={pd.banner}>
-        <View style={pd.bannerLeft}>
-          <View style={pd.bannerIcon}>
-            <MaterialIcons name="shield" size={24} color={colors.primary} />
-          </View>
-          <View>
-            <Text style={pd.bannerAcademy} numberOfLines={1}>{academy.name}</Text>
-            <View style={pd.bannerRoleRow}>
-              <View style={pd.playerBadge}><Text style={pd.playerBadgeText}>Player</Text></View>
-              <Text style={pd.bannerPos}>{member.position}</Text>
+      {isDemo && <DemoBanner onExit={onJoinMore} />}
+
+      <View style={{ padding: spacing.md }}>
+        {/* Academy Banner */}
+        <View style={pd.banner}>
+          <View style={pd.bannerLeft}>
+            <View style={pd.bannerIcon}>
+              <MaterialIcons name="shield" size={24} color={colors.primary} />
+            </View>
+            <View>
+              <Text style={pd.bannerAcademy} numberOfLines={1}>{academy.name}</Text>
+              <View style={pd.bannerRoleRow}>
+                <View style={pd.playerBadge}><Text style={pd.playerBadgeText}>Player</Text></View>
+                <Text style={pd.bannerPos}>{member.position}</Text>
+              </View>
             </View>
           </View>
-        </View>
-        <Pressable onPress={onJoinMore} hitSlop={8} style={pd.addBtn}>
-          <MaterialIcons name="vpn-key" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/* Big Log Button */}
-      <Pressable style={pd.logBtn} onPress={onLogPress}>
-        <MaterialIcons name="add-circle" size={28} color={colors.textLight} />
-        <View>
-          <Text style={pd.logBtnTitle}>Log Training</Text>
-          <Text style={pd.logBtnSub}>Takes under 10 seconds</Text>
-        </View>
-        <MaterialIcons name="chevron-right" size={22} color={colors.textLight} style={{ marginLeft: 'auto' as any }} />
-      </Pressable>
-
-      {/* This Week */}
-      <View style={pd.card}>
-        <Text style={pd.cardTitle}>This Week</Text>
-        <View style={pd.statsRow}>
-          <View style={pd.stat}>
-            <Text style={pd.statVal}>{weekLogs.length}</Text>
-            <Text style={pd.statLabel}>Sessions</Text>
-          </View>
-          <View style={pd.stat}>
-            <Text style={pd.statVal}>{totalMins}</Text>
-            <Text style={pd.statLabel}>Minutes</Text>
-          </View>
-          <View style={pd.stat}>
-            <Text style={pd.statVal}>{totalBalls || '—'}</Text>
-            <Text style={pd.statLabel}>Balls</Text>
-          </View>
-          <View style={pd.stat}>
-            <Text style={[pd.statVal, { color: weekLogs.length > 0 ? getIntensityColor(parseFloat(avgIntensity as string)) : colors.text }]}>{avgIntensity}</Text>
-            <Text style={pd.statLabel}>Avg Load</Text>
-          </View>
-        </View>
-        <WeekBar logs={weekLogs} />
-      </View>
-
-      {/* Quick Actions */}
-      <View style={pd.actionsRow}>
-        <Pressable style={pd.actionCard} onPress={() => router.push({ pathname: '/academy-history', params: { academyId: academy.id } } as any)}>
-          <MaterialIcons name="history" size={24} color={colors.warning} />
-          <Text style={pd.actionLabel}>History</Text>
-        </Pressable>
-        <Pressable style={pd.actionCard} onPress={() => router.push({ pathname: '/academy-analytics', params: { academyId: academy.id } } as any)}>
-          <MaterialIcons name="insights" size={24} color={colors.success} />
-          <Text style={pd.actionLabel}>My Analytics</Text>
-        </Pressable>
-        <Pressable style={pd.actionCard} onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: academy.id } } as any)}>
-          <MaterialIcons name="event" size={24} color={colors.mental} />
-          <Text style={pd.actionLabel}>Schedule</Text>
-        </Pressable>
-      </View>
-
-      {/* Recent Logs */}
-      {logs.length > 0 && (
-        <View style={pd.card}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md }}>
-            <Text style={pd.cardTitle}>Recent Sessions</Text>
-            <Pressable onPress={() => router.push({ pathname: '/academy-history', params: { academyId: academy.id } } as any)}>
-              <Text style={{ ...typography.caption, color: colors.primary, fontWeight: '700' }}>See all</Text>
+          {!isDemo && (
+            <Pressable onPress={onJoinMore} hitSlop={8} style={pd.addBtn}>
+              <MaterialIcons name="vpn-key" size={20} color={colors.textSecondary} />
             </Pressable>
-          </View>
-          {logs.slice(0, 5).map(log => (
-            <View key={log.id} style={pd.logRow}>
-              <View style={[pd.logDot, { backgroundColor: getIntensityColor(log.intensity) }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={pd.logType}>{log.session_type}</Text>
-                <Text style={pd.logMeta}>
-                  {log.log_date} · {log.duration_minutes}min
-                  {log.balls_faced ? ` · ${log.balls_faced} balls` : ''}
-                  {log.balls_bowled ? ` · ${log.balls_bowled} bowled` : ''}
-                </Text>
-              </View>
-              <View style={[pd.loadBadge, { backgroundColor: getIntensityColor(log.intensity) + '20' }]}>
-                <Text style={[pd.loadText, { color: getIntensityColor(log.intensity) }]}>{log.intensity}/10</Text>
-              </View>
-            </View>
-          ))}
+          )}
         </View>
-      )}
+
+        {/* Big Log Button */}
+        <Pressable style={pd.logBtn} onPress={onLogPress}>
+          <MaterialIcons name="add-circle" size={28} color={colors.textLight} />
+          <View>
+            <Text style={pd.logBtnTitle}>Log Training</Text>
+            <Text style={pd.logBtnSub}>Takes under 10 seconds</Text>
+          </View>
+          <MaterialIcons name="chevron-right" size={22} color={colors.textLight} style={{ marginLeft: 'auto' as any }} />
+        </Pressable>
+
+        {/* This Week */}
+        <View style={pd.card}>
+          <Text style={pd.cardTitle}>This Week</Text>
+          <View style={pd.statsRow}>
+            <View style={pd.stat}>
+              <Text style={pd.statVal}>{weekLogs.length}</Text>
+              <Text style={pd.statLabel}>Sessions</Text>
+            </View>
+            <View style={pd.stat}>
+              <Text style={pd.statVal}>{totalMins}</Text>
+              <Text style={pd.statLabel}>Minutes</Text>
+            </View>
+            <View style={pd.stat}>
+              <Text style={pd.statVal}>{totalBalls || '—'}</Text>
+              <Text style={pd.statLabel}>Balls</Text>
+            </View>
+            <View style={pd.stat}>
+              <Text style={[pd.statVal, { color: weekLogs.length > 0 ? getIntensityColor(parseFloat(avgIntensity as string)) : colors.text }]}>{avgIntensity}</Text>
+              <Text style={pd.statLabel}>Avg Load</Text>
+            </View>
+          </View>
+          <WeekBar logs={weekLogs} />
+        </View>
+
+        {/* Quick Actions */}
+        <View style={pd.actionsRow}>
+          <Pressable style={pd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-history', params: { academyId: academy.id } } as any)}>
+            <MaterialIcons name="history" size={24} color={colors.warning} />
+            <Text style={pd.actionLabel}>History</Text>
+          </Pressable>
+          <Pressable style={pd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-analytics', params: { academyId: academy.id } } as any)}>
+            <MaterialIcons name="insights" size={24} color={colors.success} />
+            <Text style={pd.actionLabel}>My Analytics</Text>
+          </Pressable>
+          <Pressable style={pd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-schedule', params: { academyId: academy.id } } as any)}>
+            <MaterialIcons name="event" size={24} color={colors.mental} />
+            <Text style={pd.actionLabel}>Schedule</Text>
+          </Pressable>
+        </View>
+
+        {/* Recent Logs */}
+        {logs.length > 0 && (
+          <View style={pd.card}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md }}>
+              <Text style={pd.cardTitle}>Recent Sessions</Text>
+            </View>
+            {logs.slice(0, 5).map(log => (
+              <View key={log.id} style={pd.logRow}>
+                <View style={[pd.logDot, { backgroundColor: getIntensityColor(log.intensity) }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={pd.logType}>{log.session_type}</Text>
+                  <Text style={pd.logMeta}>
+                    {log.log_date} · {log.duration_minutes}min
+                    {log.balls_faced ? ` · ${log.balls_faced} balls` : ''}
+                    {log.balls_bowled ? ` · ${log.balls_bowled} bowled` : ''}
+                  </Text>
+                </View>
+                <View style={[pd.loadBadge, { backgroundColor: getIntensityColor(log.intensity) + '20' }]}>
+                  <Text style={[pd.loadText, { color: getIntensityColor(log.intensity) }]}>{log.intensity}/10</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
     </ScrollView>
   );
 }
@@ -488,17 +583,31 @@ const pd = StyleSheet.create({
 
 // ─── Coach Dashboard ──────────────────────────────────────────────────────────
 function CoachDashboard({
-  academy, member, onRefresh, refreshing, onJoinMore,
+  academy, member, onRefresh, refreshing, onJoinMore, isDemo,
 }: {
   academy: Academy; member: AcademyMember;
   onRefresh: () => void; refreshing: boolean; onJoinMore: () => void;
+  isDemo?: boolean;
 }) {
   const router = useRouter();
-  const [players, setPlayers] = useState<AcademyMember[]>([]);
-  const [allLogs, setAllLogs] = useState<Array<AcademyTrainingLog & { user_profiles: any }>>([]);
-  const [loading, setLoading] = useState(true);
+  const [players, setPlayers] = useState<AcademyMember[]>(isDemo ? [
+    { id: 'p1', academy_id: 'demo', user_id: 'u1', role: 'player', position: 'Batsman', display_name: 'Alex Johnson', joined_at: '' },
+    { id: 'p2', academy_id: 'demo', user_id: 'u2', role: 'player', position: 'Bowler', display_name: 'Sam Patel', joined_at: '' },
+    { id: 'p3', academy_id: 'demo', user_id: 'u3', role: 'player', position: 'All-Rounder', display_name: 'Chris Williams', joined_at: '' },
+    { id: 'p4', academy_id: 'demo', user_id: 'u4', role: 'player', position: 'Wicket-Keeper', display_name: 'Maya Singh', joined_at: '' },
+  ] : []);
+  const [allLogs, setAllLogs] = useState<Array<AcademyTrainingLog & { user_profiles: any }>>(
+    isDemo ? [
+      { ...DEMO_LOGS[0], user_id: 'u1', user_profiles: {} },
+      { ...DEMO_LOGS[1], user_id: 'u1', user_profiles: {} },
+      { ...DEMO_LOGS[2], user_id: 'u2', user_profiles: {} },
+      { ...DEMO_LOGS[3], user_id: 'u3', user_profiles: {} },
+    ] : []
+  );
+  const [loading, setLoading] = useState(!isDemo);
 
   const load = useCallback(async () => {
+    if (isDemo) return;
     const [membRes, logsRes] = await Promise.all([
       academyService.getAcademyMembers(academy.id),
       academyService.getAcademyLogs(academy.id, 7),
@@ -506,7 +615,7 @@ function CoachDashboard({
     setPlayers((membRes.data || []).filter(m => m.role === 'player'));
     setAllLogs(logsRes.data || []);
     setLoading(false);
-  }, [academy.id]);
+  }, [academy.id, isDemo]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -515,7 +624,7 @@ function CoachDashboard({
   const alerts: string[] = [];
   players.forEach(p => {
     const pl = getPlayerLogs(p.user_id);
-    const name = p.display_name || p.user_profiles?.username || 'Player';
+    const name = p.display_name || 'Player';
     if (pl.length === 0) alerts.push(`${name} has not trained this week`);
     else {
       const avgLoad = pl.reduce((a, l) => a + l.intensity, 0) / pl.length;
@@ -526,123 +635,114 @@ function CoachDashboard({
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: spacing.md, paddingBottom: 100 }}
+      contentContainerStyle={{ paddingBottom: 100 }}
       showsVerticalScrollIndicator={false}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { await load(); onRefresh(); }} tintColor={colors.primary} />}
     >
-      {/* Coach Banner */}
-      <View style={cd.banner}>
-        <View style={cd.bannerLeft}>
-          <View style={cd.bannerIcon}>
-            <MaterialIcons name="school" size={24} color={colors.warning} />
-          </View>
-          <View>
-            <Text style={cd.bannerAcademy} numberOfLines={1}>{academy.name}</Text>
-            <View style={cd.bannerRoleRow}>
-              <View style={cd.coachBadge}><Text style={cd.coachBadgeText}>Coach</Text></View>
+      {isDemo && <DemoBanner onExit={onJoinMore} />}
+
+      <View style={{ padding: spacing.md }}>
+        {/* Coach Banner */}
+        <View style={cd.banner}>
+          <View style={cd.bannerLeft}>
+            <View style={cd.bannerIcon}>
+              <MaterialIcons name="school" size={24} color={colors.warning} />
+            </View>
+            <View>
+              <Text style={cd.bannerAcademy} numberOfLines={1}>{academy.name}</Text>
+              <View style={cd.bannerRoleRow}>
+                <View style={cd.coachBadge}><Text style={cd.coachBadgeText}>Coach</Text></View>
+              </View>
             </View>
           </View>
+          {!isDemo && (
+            <Pressable onPress={onJoinMore} hitSlop={8} style={cd.addBtn}>
+              <MaterialIcons name="vpn-key" size={20} color={colors.textSecondary} />
+            </Pressable>
+          )}
         </View>
-        <Pressable onPress={onJoinMore} hitSlop={8} style={cd.addBtn}>
-          <MaterialIcons name="vpn-key" size={20} color={colors.textSecondary} />
-        </Pressable>
-      </View>
 
-      {/* Codes */}
-      <View style={cd.codesCard}>
-        <Text style={cd.codesTitle}>Share Join Codes</Text>
-        <View style={cd.codesRow}>
-          <View style={cd.codeBlock}>
-            <Text style={cd.codeRole}>Player Code</Text>
-            <Text style={cd.codeVal}>{academy.player_code}</Text>
-          </View>
-          <View style={[cd.codeBlock, { borderLeftWidth: 1, borderLeftColor: colors.border }]}>
-            <Text style={cd.codeRole}>Coach Code</Text>
-            <Text style={cd.codeVal}>{academy.coach_code}</Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Alerts */}
-      {alerts.length > 0 && (
-        <View style={cd.alertsCard}>
-          <View style={cd.alertsHeader}>
-            <MaterialIcons name="warning" size={16} color={colors.warning} />
-            <Text style={cd.alertsTitle}>{alerts.length} Alert{alerts.length > 1 ? 's' : ''}</Text>
-          </View>
-          {alerts.map((a, i) => (
-            <View key={i} style={cd.alertRow}>
-              <View style={cd.alertDot} />
-              <Text style={cd.alertText}>{a}</Text>
+        {/* Alerts */}
+        {alerts.length > 0 && (
+          <View style={cd.alertsCard}>
+            <View style={cd.alertsHeader}>
+              <MaterialIcons name="warning" size={16} color={colors.warning} />
+              <Text style={cd.alertsTitle}>{alerts.length} Alert{alerts.length > 1 ? 's' : ''}</Text>
             </View>
-          ))}
-        </View>
-      )}
-
-      {/* Quick Coach Actions */}
-      <View style={cd.actionsRow}>
-        <Pressable style={cd.actionCard} onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: academy.id } } as any)}>
-          <MaterialIcons name="people" size={26} color={colors.primary} />
-          <Text style={cd.actionLabel}>Squad</Text>
-        </Pressable>
-        <Pressable style={cd.actionCard} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId: academy.id } } as any)}>
-          <MaterialIcons name="fact-check" size={26} color={colors.success} />
-          <Text style={cd.actionLabel}>Attendance</Text>
-        </Pressable>
-        <Pressable style={cd.actionCard} onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: academy.id, isCoach: 'true' } } as any)}>
-          <MaterialIcons name="event-note" size={26} color={colors.warning} />
-          <Text style={cd.actionLabel}>Sessions</Text>
-        </Pressable>
-        <Pressable style={cd.actionCard} onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: academy.id, tab: 'analytics' } } as any)}>
-          <MaterialIcons name="analytics" size={26} color={colors.mental} />
-          <Text style={cd.actionLabel}>Analytics</Text>
-        </Pressable>
-      </View>
-
-      {/* Squad Overview */}
-      <View style={cd.card}>
-        <View style={cd.cardHeader}>
-          <Text style={cd.cardTitle}>Squad — This Week</Text>
-          <Text style={cd.squadCount}>{players.length} players</Text>
-        </View>
-        {loading ? <ActivityIndicator color={colors.primary} /> : players.length === 0 ? (
-          <View style={cd.emptySquad}>
-            <MaterialIcons name="people-outline" size={32} color={colors.border} />
-            <Text style={cd.emptyText}>Share your player code to add athletes</Text>
+            {alerts.map((a, i) => (
+              <View key={i} style={cd.alertRow}>
+                <View style={cd.alertDot} />
+                <Text style={cd.alertText}>{a}</Text>
+              </View>
+            ))}
           </View>
-        ) : (
-          players.map(p => {
-            const pl = getPlayerLogs(p.user_id);
-            const name = p.display_name || p.user_profiles?.username || p.user_profiles?.email || 'Player';
-            const avgLoad = pl.length > 0 ? pl.reduce((a, l) => a + l.intensity, 0) / pl.length : 0;
-            const balls = pl.reduce((a, l) => a + (l.balls_faced || l.balls_bowled || 0), 0);
-            return (
-              <Pressable key={p.id} style={cd.playerRow} onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: academy.id } } as any)}>
-                <View style={[cd.playerAvatar, { backgroundColor: pl.length > 0 ? colors.primary + '20' : colors.border + '40' }]}>
-                  <Text style={[cd.playerInitial, { color: pl.length > 0 ? colors.primary : colors.textSecondary }]}>
-                    {name.charAt(0).toUpperCase()}
-                  </Text>
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={cd.playerName}>{name}</Text>
-                  <Text style={cd.playerPos}>{p.position}</Text>
-                </View>
-                <View style={cd.playerStats}>
-                  <Text style={[cd.playerSessions, { color: pl.length > 0 ? colors.primary : colors.textSecondary }]}>
-                    {pl.length} {pl.length === 1 ? 'session' : 'sessions'}
-                  </Text>
-                  {balls > 0 && <Text style={cd.playerBalls}>{balls} balls</Text>}
-                  {avgLoad > 0 && (
-                    <View style={[cd.loadDot, { backgroundColor: getIntensityColor(avgLoad) }]}>
-                      <Text style={cd.loadDotText}>{avgLoad.toFixed(0)}</Text>
-                    </View>
-                  )}
-                </View>
-                <MaterialIcons name="chevron-right" size={18} color={colors.textSecondary} />
-              </Pressable>
-            );
-          })
         )}
+
+        {/* Quick Coach Actions */}
+        <View style={cd.actionsRow}>
+          <Pressable style={cd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-coach', params: { academyId: academy.id } } as any)}>
+            <MaterialIcons name="people" size={26} color={colors.primary} />
+            <Text style={cd.actionLabel}>Squad</Text>
+          </Pressable>
+          <Pressable style={cd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-attendance', params: { academyId: academy.id } } as any)}>
+            <MaterialIcons name="fact-check" size={26} color={colors.success} />
+            <Text style={cd.actionLabel}>Attendance</Text>
+          </Pressable>
+          <Pressable style={cd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-schedule', params: { academyId: academy.id, isCoach: 'true' } } as any)}>
+            <MaterialIcons name="event-note" size={26} color={colors.warning} />
+            <Text style={cd.actionLabel}>Sessions</Text>
+          </Pressable>
+          <Pressable style={cd.actionCard} onPress={() => isDemo ? null : router.push({ pathname: '/academy-coach', params: { academyId: academy.id, tab: 'analytics' } } as any)}>
+            <MaterialIcons name="analytics" size={26} color={colors.mental} />
+            <Text style={cd.actionLabel}>Analytics</Text>
+          </Pressable>
+        </View>
+
+        {/* Squad Overview */}
+        <View style={cd.card}>
+          <View style={cd.cardHeader}>
+            <Text style={cd.cardTitle}>Squad — This Week</Text>
+            <Text style={cd.squadCount}>{players.length} players</Text>
+          </View>
+          {loading ? <ActivityIndicator color={colors.primary} /> : players.length === 0 ? (
+            <View style={cd.emptySquad}>
+              <MaterialIcons name="people-outline" size={32} color={colors.border} />
+              <Text style={cd.emptyText}>Players will appear here once they join with their unique code</Text>
+            </View>
+          ) : (
+            players.map(p => {
+              const pl = getPlayerLogs(p.user_id);
+              const name = p.display_name || 'Player';
+              const avgLoad = pl.length > 0 ? pl.reduce((a, l) => a + l.intensity, 0) / pl.length : 0;
+              const balls = pl.reduce((a, l) => a + (l.balls_faced || l.balls_bowled || 0), 0);
+              return (
+                <Pressable key={p.id} style={cd.playerRow} onPress={() => isDemo ? null : router.push({ pathname: '/academy-coach', params: { academyId: academy.id } } as any)}>
+                  <View style={[cd.playerAvatar, { backgroundColor: pl.length > 0 ? colors.primary + '20' : colors.border + '40' }]}>
+                    <Text style={[cd.playerInitial, { color: pl.length > 0 ? colors.primary : colors.textSecondary }]}>
+                      {name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={cd.playerName}>{name}</Text>
+                    <Text style={cd.playerPos}>{p.position}</Text>
+                  </View>
+                  <View style={cd.playerStats}>
+                    <Text style={[cd.playerSessions, { color: pl.length > 0 ? colors.primary : colors.textSecondary }]}>
+                      {pl.length} {pl.length === 1 ? 'session' : 'sessions'}
+                    </Text>
+                    {balls > 0 && <Text style={cd.playerBalls}>{balls} balls</Text>}
+                    {avgLoad > 0 && (
+                      <View style={[cd.loadDot, { backgroundColor: getIntensityColor(avgLoad) }]}>
+                        <Text style={cd.loadDotText}>{avgLoad.toFixed(0)}</Text>
+                      </View>
+                    )}
+                  </View>
+                  {!isDemo && <MaterialIcons name="chevron-right" size={18} color={colors.textSecondary} />}
+                </Pressable>
+              );
+            })
+          )}
+        </View>
       </View>
     </ScrollView>
   );
@@ -657,12 +757,6 @@ const cd = StyleSheet.create({
   coachBadge: { backgroundColor: colors.warning + '20', paddingHorizontal: 8, paddingVertical: 2, borderRadius: borderRadius.full },
   coachBadgeText: { fontSize: 10, color: colors.warning, fontWeight: '800' },
   addBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' },
-  codesCard: { backgroundColor: colors.primary + '08', borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.primary + '30' },
-  codesTitle: { ...typography.caption, color: colors.primary, fontWeight: '700', marginBottom: spacing.sm, textTransform: 'uppercase', letterSpacing: 0.5 },
-  codesRow: { flexDirection: 'row' },
-  codeBlock: { flex: 1, alignItems: 'center', paddingHorizontal: spacing.sm },
-  codeRole: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
-  codeVal: { ...typography.h3, color: colors.primary, fontWeight: '800', letterSpacing: 3 },
   alertsCard: { backgroundColor: colors.warning + '10', borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.warning + '40' },
   alertsHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
   alertsTitle: { ...typography.bodySmall, color: colors.warning, fontWeight: '800' },
@@ -702,6 +796,9 @@ export default function AcademyScreen() {
   const [logs, setLogs] = useState<AcademyTrainingLog[]>([]);
   const [showQuickLog, setShowQuickLog] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
+
+  // Demo/preview mode
+  const [demoRole, setDemoRole] = useState<'player' | 'coach' | null>(null);
 
   // Join modal fields
   const [jCode, setJCode] = useState('');
@@ -745,6 +842,7 @@ export default function AcademyScreen() {
     if (error) { showAlert('Error', error); return; }
     setShowJoinModal(false);
     setJCode(''); setJName(''); setJPos('Batsman');
+    setDemoRole(null);
     await load();
     showAlert('Joined!', `Welcome to ${data!.academy.name}!`);
   };
@@ -754,6 +852,52 @@ export default function AcademyScreen() {
       <SafeAreaView style={s.container} edges={['top']}>
         <View style={s.header}><Text style={s.headerTitle}>Academy</Text></View>
         <View style={s.centered}><ActivityIndicator size="large" color={colors.primary} /></View>
+      </SafeAreaView>
+    );
+  }
+
+  // Demo mode — show previews without a real academy
+  if (memberships.length === 0 && demoRole) {
+    const isCoachDemo = demoRole === 'coach';
+    return (
+      <SafeAreaView style={s.container} edges={['top']}>
+        <View style={s.header}>
+          <Text style={s.headerTitle}>Academy</Text>
+          <View style={s.demoBadge}>
+            <MaterialIcons name="visibility" size={12} color={colors.warning} />
+            <Text style={s.demoBadgeText}>Preview</Text>
+          </View>
+        </View>
+        {isCoachDemo ? (
+          <CoachDashboard
+            academy={DEMO_ACADEMY}
+            member={DEMO_COACH_MEMBER}
+            onRefresh={() => {}}
+            refreshing={false}
+            onJoinMore={() => setDemoRole(null)}
+            isDemo
+          />
+        ) : (
+          <PlayerDashboard
+            academy={DEMO_ACADEMY}
+            member={DEMO_PLAYER_MEMBER}
+            logs={DEMO_LOGS}
+            onRefresh={() => {}}
+            refreshing={false}
+            onLogPress={() => setShowQuickLog(true)}
+            onJoinMore={() => setDemoRole(null)}
+            isDemo
+          />
+        )}
+        <QuickLogSheet
+          visible={showQuickLog}
+          onClose={() => setShowQuickLog(false)}
+          onSave={() => setShowQuickLog(false)}
+          academyId="demo"
+          userId=""
+          position="Batsman"
+          isDemo
+        />
       </SafeAreaView>
     );
   }
@@ -782,7 +926,7 @@ export default function AcademyScreen() {
 
       {/* Content */}
       {memberships.length === 0 ? (
-        <JoinScreen onJoined={load} />
+        <JoinScreen onJoined={load} onPreview={setDemoRole} />
       ) : isCoach ? (
         <CoachDashboard
           academy={current!.academy}
@@ -825,7 +969,8 @@ export default function AcademyScreen() {
           <View style={s.modalSheet}>
             <View style={s.modalHandle} />
             <Text style={s.modalTitle}>Join Another Academy</Text>
-            <TextInput style={s.modalInput} value={jCode} onChangeText={v => setJCode(v.toUpperCase())} placeholder="Academy Code" placeholderTextColor={colors.textSecondary} autoCapitalize="characters" maxLength={6} />
+            <Text style={s.modalSub}>Enter the code provided by your academy administrator</Text>
+            <TextInput style={s.modalInput} value={jCode} onChangeText={v => setJCode(v.toUpperCase())} placeholder="Academy Code (6 chars)" placeholderTextColor={colors.textSecondary} autoCapitalize="characters" maxLength={6} />
             <TextInput style={s.modalInput} value={jName} onChangeText={setJName} placeholder="Your Name" placeholderTextColor={colors.textSecondary} />
             <Text style={s.modalLabel}>Position</Text>
             <View style={s.posGrid}>
@@ -858,6 +1003,8 @@ const s = StyleSheet.create({
   },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '800' },
   headerSub: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
+  demoBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.warning + '20', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full },
+  demoBadgeText: { fontSize: 11, color: colors.warning, fontWeight: '800' },
   switcherScroll: { maxHeight: 40, flexShrink: 1 },
   switcherContent: { flexDirection: 'row', gap: spacing.xs, paddingHorizontal: 4 },
   switcherChip: { paddingHorizontal: spacing.sm + 2, paddingVertical: 5, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
@@ -867,7 +1014,8 @@ const s = StyleSheet.create({
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalSheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: spacing.lg, paddingBottom: 48 },
   modalHandle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.md },
-  modalTitle: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center', marginBottom: spacing.md },
+  modalTitle: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center', marginBottom: spacing.xs },
+  modalSub: { ...typography.caption, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.md },
   modalInput: { backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.body, color: colors.text, marginBottom: spacing.sm },
   modalLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '700', marginBottom: spacing.xs },
   posGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.md },
