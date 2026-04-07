@@ -3,6 +3,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { Redirect } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/template';
+import { getSupabaseClient } from '@/template';
 import { colors } from '@/constants/theme';
 
 const ONBOARDING_KEY = '@bat_better_onboarding_completed';
@@ -12,10 +13,16 @@ export default function RootScreen() {
   const { user, loading: authLoading } = useAuth();
   const [onboardingCompleted, setOnboardingCompleted] = useState<boolean | null>(null);
   const [profileSetupCompleted, setProfileSetupCompleted] = useState<boolean | null>(null);
+  const [modeSelected, setModeSelected] = useState<boolean | null>(null);
 
   useEffect(() => {
     checkOnboarding();
   }, []);
+
+  useEffect(() => {
+    if (user) checkMode();
+    else setModeSelected(null);
+  }, [user]);
 
   const checkOnboarding = async () => {
     try {
@@ -27,6 +34,21 @@ export default function RootScreen() {
       console.error('Error checking onboarding:', error);
       setOnboardingCompleted(false);
       setProfileSetupCompleted(false);
+    }
+  };
+
+  const checkMode = async () => {
+    if (!user) return;
+    try {
+      const supabase = getSupabaseClient();
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('app_mode')
+        .eq('id', user.id)
+        .single();
+      setModeSelected(!!data?.app_mode);
+    } catch {
+      setModeSelected(false);
     }
   };
 
@@ -49,12 +71,25 @@ export default function RootScreen() {
     return <Redirect href="/login" />;
   }
 
-  // Step 3: Check profile setup
+  // Step 3: Check mode selection (only needed for logged-in users without mode yet)
+  if (modeSelected === null) {
+    return (
+      <View style={styles.container}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
+
+  if (!modeSelected) {
+    return <Redirect href="/mode-selection" />;
+  }
+
+  // Step 4: Check profile setup
   if (!profileSetupCompleted) {
     return <Redirect href="/profile-setup" />;
   }
 
-  // Step 4: User is authenticated and profile complete - show app
+  // Step 5: User is authenticated and profile complete - show app
   return <Redirect href="/(tabs)" />;
 }
 

@@ -103,14 +103,14 @@ export default function LoginScreen() {
       return;
     }
     
-    // Successful verification - go to profile setup for new users
+    // Successful verification - go to mode selection for new users
     console.log('OTP verified successfully!');
     
     // Small delay to ensure auth state updates
     await new Promise(resolve => setTimeout(resolve, 500));
     
-    // Navigate to profile setup
-    router.replace('/profile-setup');
+    // Navigate to mode selection
+    router.replace('/mode-selection');
   };
 
   const handleForgotPassword = async () => {

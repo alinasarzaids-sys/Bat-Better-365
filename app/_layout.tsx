@@ -186,6 +186,14 @@ export default function RootLayout() {
                 presentation: 'card'
               }} 
             />
+            <Stack.Screen 
+              name="mode-selection" 
+              options={{ 
+                headerShown: false,
+                animation: 'fade',
+                presentation: 'card'
+              }} 
+            />
           </Stack>
         </SafeAreaProvider>
         </SessionProvider>
