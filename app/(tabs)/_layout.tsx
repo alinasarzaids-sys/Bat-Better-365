@@ -154,9 +154,10 @@ export default function TabLayout() {
           name="calendar"
           options={{
             title: 'Calendar',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="calendar-today" size={size} color={color} />
+            tabBarIcon: ({ color, size, focused }) => (
+              <MaterialIcons name="calendar-today" size={size} color={focused ? '#3B82F6' : color} />
             ),
+            tabBarActiveTintColor: '#3B82F6',
           }}
         />
         <Tabs.Screen
@@ -189,7 +190,10 @@ export default function TabLayout() {
         <Tabs.Screen
           name="academy"
           options={{
-            href: null,
+            title: 'Academy',
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="shield" size={size} color={color} />
+            ),
           }}
         />
         <Tabs.Screen

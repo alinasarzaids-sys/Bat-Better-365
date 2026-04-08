@@ -45,7 +45,7 @@ const actions: QuickAction[] = [
     title: 'Repeat Last',
     subtitle: 'Redo your previous training',
     icon: 'replay',
-    color: colors.blue,
+    color: '#0EA5E9',
     route: '/repeat-last',
   },
 ];
