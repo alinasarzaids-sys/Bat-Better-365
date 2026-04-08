@@ -153,15 +153,9 @@ export default function TabLayout() {
         <Tabs.Screen
           name="calendar"
           options={{
-            href: null,
-          }}
-        />
-        <Tabs.Screen
-          name="academy"
-          options={{
-            title: 'Academy',
+            title: 'Calendar',
             tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="shield" size={size} color={color} />
+              <MaterialIcons name="calendar-today" size={size} color={color} />
             ),
           }}
         />
@@ -190,6 +184,12 @@ export default function TabLayout() {
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="bar-chart" size={size} color={color} />
             ),
+          }}
+        />
+        <Tabs.Screen
+          name="academy"
+          options={{
+            href: null,
           }}
         />
         <Tabs.Screen
