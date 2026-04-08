@@ -311,44 +311,17 @@ export const academyService = {
   // ─── AI Analytics ─────────────────────────────────────────────────────────────
   async getAIAnalytics(logs: AcademyTrainingLog[], memberName: string, position: string): Promise<{ data: string | null; error: string | null }> {
     const supabase = getSupabaseClient();
-
-    const summary = logs.slice(0, 20).map(l => {
-      const parts: string[] = [
-        `Date: ${l.log_date}`,
-        `Type: ${l.session_type}`,
-        `Duration: ${l.duration_minutes}min`,
-        `Intensity: ${l.intensity}/10`,
-      ];
-      if (l.balls_faced) parts.push(`Balls faced: ${l.balls_faced}`);
-      if (l.runs_scored !== undefined) parts.push(`Runs: ${l.runs_scored}`);
-      if (l.balls_bowled) parts.push(`Balls bowled: ${l.balls_bowled}`);
-      if (l.wickets !== undefined) parts.push(`Wickets: ${l.wickets}`);
-      if (l.catches) parts.push(`Catches: ${l.catches}`);
-      if (l.technical_rating) parts.push(`Technical: ${l.technical_rating}/5`);
-      if (l.effort_rating) parts.push(`Effort: ${l.effort_rating}/5`);
-      if (l.fitness_rating) parts.push(`Fitness: ${l.fitness_rating}/5`);
-      if (l.notes) parts.push(`Notes: ${l.notes}`);
-      return parts.join(', ');
-    }).join('\n');
-
-    const prompt = `You are an expert cricket coach. Analyse the following training data for ${memberName} (${position}) over their last ${logs.length} sessions and provide a concise, actionable coaching report covering:
-1. Training Consistency & Volume (sessions per week, average duration, intensity trends)
-2. Key Strengths (what they are excelling at based on metrics)
-3. Areas for Improvement (specific weaknesses identified from data)
-4. Workload Balance (is training load appropriate or too high/low?)
-5. Top 3 Specific Recommendations for next 2 weeks
-
-Training Data:
-${summary}
-
-Keep the report under 300 words. Use bullet points. Be direct and cricket-specific.`;
-
     try {
-      const { data, error } = await supabase.functions.invoke('ai-coach-chat', {
-        body: { message: prompt, history: [] },
+      const { data, error } = await supabase.functions.invoke('academy-ai-questions', {
+        body: {
+          mode: 'analysis',
+          position,
+          sessionType: '',
+          stats: { logs, memberName, answers: [] },
+        },
       });
       if (error) return { data: null, error: 'AI analysis failed' };
-      return { data: data?.reply || data?.message || null, error: null };
+      return { data: data?.report || null, error: null };
     } catch {
       return { data: null, error: 'AI analysis unavailable' };
     }

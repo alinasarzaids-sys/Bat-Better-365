@@ -171,6 +171,14 @@ export default function RootLayout() {
               }} 
             />
             <Stack.Screen 
+              name="academy-log" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_bottom',
+                presentation: 'modal'
+              }} 
+            />
+            <Stack.Screen 
               name="academy-history" 
               options={{ 
                 headerShown: false,
