@@ -6,9 +6,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuth, useAlert, getSupabaseClient } from '@/template';
+import { useAuth, useAlert } from '@/template';
 import { academyService } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
+import { useActiveSession } from '@/hooks/useActiveSession';
 
 // ─── Session Type Config ──────────────────────────────────────────────────────
 type SessionKind = 'Batting' | 'Bowling' | 'Fielding' | 'Keeping' | 'Fitness';
@@ -28,7 +29,7 @@ interface ClosingQuestion {
   id: string;
   text: string;
   type: 'stars' | 'number';
-  suffix?: string;   // e.g. "runs", "reps"
+  suffix?: string;
 }
 
 const SESSION_CONFIGS: SessionConfig[] = [
@@ -38,8 +39,8 @@ const SESSION_CONFIGS: SessionConfig[] = [
     color: colors.technical,
     counter1Label: 'Balls Faced',
     counter1Sub: 'Total deliveries received',
-    counter2Label: 'Balls Middled',
-    counter2Sub: 'Clean, well-timed shots',
+    counter2Label: 'Successful Shots',
+    counter2Sub: 'Clean, well-timed contact',
     closingQuestions: [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
       { id: 'technique', text: 'How clean and correct was your technique?', type: 'stars' },
@@ -55,7 +56,7 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter1Label: 'Balls Bowled',
     counter1Sub: 'Total deliveries sent down',
     counter2Label: 'Good Balls',
-    counter2Sub: 'Balls in target zone / wicket-taking',
+    counter2Sub: 'On target / wicket-taking deliveries',
     closingQuestions: [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
       { id: 'consistency', text: 'How consistent was your line and length?', type: 'stars' },
@@ -71,7 +72,7 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter1Label: 'Chances',
     counter1Sub: 'Total opportunities in the field',
     counter2Label: 'Clean Takes',
-    counter2Sub: 'Successful catches / stops / throws',
+    counter2Sub: 'Catches / stops / throws completed',
     closingQuestions: [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
       { id: 'concentration', text: 'How sharp was your concentration?', type: 'stars' },
@@ -114,14 +115,13 @@ const SESSION_CONFIGS: SessionConfig[] = [
   },
 ];
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 function formatTime(s: number) {
   const m = Math.floor(s / 60);
   const sec = s % 60;
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+// ─── Progress Dots ────────────────────────────────────────────────────────────
 function ProgressDots({ step, total }: { step: number; total: number }) {
   return (
     <View style={pd.row}>
@@ -139,14 +139,53 @@ const pd = StyleSheet.create({
   done: { backgroundColor: colors.primary + '60' },
 });
 
-function BigCounter({ label, sub, value, color, onInc, onDec }: {
-  label: string; sub: string; value: number; color: string; onInc: () => void; onDec: () => void;
+// ─── Big Counter ──────────────────────────────────────────────────────────────
+function BigCounter({ label, sub, value, color, onInc, onDec, onEdit }: {
+  label: string; sub: string; value: number; color: string;
+  onInc: () => void; onDec: () => void; onEdit: (v: number) => void;
 }) {
+  const [editing, setEditing] = useState(false);
+  const [inputVal, setInputVal] = useState(String(value));
+
+  useEffect(() => {
+    if (!editing) setInputVal(String(value));
+  }, [value, editing]);
+
   return (
     <View style={bc.card}>
       <Text style={[bc.label, { color }]}>{label}</Text>
       <Text style={bc.sub}>{sub}</Text>
-      <Text style={[bc.value, { color }]}>{value}</Text>
+
+      <Pressable onPress={() => { setEditing(true); setInputVal(String(value)); }} style={bc.valueWrap}>
+        {editing ? (
+          <TextInput
+            style={[bc.value, { color, borderBottomWidth: 2, borderBottomColor: color }]}
+            value={inputVal}
+            onChangeText={setInputVal}
+            keyboardType="number-pad"
+            autoFocus
+            selectTextOnFocus
+            onBlur={() => {
+              const n = parseInt(inputVal.replace(/[^0-9]/g, '')) || 0;
+              onEdit(n);
+              setEditing(false);
+            }}
+            onSubmitEditing={() => {
+              const n = parseInt(inputVal.replace(/[^0-9]/g, '')) || 0;
+              onEdit(n);
+              setEditing(false);
+            }}
+          />
+        ) : (
+          <Text style={[bc.value, { color }]}>{value}</Text>
+        )}
+        {!editing && (
+          <View style={bc.editHint}>
+            <MaterialIcons name="edit" size={12} color={colors.textSecondary} />
+          </View>
+        )}
+      </Pressable>
+
       <View style={bc.btnRow}>
         <Pressable style={[bc.btn, { backgroundColor: colors.error + '20' }]} onPress={onDec} hitSlop={6}>
           <MaterialIcons name="remove" size={28} color={colors.error} />
@@ -160,13 +199,16 @@ function BigCounter({ label, sub, value, color, onInc, onDec }: {
 }
 const bc = StyleSheet.create({
   card: { flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg, alignItems: 'center', gap: spacing.xs, borderWidth: 1.5, borderColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 4 },
-  label: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase' },
+  label: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center' },
   sub: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 14 },
-  value: { fontSize: 72, fontWeight: '900', letterSpacing: -2, lineHeight: 80 },
+  valueWrap: { alignItems: 'center' },
+  value: { fontSize: 68, fontWeight: '900', letterSpacing: -2, lineHeight: 76, textAlign: 'center', minWidth: 80 },
+  editHint: { position: 'absolute', right: -18, bottom: 10, backgroundColor: colors.background, borderRadius: 8, padding: 3 },
   btnRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xs },
   btn: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
 });
 
+// ─── Star Row ─────────────────────────────────────────────────────────────────
 function StarRow({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
   return (
     <View style={{ flexDirection: 'row', gap: spacing.xs }}>
@@ -186,36 +228,57 @@ export default function AcademyLogScreen() {
   const { user } = useAuth();
   const { showAlert } = useAlert();
   const insets = useSafeAreaInsets();
+  const {
+    academySession,
+    startAcademySession,
+    minimizeAcademySession,
+    maximizeAcademySession,
+    updateAcademySessionStep,
+    setAcademyIsPaused,
+    endAcademySession,
+  } = useActiveSession();
 
   const academyId = params.academyId as string;
+  const isResuming = params.resume === '1';
   const logDate = new Date().toISOString().split('T')[0];
 
   // ── Steps: 0=Pick Type, 1=Objectives, 2=Live, 3=Closing, 4=Summary
   const TOTAL_STEPS = 5;
   const [step, setStep] = useState(0);
 
-  // ── Step 0: Type Selection
+  // ── Step 0: Type
   const [config, setConfig] = useState<SessionConfig | null>(null);
 
   // ── Step 1: Objectives
   const [objective1, setObjective1] = useState('');
   const [objective2, setObjective2] = useState('');
 
-  // ── Step 2: Live
-  const [elapsed, setElapsed] = useState(0);
-  const [paused, setPaused] = useState(false);
+  // ── Step 2: Live (synced from context when minimized)
   const [counter1, setCounter1] = useState(0);
   const [counter2, setCounter2] = useState(0);
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Paused state from context (so it persists when minimized)
+  const paused = academySession.isActive ? academySession.isPaused : false;
+
+  // Use the elapsed time from context (keeps ticking even when minimized)
+  const elapsed = academySession.isActive ? academySession.elapsedSeconds : 0;
+
+  // ── Restore from context if resuming ──────────────────────────────────────
   useEffect(() => {
-    if (step === 2 && !paused) {
-      timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
-    } else {
-      if (timerRef.current) clearInterval(timerRef.current);
+    if (isResuming && academySession.isActive && academySession.kind) {
+      const cfg = SESSION_CONFIGS.find(c => c.kind === academySession.kind) || null;
+      setConfig(cfg);
+      setObjective1(academySession.objective1);
+      setObjective2(academySession.objective2);
+      setCounter1(academySession.counter1);
+      setCounter2(academySession.counter2);
+      setStep(academySession.step);
+      setObj1Done(academySession.obj1Done);
+      setObj2Done(academySession.obj2Done);
+      setAnswers(academySession.answers);
+      maximizeAcademySession();
     }
-    return () => { if (timerRef.current) clearInterval(timerRef.current); };
-  }, [step, paused]);
+  }, [isResuming]);
 
   // ── Step 3: Closing
   const [obj1Done, setObj1Done] = useState<boolean | null>(null);
@@ -225,7 +288,7 @@ export default function AcademyLogScreen() {
   const updateAnswer = (id: string, val: number) =>
     setAnswers(prev => ({ ...prev, [id]: val }));
 
-  // ── Save
+  // ── Save ────────────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -233,16 +296,14 @@ export default function AcademyLogScreen() {
     setSaving(true);
 
     const noteParts: string[] = [];
-    if (objective1.trim()) noteParts.push(`Objective 1: ${objective1.trim()} — ${obj1Done === true ? 'Completed ✓' : obj1Done === false ? 'Not completed ✗' : 'Not answered'}`);
-    if (objective2.trim()) noteParts.push(`Objective 2: ${objective2.trim()} — ${obj2Done === true ? 'Completed ✓' : obj2Done === false ? 'Not completed ✗' : 'Not answered'}`);
-    if (config.closingQuestions) {
-      config.closingQuestions.forEach(q => {
-        const a = answers[q.id];
-        if (a !== undefined) {
-          noteParts.push(`${q.text}: ${q.type === 'stars' ? `${a}/5 ★` : `${a}${q.suffix ? ' ' + q.suffix : ''}`}`);
-        }
-      });
-    }
+    if (objective1.trim()) noteParts.push(`Objective 1: ${objective1.trim()} — ${obj1Done === true ? 'Completed' : obj1Done === false ? 'Not completed' : 'Not answered'}`);
+    if (objective2.trim()) noteParts.push(`Objective 2: ${objective2.trim()} — ${obj2Done === true ? 'Completed' : obj2Done === false ? 'Not completed' : 'Not answered'}`);
+    config.closingQuestions.forEach(q => {
+      const a = answers[q.id];
+      if (a !== undefined) {
+        noteParts.push(`${q.text}: ${q.type === 'stars' ? `${a}/5` : `${a}${q.suffix ? ' ' + q.suffix : ''}`}`);
+      }
+    });
 
     const { error } = await academyService.logTraining({
       user_id: user.id,
@@ -253,19 +314,24 @@ export default function AcademyLogScreen() {
       intensity: answers['effort'] || answers['energy'] || answers['focus'] || answers['consistency'] || 5,
       balls_faced: config.kind === 'Batting' ? counter1 || undefined : undefined,
       balls_bowled: config.kind === 'Bowling' ? counter1 || undefined : undefined,
-      catches: config.kind === 'Keeping' ? counter2 || undefined : config.kind === 'Fielding' ? counter2 || undefined : undefined,
-      stumpings: config.kind === 'Keeping' ? (counter2 || undefined) : undefined,
+      catches: (config.kind === 'Keeping' || config.kind === 'Fielding') ? counter2 || undefined : undefined,
+      stumpings: config.kind === 'Keeping' ? counter2 || undefined : undefined,
       notes: noteParts.join('\n') || undefined,
     });
 
     setSaving(false);
     if (error) { showAlert('Error', error); return; }
+    endAcademySession();
     setStep(4);
   };
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // STEP 0 — Session Type Picker
-  // ──────────────────────────────────────────────────────────────────────────
+  // ── Minimize ────────────────────────────────────────────────────────────────
+  const handleMinimize = () => {
+    minimizeAcademySession(step, counter1, counter2, obj1Done, obj2Done, answers);
+    router.back();
+  };
+
+  // ─── Step 0 — Session Type Picker ──────────────────────────────────────────
   const renderTypePicker = () => (
     <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false}>
       <View style={styles.heroBlock}>
@@ -290,9 +356,7 @@ export default function AcademyLogScreen() {
     </ScrollView>
   );
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // STEP 1 — Objectives
-  // ──────────────────────────────────────────────────────────────────────────
+  // ─── Step 1 — Objectives ───────────────────────────────────────────────────
   const renderObjectives = () => (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -311,37 +375,24 @@ export default function AcademyLogScreen() {
           </View>
           <Text style={styles.objHelp}>What are you specifically trying to achieve today?</Text>
 
-          <View style={styles.objInputBlock}>
-            <View style={[styles.objNum, { backgroundColor: config?.color || colors.primary }]}>
-              <Text style={styles.objNumText}>1</Text>
+          {[{ val: objective1, set: setObjective1, ph: 'e.g. Improve my back-foot play against short balls' },
+            { val: objective2, set: setObjective2, ph: 'e.g. Land 80% of deliveries in the good-length zone' }].map((o, i) => (
+            <View key={i} style={styles.objInputBlock}>
+              <View style={[styles.objNum, { backgroundColor: config?.color || colors.primary }]}>
+                <Text style={styles.objNumText}>{i + 1}</Text>
+              </View>
+              <TextInput
+                style={styles.objInput}
+                value={o.val}
+                onChangeText={o.set}
+                placeholder={o.ph}
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                numberOfLines={2}
+                textAlignVertical="top"
+              />
             </View>
-            <TextInput
-              style={styles.objInput}
-              value={objective1}
-              onChangeText={setObjective1}
-              placeholder="e.g. Improve my back-foot play against short balls"
-              placeholderTextColor={colors.textSecondary}
-              multiline
-              numberOfLines={2}
-              textAlignVertical="top"
-            />
-          </View>
-
-          <View style={styles.objInputBlock}>
-            <View style={[styles.objNum, { backgroundColor: config?.color || colors.primary }]}>
-              <Text style={styles.objNumText}>2</Text>
-            </View>
-            <TextInput
-              style={styles.objInput}
-              value={objective2}
-              onChangeText={setObjective2}
-              placeholder="e.g. Land 80% of deliveries in the good-length zone"
-              placeholderTextColor={colors.textSecondary}
-              multiline
-              numberOfLines={2}
-              textAlignVertical="top"
-            />
-          </View>
+          ))}
         </View>
 
         <View style={styles.infoCard}>
@@ -354,9 +405,7 @@ export default function AcademyLogScreen() {
     </KeyboardAvoidingView>
   );
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // STEP 2 — Live Session
-  // ──────────────────────────────────────────────────────────────────────────
+  // ─── Step 2 — Live Session ─────────────────────────────────────────────────
   const renderLive = () => {
     const c = config!;
     const successRate = counter1 > 0 ? Math.round((counter2 / counter1) * 100) : 0;
@@ -365,16 +414,23 @@ export default function AcademyLogScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollPad, { gap: spacing.md }]} showsVerticalScrollIndicator={false}>
         {/* Timer Card */}
         <View style={[styles.timerCard, { borderTopColor: c.color }]}>
-          <Text style={styles.timerLabel}>Session Timer</Text>
+          <Text style={styles.timerLabel}>SESSION TIMER</Text>
           <Text style={[styles.timerValue, { color: paused ? colors.warning : c.color }]}>{formatTime(elapsed)}</Text>
           <Text style={styles.timerKind}>{c.kind}</Text>
           <View style={styles.timerBtnRow}>
             <Pressable
-              style={[styles.timerBtn, { backgroundColor: paused ? c.color : colors.warning }]}
-              onPress={() => setPaused(p => !p)}
+              style={[styles.timerBtn, { backgroundColor: paused ? c.color : colors.warning, flex: 1 }]}
+              onPress={() => setAcademyIsPaused(!paused)}
             >
               <MaterialIcons name={paused ? 'play-arrow' : 'pause'} size={22} color={colors.textLight} />
               <Text style={styles.timerBtnText}>{paused ? 'Resume' : 'Pause'}</Text>
+            </Pressable>
+            <Pressable
+              style={styles.minimiseBtn}
+              onPress={handleMinimize}
+            >
+              <MaterialIcons name="minimize" size={20} color={colors.primary} />
+              <Text style={styles.minimiseBtnText}>Minimise</Text>
             </Pressable>
           </View>
           {paused && (
@@ -394,7 +450,7 @@ export default function AcademyLogScreen() {
           </View>
         )}
 
-        {/* Counters */}
+        {/* Counters — editable by tapping the number */}
         <View style={styles.countersRow}>
           <BigCounter
             label={c.counter1Label}
@@ -403,14 +459,16 @@ export default function AcademyLogScreen() {
             color={c.color}
             onInc={() => setCounter1(v => v + 1)}
             onDec={() => setCounter1(v => Math.max(0, v - 1))}
+            onEdit={(n) => setCounter1(n)}
           />
           <BigCounter
             label={c.counter2Label}
             sub={c.counter2Sub}
             value={counter2}
             color={c.color}
-            onInc={() => setCounter2(v => Math.min(counter1 === 0 ? 9999 : counter1, v + 1))}
+            onInc={() => setCounter2(v => v + 1)}
             onDec={() => setCounter2(v => Math.max(0, v - 1))}
+            onEdit={(n) => setCounter2(n)}
           />
         </View>
 
@@ -424,7 +482,7 @@ export default function AcademyLogScreen() {
               </Text>
             </View>
             <View style={styles.derivedBarBg}>
-              <View style={[styles.derivedBarFill, { width: `${successRate}%`, backgroundColor: successRate >= 60 ? colors.success : successRate >= 40 ? colors.warning : colors.error }]} />
+              <View style={[styles.derivedBarFill, { width: `${successRate}%` as any, backgroundColor: successRate >= 60 ? colors.success : successRate >= 40 ? colors.warning : colors.error }]} />
             </View>
             <Text style={styles.derivedSub}>{counter2} {c.counter2Label.toLowerCase()} from {counter1} {c.counter1Label.toLowerCase()}</Text>
           </View>
@@ -433,13 +491,9 @@ export default function AcademyLogScreen() {
     );
   };
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // STEP 3 — Closing Questions
-  // ──────────────────────────────────────────────────────────────────────────
+  // ─── Step 3 — Closing Questions ────────────────────────────────────────────
   const renderClosing = () => {
     const c = config!;
-    const allAnswered = obj1Done !== null && obj2Done !== null;
-
     return (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -455,7 +509,7 @@ export default function AcademyLogScreen() {
           <View style={styles.closingCard}>
             <Text style={styles.closingCardTitle}>Did you complete your objectives?</Text>
             {[{ text: objective1, done: obj1Done, set: setObj1Done, num: '①' },
-              { text: objective2, done: obj2Done, set: setObj2Done, num: '②' }].map((o, i) => (
+              { text: objective2, done: obj2Done, set: setObj2Done, num: '②' }].map((o, i) =>
               o.text.trim() ? (
                 <View key={i} style={styles.objCheckRow}>
                   <View style={styles.objCheckContent}>
@@ -480,10 +534,10 @@ export default function AcademyLogScreen() {
                   </View>
                 </View>
               ) : null
-            ))}
+            )}
           </View>
 
-          {/* Questions */}
+          {/* Reflection questions */}
           <View style={styles.closingCard}>
             <Text style={styles.closingCardTitle}>Reflection Questions</Text>
             {c.closingQuestions.map((q, i) => (
@@ -498,7 +552,7 @@ export default function AcademyLogScreen() {
                     />
                     {answers[q.id] > 0 && (
                       <Text style={[styles.starValueLabel, { color: q.id === 'body' ? colors.success : c.color }]}>
-                        {answers[q.id]}/5 {['', '★', '★★', '★★★', '★★★★', '★★★★★'][answers[q.id]]}
+                        {answers[q.id]}/5
                       </Text>
                     )}
                   </View>
@@ -524,9 +578,7 @@ export default function AcademyLogScreen() {
     );
   };
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // STEP 4 — Summary
-  // ──────────────────────────────────────────────────────────────────────────
+  // ─── Step 4 — Summary ──────────────────────────────────────────────────────
   const renderSummary = () => {
     const c = config!;
     const durationMins = Math.max(1, Math.floor(elapsed / 60));
@@ -534,7 +586,6 @@ export default function AcademyLogScreen() {
 
     return (
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false}>
-        {/* Header */}
         <View style={[styles.summaryHero, { backgroundColor: c.color + '12' }]}>
           <View style={[styles.heroIconCircle, { backgroundColor: c.color + '25' }]}>
             <MaterialIcons name="check-circle" size={44} color={c.color} />
@@ -543,33 +594,21 @@ export default function AcademyLogScreen() {
           <Text style={styles.heroSub}>{logDate} · {c.kind}</Text>
         </View>
 
-        {/* Quick stats */}
         <View style={styles.summaryStatsRow}>
-          <View style={styles.summaryStat}>
-            <MaterialIcons name="timer" size={18} color={c.color} />
-            <Text style={[styles.summaryStatVal, { color: c.color }]}>{durationMins}m</Text>
-            <Text style={styles.summaryStatLabel}>Duration</Text>
-          </View>
-          <View style={styles.summaryStat}>
-            <MaterialIcons name={c.icon as any} size={18} color={c.color} />
-            <Text style={[styles.summaryStatVal, { color: c.color }]}>{counter1}</Text>
-            <Text style={styles.summaryStatLabel}>{c.counter1Label}</Text>
-          </View>
-          <View style={styles.summaryStat}>
-            <MaterialIcons name="check" size={18} color={c.color} />
-            <Text style={[styles.summaryStatVal, { color: c.color }]}>{counter2}</Text>
-            <Text style={styles.summaryStatLabel}>{c.counter2Label}</Text>
-          </View>
-          {counter1 > 0 && (
-            <View style={styles.summaryStat}>
-              <MaterialIcons name="percent" size={18} color={successRate >= 60 ? colors.success : colors.warning} />
-              <Text style={[styles.summaryStatVal, { color: successRate >= 60 ? colors.success : colors.warning }]}>{successRate}%</Text>
-              <Text style={styles.summaryStatLabel}>Success</Text>
+          {[
+            { icon: 'timer', val: `${durationMins}m`, label: 'Duration' },
+            { icon: c.icon, val: String(counter1), label: c.counter1Label },
+            { icon: 'check', val: String(counter2), label: c.counter2Label },
+            ...(counter1 > 0 ? [{ icon: 'percent', val: `${successRate}%`, label: 'Success' }] : []),
+          ].map((s, i) => (
+            <View key={i} style={styles.summaryStat}>
+              <MaterialIcons name={s.icon as any} size={18} color={c.color} />
+              <Text style={[styles.summaryStatVal, { color: c.color }]}>{s.val}</Text>
+              <Text style={styles.summaryStatLabel}>{s.label}</Text>
             </View>
-          )}
+          ))}
         </View>
 
-        {/* Visual bar */}
         {counter1 > 0 && (
           <View style={styles.vizCard}>
             <View style={styles.vizHeaderRow}>
@@ -577,7 +616,7 @@ export default function AcademyLogScreen() {
               <Text style={[styles.vizPct, { color: successRate >= 60 ? colors.success : successRate >= 40 ? colors.warning : colors.error }]}>{successRate}%</Text>
             </View>
             <View style={styles.vizBarBg}>
-              <View style={[styles.vizBarFill, { width: `${successRate}%`, backgroundColor: c.color }]} />
+              <View style={[styles.vizBarFill, { width: `${successRate}%` as any, backgroundColor: c.color }]} />
             </View>
             <View style={styles.vizLegend}>
               <View style={styles.vizLegendItem}>
@@ -586,38 +625,29 @@ export default function AcademyLogScreen() {
               </View>
               <View style={styles.vizLegendItem}>
                 <View style={[styles.vizDot, { backgroundColor: colors.border }]} />
-                <Text style={styles.vizLegendText}>Total {c.counter1Label}: {counter1}</Text>
+                <Text style={styles.vizLegendText}>Total: {counter1}</Text>
               </View>
             </View>
           </View>
         )}
 
-        {/* Objectives outcome */}
         {(objective1.trim() || objective2.trim()) && (
           <View style={styles.summarySection}>
             <Text style={styles.summarySectionTitle}>Objectives Review</Text>
-            {objective1.trim() ? (
-              <View style={styles.summaryObjRow}>
-                <MaterialIcons name={obj1Done ? 'check-circle' : 'cancel'} size={18} color={obj1Done ? colors.success : colors.error} />
-                <Text style={styles.summaryObjText}>{objective1}</Text>
-                <Text style={[styles.summaryObjStatus, { color: obj1Done ? colors.success : obj1Done === false ? colors.error : colors.textSecondary }]}>
-                  {obj1Done === true ? 'Done' : obj1Done === false ? 'Not done' : '—'}
-                </Text>
-              </View>
-            ) : null}
-            {objective2.trim() ? (
-              <View style={styles.summaryObjRow}>
-                <MaterialIcons name={obj2Done ? 'check-circle' : 'cancel'} size={18} color={obj2Done ? colors.success : colors.error} />
-                <Text style={styles.summaryObjText}>{objective2}</Text>
-                <Text style={[styles.summaryObjStatus, { color: obj2Done ? colors.success : obj2Done === false ? colors.error : colors.textSecondary }]}>
-                  {obj2Done === true ? 'Done' : obj2Done === false ? 'Not done' : '—'}
-                </Text>
-              </View>
-            ) : null}
+            {[{ text: objective1, done: obj1Done }, { text: objective2, done: obj2Done }].map((o, i) =>
+              o.text.trim() ? (
+                <View key={i} style={styles.summaryObjRow}>
+                  <MaterialIcons name={o.done ? 'check-circle' : 'cancel'} size={18} color={o.done ? colors.success : colors.error} />
+                  <Text style={styles.summaryObjText}>{o.text}</Text>
+                  <Text style={[styles.summaryObjStatus, { color: o.done ? colors.success : o.done === false ? colors.error : colors.textSecondary }]}>
+                    {o.done === true ? 'Done' : o.done === false ? 'Not done' : '—'}
+                  </Text>
+                </View>
+              ) : null
+            )}
           </View>
         )}
 
-        {/* Reflection summary */}
         {c.closingQuestions.some(q => answers[q.id] !== undefined) && (
           <View style={styles.summarySection}>
             <Text style={styles.summarySectionTitle}>Reflection Summary</Text>
@@ -639,35 +669,41 @@ export default function AcademyLogScreen() {
     );
   };
 
-  // ─── Navigation logic ──────────────────────────────────────────────────────
+  // ─── Navigation ────────────────────────────────────────────────────────────
   const STEP_TITLES = ['Session Type', 'Objectives', 'Live Session', 'Debrief', 'Summary'];
+
   const getNextLabel = () => {
-    if (step === 0) return 'Set Objectives →';
     if (step === 1) return 'Start Session →';
     if (step === 2) return 'End Session';
-    if (step === 3) return saving ? 'Saving...' : 'Save & View Summary';
-    return 'Done';
+    if (step === 3) return saving ? 'Saving...' : 'Save & Summary';
+    if (step === 4) return 'Done';
+    return '';
   };
+
   const getNextColor = () => {
-    if (step === 2) return paused ? colors.warning : colors.error;
+    if (step === 2) return colors.error;
     if (step === 4) return colors.success;
     return config?.color || colors.primary;
   };
 
   const handleNext = () => {
-    if (step === 0) return; // handled by type card press
     if (step === 1) {
       if (!objective1.trim() && !objective2.trim()) {
-        showAlert('Objectives', 'Please write at least one objective for your session.');
+        showAlert('Objectives', 'Please write at least one objective.');
         return;
       }
+      // Start academy session in context (timer begins)
+      startAcademySession(config!.kind, config!.color, objective1, objective2, academyId);
       setStep(2);
     } else if (step === 2) {
-      if (timerRef.current) clearInterval(timerRef.current);
+      // Sync counters to context before ending
+      minimizeAcademySession(3, counter1, counter2, obj1Done, obj2Done, answers);
+      // Then move to step 3 (not actually minimizing, just syncing state)
+      maximizeAcademySession();
       setStep(3);
     } else if (step === 3) {
       handleSave();
-    } else {
+    } else if (step === 4) {
       router.back();
     }
   };
@@ -675,10 +711,8 @@ export default function AcademyLogScreen() {
   const handleBack = () => {
     if (step === 0) { router.back(); return; }
     if (step === 2) {
-      showAlert('Leave Session?', 'Your timer and counters will be lost.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Leave', style: 'destructive', onPress: () => { if (timerRef.current) clearInterval(timerRef.current); setStep(1); } },
-      ]);
+      // Back during live session = minimize
+      handleMinimize();
       return;
     }
     if (step === 4) { router.back(); return; }
@@ -691,9 +725,9 @@ export default function AcademyLogScreen() {
       <View style={styles.header}>
         <Pressable onPress={handleBack} style={styles.headerBtn} hitSlop={8}>
           <MaterialIcons
-            name={step === 0 || step === 4 ? 'close' : step === 2 ? 'stop' : 'arrow-back'}
+            name={step === 0 || step === 4 ? 'close' : step === 2 ? 'minimize' : 'arrow-back'}
             size={24}
-            color={step === 2 ? colors.error : colors.text}
+            color={colors.text}
           />
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
@@ -707,7 +741,7 @@ export default function AcademyLogScreen() {
               {paused ? 'PAUSED' : 'LIVE'}
             </Text>
           </View>
-        ) : <View style={{ width: 60 }} />}
+        ) : <View style={{ width: 64 }} />}
       </View>
 
       <ProgressDots step={step} total={TOTAL_STEPS} />
@@ -755,7 +789,7 @@ const styles = StyleSheet.create({
   headerBtn: { width: 44, height: 44, justifyContent: 'center' },
   headerTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   headerSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
-  liveChip: { flexDirection: 'row', alignItems: 'center', gap: 5, width: 60, justifyContent: 'flex-end' },
+  liveChip: { flexDirection: 'row', alignItems: 'center', gap: 5, width: 64, justifyContent: 'flex-end' },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveLabel: { fontSize: 11, fontWeight: '800' },
 
@@ -767,7 +801,6 @@ const styles = StyleSheet.create({
   heroTitle: { fontSize: 22, fontWeight: '800', color: colors.text, textAlign: 'center' },
   heroSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
 
-  // Type picker
   typeGrid: { gap: spacing.md },
   typeCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg,
@@ -778,7 +811,6 @@ const styles = StyleSheet.create({
   typeName: { fontSize: 20, fontWeight: '900' },
   typeSub: { fontSize: 12, color: colors.textSecondary, textAlign: 'center' },
 
-  // Objectives
   objectivesCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, gap: spacing.md },
   objHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   objHeaderText: { fontSize: 16, fontWeight: '800' },
@@ -794,7 +826,6 @@ const styles = StyleSheet.create({
   infoCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '30' },
   infoText: { flex: 1, fontSize: 13, color: colors.primary, lineHeight: 18 },
 
-  // Live
   timerCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl,
     alignItems: 'center', borderWidth: 1, borderColor: colors.border, borderTopWidth: 4,
@@ -803,9 +834,15 @@ const styles = StyleSheet.create({
   timerLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', letterSpacing: 1, textTransform: 'uppercase' },
   timerValue: { fontSize: 72, fontWeight: '900', letterSpacing: -2, lineHeight: 80 },
   timerKind: { fontSize: 13, color: colors.textSecondary, marginTop: 2 },
-  timerBtnRow: { flexDirection: 'row', marginTop: spacing.md },
-  timerBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.xl, borderRadius: borderRadius.md },
+  timerBtnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md, width: '100%' },
+  timerBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.lg, borderRadius: borderRadius.md },
   timerBtnText: { fontSize: 15, color: colors.textLight, fontWeight: '700' },
+  minimiseBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md, borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.primary + '12',
+  },
+  minimiseBtnText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
   pauseBanner: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm, backgroundColor: colors.warning + '15', borderRadius: borderRadius.sm, paddingHorizontal: spacing.md, paddingVertical: 5 },
   pauseText: { fontSize: 12, color: colors.warning, fontWeight: '600' },
 
@@ -823,7 +860,6 @@ const styles = StyleSheet.create({
   derivedBarFill: { height: '100%', borderRadius: 5, minWidth: 8 },
   derivedSub: { fontSize: 11, color: colors.textSecondary },
 
-  // Closing
   closingCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, gap: spacing.md },
   closingCardTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
   objCheckRow: { gap: spacing.sm, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border + '60' },
@@ -842,10 +878,9 @@ const styles = StyleSheet.create({
   numberInput: { width: 80, borderWidth: 2, borderRadius: borderRadius.md, paddingVertical: spacing.sm, fontSize: 22, fontWeight: '800', color: colors.text, backgroundColor: colors.background, textAlign: 'center' },
   numberSuffix: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
 
-  // Summary
   summaryHero: { borderRadius: borderRadius.xl, padding: spacing.lg, alignItems: 'center', marginBottom: spacing.md, gap: spacing.xs },
-  summaryStatsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, justifyContent: 'space-around' },
-  summaryStat: { alignItems: 'center', gap: 4, flex: 1 },
+  summaryStatsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, justifyContent: 'space-around', flexWrap: 'wrap', gap: spacing.sm },
+  summaryStat: { alignItems: 'center', gap: 4, minWidth: 60 },
   summaryStatVal: { fontSize: 20, fontWeight: '900' },
   summaryStatLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
 

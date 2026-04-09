@@ -10,14 +10,34 @@ export interface DrillSessionState {
   pillar: string;
   elapsedSeconds: number;
   isPaused: boolean;
-  returnPath: string; // e.g. '/technical-tracking' or '/workout-tracking'
+  returnPath: string;
   returnParams: Record<string, string>;
 }
 
+// Academy session state stored in context so it survives minimize
+export interface AcademySessionState {
+  isActive: boolean;
+  isMinimized: boolean;
+  kind: string;          // Batting | Bowling | Fielding | Keeping | Fitness
+  color: string;
+  elapsedSeconds: number;
+  isPaused: boolean;
+  counter1: number;
+  counter2: number;
+  objective1: string;
+  objective2: string;
+  // Closing state
+  step: number;          // which step the user was on when minimized
+  obj1Done: boolean | null;
+  obj2Done: boolean | null;
+  answers: Record<string, number>;
+  academyId: string;
+}
+
 export interface ActiveSessionState {
-  isActive: boolean;          // Step 2 session in progress
-  isMinimized: boolean;       // Minimized but still running
-  currentStep: number;        // 1-4
+  isActive: boolean;
+  isMinimized: boolean;
+  currentStep: number;
   sessionStartTime: Date | null;
   elapsedSeconds: number;
   isPaused: boolean;
@@ -30,7 +50,6 @@ export interface ActiveSessionState {
   sessionMode: 'now' | 'later';
   scheduledDate: Date;
   scheduledTime: Date;
-  // Step 3 ratings
   ballsFaced: string;
   ballsMiddled: string;
   shotExecution: number;
@@ -50,11 +69,24 @@ export interface ActiveSessionState {
 
 interface SessionContextType extends ActiveSessionState {
   drillSession: DrillSessionState;
+  academySession: AcademySessionState;
+
+  // Drill session
   startDrillSession: (drillId: string, drillName: string, pillar: string, returnPath: string, returnParams?: Record<string, string>) => void;
   minimizeDrillSession: () => void;
   maximizeDrillSession: () => void;
   endDrillSession: () => void;
   setDrillIsPaused: (val: boolean) => void;
+
+  // Academy session
+  startAcademySession: (kind: string, color: string, objective1: string, objective2: string, academyId: string) => void;
+  minimizeAcademySession: (step: number, counter1: number, counter2: number, obj1Done: boolean | null, obj2Done: boolean | null, answers: Record<string, number>) => void;
+  maximizeAcademySession: () => void;
+  updateAcademySessionStep: (step: number) => void;
+  setAcademyIsPaused: (val: boolean) => void;
+  endAcademySession: () => void;
+
+  // Freestyle session
   startActiveSession: (startTime: Date) => void;
   minimizeSession: () => void;
   maximizeSession: () => void;
@@ -100,6 +132,24 @@ const defaultDrillSession: DrillSessionState = {
   returnParams: {},
 };
 
+const defaultAcademySession: AcademySessionState = {
+  isActive: false,
+  isMinimized: false,
+  kind: '',
+  color: '',
+  elapsedSeconds: 0,
+  isPaused: false,
+  counter1: 0,
+  counter2: 0,
+  objective1: '',
+  objective2: '',
+  step: 2,
+  obj1Done: null,
+  obj2Done: null,
+  answers: {},
+  academyId: '',
+};
+
 const defaultState: ActiveSessionState = {
   isActive: false,
   isMinimized: false,
@@ -138,113 +188,103 @@ export const SessionContext = createContext<SessionContextType | undefined>(unde
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ActiveSessionState>(defaultState);
   const [drillSession, setDrillSession] = useState<DrillSessionState>(defaultDrillSession);
+  const [academySession, setAcademySession] = useState<AcademySessionState>(defaultAcademySession);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const drillTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const academyTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Run freestyle timer globally in context
+  // Freestyle timer
   useEffect(() => {
     if (state.isActive && !state.isPaused && state.currentStep === 2) {
       timerRef.current = setInterval(() => {
         setState(prev => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
       }, 1000);
     } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     }
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
+    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
   }, [state.isActive, state.isPaused, state.currentStep]);
 
-  // Run drill timer globally in context
+  // Drill timer
   useEffect(() => {
     if (drillSession.isActive && !drillSession.isPaused) {
       drillTimerRef.current = setInterval(() => {
         setDrillSession(prev => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
       }, 1000);
     } else {
-      if (drillTimerRef.current) {
-        clearInterval(drillTimerRef.current);
-        drillTimerRef.current = null;
-      }
+      if (drillTimerRef.current) { clearInterval(drillTimerRef.current); drillTimerRef.current = null; }
     }
-    return () => {
-      if (drillTimerRef.current) {
-        clearInterval(drillTimerRef.current);
-        drillTimerRef.current = null;
-      }
-    };
+    return () => { if (drillTimerRef.current) { clearInterval(drillTimerRef.current); drillTimerRef.current = null; } };
   }, [drillSession.isActive, drillSession.isPaused]);
 
+  // Academy timer — runs even when minimized
+  useEffect(() => {
+    if (academySession.isActive && !academySession.isPaused) {
+      academyTimerRef.current = setInterval(() => {
+        setAcademySession(prev => ({ ...prev, elapsedSeconds: prev.elapsedSeconds + 1 }));
+      }, 1000);
+    } else {
+      if (academyTimerRef.current) { clearInterval(academyTimerRef.current); academyTimerRef.current = null; }
+    }
+    return () => { if (academyTimerRef.current) { clearInterval(academyTimerRef.current); academyTimerRef.current = null; } };
+  }, [academySession.isActive, academySession.isPaused]);
+
+  // ── Freestyle session actions ────────────────────────────────────────────────
   const startActiveSession = useCallback((startTime: Date) => {
     setState(prev => ({
-      ...prev,
-      isActive: true,
-      isMinimized: false,
-      currentStep: 2,
-      sessionStartTime: startTime,
-      elapsedSeconds: 0,
-      isPaused: false,
-      ballsFacedLive: 0,
-      ballsFacedInput: '0',
+      ...prev, isActive: true, isMinimized: false, currentStep: 2,
+      sessionStartTime: startTime, elapsedSeconds: 0, isPaused: false,
+      ballsFacedLive: 0, ballsFacedInput: '0',
     }));
   }, []);
 
-  const minimizeSession = useCallback(() => {
-    setState(prev => ({ ...prev, isMinimized: true }));
-  }, []);
+  const minimizeSession = useCallback(() => setState(prev => ({ ...prev, isMinimized: true })), []);
+  const maximizeSession = useCallback(() => setState(prev => ({ ...prev, isMinimized: false })), []);
+  const endActiveSession = useCallback(() => setState(prev => ({ ...prev, isActive: false, isMinimized: false, currentStep: 3 })), []);
+  const resetSession = useCallback(() => setState({ ...defaultState, scheduledDate: new Date(), scheduledTime: new Date() }), []);
 
-  const maximizeSession = useCallback(() => {
-    setState(prev => ({ ...prev, isMinimized: false }));
-  }, []);
-
-  const endActiveSession = useCallback(() => {
-    setState(prev => ({ ...prev, isActive: false, isMinimized: false, currentStep: 3 }));
-  }, []);
-
-  const resetSession = useCallback(() => {
-    setState({ ...defaultState, scheduledDate: new Date(), scheduledTime: new Date() });
-  }, []);
-
+  // ── Drill session actions ────────────────────────────────────────────────────
   const startDrillSession = useCallback((drillId: string, drillName: string, pillar: string, returnPath: string, returnParams: Record<string, string> = {}) => {
     setDrillSession({ isActive: true, isMinimized: false, drillId, drillName, pillar, elapsedSeconds: 0, isPaused: false, returnPath, returnParams });
   }, []);
+  const minimizeDrillSession = useCallback(() => setDrillSession(prev => ({ ...prev, isMinimized: true })), []);
+  const maximizeDrillSession = useCallback(() => setDrillSession(prev => ({ ...prev, isMinimized: false })), []);
+  const endDrillSession = useCallback(() => setDrillSession(defaultDrillSession), []);
+  const setDrillIsPaused = useCallback((val: boolean) => setDrillSession(prev => ({ ...prev, isPaused: val })), []);
 
-  const minimizeDrillSession = useCallback(() => {
-    setDrillSession(prev => ({ ...prev, isMinimized: true }));
+  // ── Academy session actions ──────────────────────────────────────────────────
+  const startAcademySession = useCallback((kind: string, color: string, objective1: string, objective2: string, academyId: string) => {
+    setAcademySession({ ...defaultAcademySession, isActive: true, isMinimized: false, kind, color, objective1, objective2, academyId });
   }, []);
 
-  const maximizeDrillSession = useCallback(() => {
-    setDrillSession(prev => ({ ...prev, isMinimized: false }));
+  const minimizeAcademySession = useCallback((step: number, counter1: number, counter2: number, obj1Done: boolean | null, obj2Done: boolean | null, answers: Record<string, number>) => {
+    setAcademySession(prev => ({ ...prev, isMinimized: true, step, counter1, counter2, obj1Done, obj2Done, answers }));
   }, []);
 
-  const endDrillSession = useCallback(() => {
-    setDrillSession(defaultDrillSession);
+  const maximizeAcademySession = useCallback(() => {
+    setAcademySession(prev => ({ ...prev, isMinimized: false }));
   }, []);
 
-  const setDrillIsPaused = useCallback((val: boolean) => {
-    setDrillSession(prev => ({ ...prev, isPaused: val }));
+  const updateAcademySessionStep = useCallback((step: number) => {
+    setAcademySession(prev => ({ ...prev, step }));
+  }, []);
+
+  const setAcademyIsPaused = useCallback((val: boolean) => {
+    setAcademySession(prev => ({ ...prev, isPaused: val }));
+  }, []);
+
+  const endAcademySession = useCallback(() => {
+    setAcademySession(defaultAcademySession);
   }, []);
 
   return (
     <SessionContext.Provider value={{
       ...state,
       drillSession,
-      startDrillSession,
-      minimizeDrillSession,
-      maximizeDrillSession,
-      endDrillSession,
-      setDrillIsPaused,
-      startActiveSession,
-      minimizeSession,
-      maximizeSession,
-      endActiveSession,
-      resetSession,
+      academySession,
+      startDrillSession, minimizeDrillSession, maximizeDrillSession, endDrillSession, setDrillIsPaused,
+      startAcademySession, minimizeAcademySession, maximizeAcademySession, updateAcademySessionStep, setAcademyIsPaused, endAcademySession,
+      startActiveSession, minimizeSession, maximizeSession, endActiveSession, resetSession,
       setCurrentStep: (v) => setState(p => ({ ...p, currentStep: v })),
       setIsPaused: (v) => setState(p => ({ ...p, isPaused: v })),
       setBallsFacedLive: (v) => setState(p => ({ ...p, ballsFacedLive: v })),

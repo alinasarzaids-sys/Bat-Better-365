@@ -25,6 +25,7 @@ function MiniSessionBar() {
     isActive, isMinimized, currentStep, elapsedSeconds, isPaused,
     ballsFacedLive, maximizeSession, setIsPaused,
     drillSession, minimizeDrillSession, maximizeDrillSession, setDrillIsPaused,
+    academySession, maximizeAcademySession, setAcademyIsPaused,
   } = useActiveSession();
 
   const tabBarHeight = Platform.select({ ios: insets.bottom + 60, android: insets.bottom + 60, default: 70 }) as number;
@@ -32,8 +33,47 @@ function MiniSessionBar() {
 
   const showFreestyle = isActive && isMinimized && currentStep === 2;
   const showDrill = drillSession.isActive && drillSession.isMinimized;
+  const showAcademy = academySession.isActive && academySession.isMinimized;
 
-  if (!showFreestyle && !showDrill) return null;
+  if (!showFreestyle && !showDrill && !showAcademy) return null;
+
+  if (showAcademy) {
+    const ac = academySession;
+    const successRate = ac.counter1 > 0 ? Math.round((ac.counter2 / ac.counter1) * 100) : 0;
+    const m = Math.floor(ac.elapsedSeconds / 60);
+    const s = ac.elapsedSeconds % 60;
+    const timeStr = `${m}:${s.toString().padStart(2, '0')}`;
+    return (
+      <Pressable
+        style={[styles.miniBar, { bottom: barBottom, backgroundColor: ac.color || '#2563EB' }]}
+        onPress={() => {
+          maximizeAcademySession();
+          router.push({ pathname: '/academy-log' as any, params: { academyId: ac.academyId, resume: '1' } });
+        }}
+      >
+        <View style={styles.miniBarLeft}>
+          <View style={[styles.miniDot, { backgroundColor: ac.isPaused ? 'rgba(255,255,255,0.5)' : '#fff' }]} />
+          <View>
+            <Text style={styles.miniBarTitle} numberOfLines={1}>{ac.kind} Session</Text>
+            <Text style={styles.miniBarSub}>
+              {ac.isPaused ? 'Paused' : 'Live'} · {ac.counter1} / {ac.counter2}{successRate > 0 ? ` · ${successRate}%` : ''}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.miniBarRight}>
+          <Text style={styles.miniBarTimer}>{timeStr}</Text>
+          <Pressable
+            style={styles.miniPauseBtn}
+            onPress={(e) => { e.stopPropagation(); setAcademyIsPaused(!ac.isPaused); }}
+            hitSlop={8}
+          >
+            <MaterialIcons name={ac.isPaused ? 'play-arrow' : 'pause'} size={18} color={colors.textLight} />
+          </Pressable>
+          <MaterialIcons name="expand-less" size={18} color={colors.textLight} style={{ opacity: 0.8 }} />
+        </View>
+      </Pressable>
+    );
+  }
 
   if (showDrill) {
     const pillarColor = PILLAR_COLORS[drillSession.pillar] || colors.primary;
