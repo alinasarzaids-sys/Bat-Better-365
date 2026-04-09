@@ -59,10 +59,9 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Sub: 'On target / wicket-taking deliveries',
     closingQuestions: [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'consistency', text: 'How consistent was your line and length?', type: 'stars' },
       { id: 'rhythm', text: 'How was your run-up rhythm and action?', type: 'stars' },
-      { id: 'wickets', text: 'How many wickets / breakthroughs did you get?', type: 'number', suffix: 'wickets' },
-      { id: 'variation', text: 'How effectively did you use variation?', type: 'stars' },
+      { id: 'confidence', text: 'How confident did you feel while bowling?', type: 'stars' },
+      { id: 'focus', text: 'How focused were you throughout the session?', type: 'stars' },
     ],
   },
   {
@@ -75,10 +74,8 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Sub: 'Catches / stops / throws completed',
     closingQuestions: [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'concentration', text: 'How sharp was your concentration?', type: 'stars' },
-      { id: 'agility', text: 'How was your agility and movement?', type: 'stars' },
-      { id: 'runouts', text: 'How many run-outs were you involved in?', type: 'number', suffix: 'run-outs' },
-      { id: 'confidence', text: 'How confident were you in your throwing?', type: 'stars' },
+      { id: 'confidence', text: 'How confident were you in the field?', type: 'stars' },
+      { id: 'focus', text: 'How focused were you throughout?', type: 'stars' },
     ],
   },
   {
@@ -92,9 +89,8 @@ const SESSION_CONFIGS: SessionConfig[] = [
     closingQuestions: [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'footwork', text: 'How was your footwork behind the stumps?', type: 'stars' },
-      { id: 'communication', text: 'How was your communication with the bowlers?', type: 'stars' },
-      { id: 'stumpings', text: 'How many stumping opportunities were there?', type: 'number', suffix: 'chances' },
-      { id: 'confidence', text: 'How confident were you overall?', type: 'stars' },
+      { id: 'confidence', text: 'How confident did you feel overall?', type: 'stars' },
+      { id: 'focus', text: 'How focused were you behind the stumps?', type: 'stars' },
     ],
   },
   {
