@@ -253,7 +253,7 @@ Deno.serve(async (req: Request) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Bat Better 365 <onboarding@resend.dev>',
+        from: 'Bat Better 365 <reports@resend.dev>',
         to: [ADMIN_EMAIL],
         subject: `🏏 Bat Better 365 — Admin Report (${getMonthLabel()}) · ${stats.total_users} users · ₨${totalRevenue.toLocaleString()}`,
         html,
