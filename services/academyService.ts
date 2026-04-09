@@ -272,8 +272,9 @@ export const academyService = {
       .update(updates)
       .eq('id', sessionId)
       .select()
-      .single();
+      .maybeSingle();
     if (error) return { data: null, error: error.message };
+    if (!data) return { data: null, error: 'Session not found or you do not have permission to edit it.' };
     return { data, error: null };
   },
 
