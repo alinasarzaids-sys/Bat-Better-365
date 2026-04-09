@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const ADMIN_EMAIL = 'batbetter365@gmail.com';
+const ADMIN_EMAIL = 'alinasarzaids@gmail.com';
 const PRICE_PER_PLAYER = 550;
 const CURRENCY = 'PKR';
 const CURRENCY_SYMBOL = '₨';
