@@ -22,15 +22,34 @@ function getMonthLabel(): string {
 function buildHtml(stats: any, auditData: any): string {
   const totalRevenue = auditData.players * PRICE_PER_PLAYER;
 
-  const perAcademyRows = (auditData.perAcademy || []).map((a: any, i: number) => `
-    <tr>
-      <td style="padding:12px 14px; font-size:13px; border-bottom:1px solid #eee;">${i + 1}</td>
-      <td style="padding:12px 14px; font-size:13px; border-bottom:1px solid #eee;"><strong>${a.name}</strong></td>
-      <td style="padding:12px 14px; font-size:13px; border-bottom:1px solid #eee; text-align:center;">${a.players}</td>
-      <td style="padding:12px 14px; font-size:13px; border-bottom:1px solid #eee; text-align:center;">${a.coaches}</td>
-      <td style="padding:12px 14px; font-size:13px; border-bottom:1px solid #eee; text-align:right; color:#1a7a4a; font-weight:800;">${CURRENCY_SYMBOL}${formatNumber(a.players * PRICE_PER_PLAYER)}</td>
+  const perAcademyRows = (auditData.perAcademy || []).map((a: any, i: number) => {
+    const playerRows = (a.playerList || []).map((p: any) => `
+      <tr style="background:${p.isActive ? '#f8fffe' : '#fafafa'};">
+        <td style="padding:8px 14px 8px 30px; font-size:12px; color:#333; border-bottom:1px solid #f0f0f0;">
+          ${p.isActive ? '🟢' : '🔴'} ${p.name}
+        </td>
+        <td style="padding:8px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">${p.email}</td>
+        <td style="padding:8px 14px; font-size:11px; text-align:center; border-bottom:1px solid #f0f0f0;">
+          <span style="background:${p.isActive ? '#d4edda' : '#fee2e2'}; color:${p.isActive ? '#1a7a4a' : '#dc2626'}; padding:2px 7px; border-radius:10px; font-weight:700;">${p.isActive ? 'Active' : 'Inactive'}</span>
+        </td>
+        <td style="padding:8px 14px; font-size:12px; text-align:right; color:${p.isActive ? '#1a7a4a' : '#aaa'}; font-weight:800; border-bottom:1px solid #f0f0f0;">${p.isActive ? CURRENCY_SYMBOL + formatNumber(PRICE_PER_PLAYER) : '—'}</td>
+      </tr>
+    `).join('');
+    const coachRows = (a.coachList || []).map((c: any) => `
+      <tr style="background:#fffbf0;">
+        <td style="padding:8px 14px 8px 30px; font-size:12px; color:#333; border-bottom:1px solid #f0f0f0;">🏅 ${c.name} <em style="color:#d97706; font-size:11px;">(Coach)</em></td>
+        <td style="padding:8px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">${c.email}</td>
+        <td style="padding:8px 14px; border-bottom:1px solid #f0f0f0;"></td>
+        <td style="padding:8px 14px; font-size:12px; text-align:right; color:#aaa; border-bottom:1px solid #f0f0f0;">—</td>
+      </tr>
+    `).join('');
+    return `
+    <tr style="background:#1a7a4a;">
+      <td colspan="4" style="padding:10px 14px; font-size:13px; font-weight:800; color:#fff;">${i + 1}. ${a.name} &nbsp;·&nbsp; ${a.players} billed player(s) &nbsp;·&nbsp; ${CURRENCY_SYMBOL}${formatNumber(a.players * PRICE_PER_PLAYER)}</td>
     </tr>
-  `).join('');
+    ${playerRows}${coachRows}
+  `;
+  }).join('');
 
   return `
 <!DOCTYPE html>
@@ -142,16 +161,15 @@ function buildHtml(stats: any, auditData: any): string {
 
         <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse; border-radius:10px; overflow:hidden; border:1px solid #e5e5e5;">
           <thead>
-            <tr style="background:#1a7a4a; color:#fff;">
-              <th style="padding:11px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">#</th>
-              <th style="padding:11px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Academy</th>
-              <th style="padding:11px 14px; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Players</th>
-              <th style="padding:11px 14px; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Coaches</th>
+            <tr style="background:#0f5132; color:#fff;">
+              <th style="padding:11px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Name</th>
+              <th style="padding:11px 14px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Email</th>
+              <th style="padding:11px 14px; text-align:center; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Status</th>
               <th style="padding:11px 14px; text-align:right; font-size:11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700;">Revenue (${CURRENCY})</th>
             </tr>
           </thead>
           <tbody>
-            ${perAcademyRows || '<tr><td colspan="5" style="text-align:center; color:#aaa; padding:24px; font-style:italic;">No academies found</td></tr>'}
+            ${perAcademyRows || '<tr><td colspan="4" style="text-align:center; color:#aaa; padding:24px; font-style:italic;">No academies found</td></tr>'}
           </tbody>
         </table>
       </div>
@@ -216,16 +234,41 @@ Deno.serve(async (req: Request) => {
 
     const { data: members, error: mErr } = await supabase
       .from('academy_members')
-      .select('academy_id, role, is_active');
+      .select('academy_id, role, is_active, display_name, user_id');
     if (mErr) throw new Error(`Members error: ${mErr.message}`);
+
+    // Fetch user profiles for email + name
+    const { data: profiles, error: pErr } = await supabase
+      .from('user_profiles')
+      .select('id, email, full_name, username');
+    if (pErr) throw new Error(`Profiles error: ${pErr.message}`);
+
+    const profileMap: Record<string, any> = {};
+    (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
 
     const perAcademy = (academies || []).map((a: any) => {
       const am = (members || []).filter((m: any) => m.academy_id === a.id);
+      const activePlayers = am.filter((m: any) => m.role === 'player' && m.is_active !== false).map((m: any) => ({
+        name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
+        email: profileMap[m.user_id]?.email || '—',
+        isActive: m.is_active !== false,
+      }));
+      const allPlayers = am.filter((m: any) => m.role === 'player').map((m: any) => ({
+        name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
+        email: profileMap[m.user_id]?.email || '—',
+        isActive: m.is_active !== false,
+      }));
+      const coachList = am.filter((m: any) => m.role === 'coach').map((m: any) => ({
+        name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
+        email: profileMap[m.user_id]?.email || '—',
+      }));
       return {
         id: a.id,
         name: a.name,
-        players: am.filter((m: any) => m.role === 'player' && m.is_active !== false).length,
+        players: activePlayers.length,
         coaches: am.filter((m: any) => m.role === 'coach' && m.is_active !== false).length,
+        playerList: allPlayers,
+        coachList,
       };
     });
 
