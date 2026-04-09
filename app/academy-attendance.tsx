@@ -48,7 +48,7 @@ export default function AcademyAttendanceScreen() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState(new Date().toISOString().split('T')[0]);
-  const [newTime, setNewTime] = useState('10:00');
+  const [newTime, setNewTime] = useState(() => { const d = new Date(); return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`; });
   const [newLocation, setNewLocation] = useState('');
   const [newType, setNewType] = useState('Training');
   const [newNotes, setNewNotes] = useState('');
@@ -120,8 +120,9 @@ export default function AcademyAttendanceScreen() {
     setCreating(false);
     if (error) { showAlert('Error', error); return; }
     setShowCreateModal(false);
-    setNewTitle(''); setNewDate(new Date().toISOString().split('T')[0]);
-    setNewTime('10:00'); setNewLocation(''); setNewNotes('');
+    const nd = new Date();
+    setNewTitle(''); setNewDate(nd.toISOString().split('T')[0]);
+    setNewTime(`${nd.getHours().toString().padStart(2,'0')}:${nd.getMinutes().toString().padStart(2,'0')}`); setNewLocation(''); setNewNotes('');
     await load();
     showAlert('Session Created', 'You can now mark attendance for this session.');
   };
@@ -233,7 +234,7 @@ export default function AcademyAttendanceScreen() {
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Attendance</Text>
-        <Pressable style={styles.createBtn} onPress={() => setShowCreateModal(true)}>
+        <Pressable style={styles.createBtn} onPress={() => { const nd = new Date(); setNewDate(nd.toISOString().split('T')[0]); setNewTime(`${nd.getHours().toString().padStart(2,'0')}:${nd.getMinutes().toString().padStart(2,'0')}`); setShowCreateModal(true); }}>
           <MaterialIcons name="add" size={22} color={colors.primary} />
         </Pressable>
       </View>
