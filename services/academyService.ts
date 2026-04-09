@@ -265,6 +265,18 @@ export const academyService = {
     return { data: data as AcademySession[], error: null };
   },
 
+  async updateSession(sessionId: string, updates: Partial<Omit<AcademySession, 'id' | 'created_at' | 'created_by' | 'academy_id'>>): Promise<{ data: AcademySession | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('academy_sessions')
+      .update(updates)
+      .eq('id', sessionId)
+      .select()
+      .single();
+    if (error) return { data: null, error: error.message };
+    return { data, error: null };
+  },
+
   async deleteSession(sessionId: string): Promise<{ error: string | null }> {
     const supabase = getSupabaseClient();
     const { error } = await supabase.from('academy_sessions').delete().eq('id', sessionId);

@@ -7,7 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
-import { academyService, AcademySession } from '@/services/academyService';
+import { academyService, AcademySession, AcademyMember } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 // ─── Training Plan Block ──────────────────────────────────────────────────────
@@ -605,8 +605,8 @@ const pb = StyleSheet.create({
 });
 
 // ─── Session Card (with full plan details for players) ────────────────────────
-function SessionCard({ s, isCoach, academyId, today, router }: {
-  s: AcademySession; isCoach: boolean; academyId: string; today: string; router: any;
+function SessionCard({ s, isCoach, academyId, today, router, onEdit }: {
+  s: AcademySession; isCoach: boolean; academyId: string; today: string; router: any; onEdit: (s: AcademySession) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const color = TYPE_COLORS[s.session_type] || colors.primary;
@@ -722,14 +722,202 @@ function SessionCard({ s, isCoach, academyId, today, router }: {
           <Text style={styles.sessionNotes} numberOfLines={2}>{parseCoachNotes(s.notes)}</Text>
         )}
 
-        {isCoach && !isPast && (
-          <Pressable style={styles.markAttendanceBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
-            <MaterialIcons name="fact-check" size={14} color={colors.primary} />
-            <Text style={styles.markAttendanceText}>Mark Attendance</Text>
+        {isCoach && (
+          <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+            {!isPast && (
+              <Pressable style={styles.markAttendanceBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
+                <MaterialIcons name="fact-check" size={14} color={colors.primary} />
+                <Text style={styles.markAttendanceText}>Mark Attendance</Text>
+              </Pressable>
+            )}
+            <Pressable
+              style={[styles.markAttendanceBtn, { backgroundColor: colors.warning + '15' }]}
+              onPress={() => onEdit(s)}
+            >
+              <MaterialIcons name="edit" size={14} color={colors.warning} />
+              <Text style={[styles.markAttendanceText, { color: colors.warning }]}>Edit Session</Text>
+            </Pressable>
+          </View>
+        )}
+        {!isCoach && expanded && (
+          <Pressable
+            style={[styles.markAttendanceBtn, { backgroundColor: colors.primary + '10' }]}
+            onPress={() => onEdit(s)}
+          >
+            <MaterialIcons name="edit" size={14} color={colors.primary} />
+            <Text style={styles.markAttendanceText}>Suggest Edit</Text>
           </Pressable>
         )}
       </View>
     </Pressable>
+  );
+}
+
+// ─── Edit Session Modal ──────────────────────────────────────────────────────
+function EditSessionModal({ visible, session, onClose, onSaved, sessionColor }: {
+  visible: boolean;
+  session: AcademySession | null;
+  onClose: () => void;
+  onSaved: () => void;
+  sessionColor: string;
+}) {
+  const { showAlert } = useAlert();
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState(todayStr());
+  const [time, setTime] = useState(now12());
+  const [location, setLocation] = useState('');
+  const [notes, setNotes] = useState('');
+  const [objectives, setObjectives] = useState<string[]>(['', '']);
+  const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  // Pre-fill when session changes
+  React.useEffect(() => {
+    if (session && visible) {
+      setTitle(session.title);
+      setDate(session.session_date);
+      setTime(session.session_time);
+      setLocation(session.location || '');
+      setNotes(parseCoachNotes(session.notes));
+      const objs = parseObjectives(session.notes);
+      setObjectives(objs.length ? objs : ['', '']);
+      setPlanBlocks(parsePlanBlocks(session.notes));
+    }
+  }, [session, visible]);
+
+  const handleSave = async () => {
+    if (!session) return;
+    if (!title.trim()) { showAlert('Error', 'Session title is required'); return; }
+    setSaving(true);
+    const combinedNotes = buildNotes(notes, objectives, planBlocks);
+    const { error } = await academyService.updateSession(session.id, {
+      title: title.trim(),
+      session_date: date,
+      session_time: time,
+      location: location.trim() || undefined,
+      notes: combinedNotes || undefined,
+    });
+    setSaving(false);
+    if (error) { showAlert('Error', error); return; }
+    onClose();
+    onSaved();
+    showAlert('Saved', 'Session updated successfully.');
+  };
+
+  if (!session) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={modal.overlay}>
+        <View style={modal.sheet}>
+          <View style={modal.handle} />
+          <View style={modal.header}>
+            <Text style={modal.headerTitle}>Edit Session</Text>
+            <Pressable onPress={onClose} style={modal.closeBtn}>
+              <MaterialIcons name="close" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+
+              {/* Session Details */}
+              <View style={modal.sectionBlock}>
+                <View style={modal.sectionHeader}>
+                  <MaterialIcons name="event" size={16} color={colors.primary} />
+                  <Text style={modal.sectionTitle}>Session Details</Text>
+                </View>
+                <Text style={modal.label}>Session Title *</Text>
+                <TextInput style={modal.input} value={title} onChangeText={setTitle} placeholder="e.g. Tuesday Nets" placeholderTextColor={colors.textSecondary} />
+                <DateField label="Date" value={date} onChange={setDate} />
+                <Text style={modal.label}>Session Time</Text>
+                <Pressable
+                  style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                  onPress={() => setShowTimePicker(true)}
+                >
+                  <MaterialIcons name="access-time" size={16} color={colors.primary} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(time)}</Text>
+                </Pressable>
+                <TimePickerModal
+                  visible={showTimePicker}
+                  value={time}
+                  onConfirm={setTime}
+                  onClose={() => setShowTimePicker(false)}
+                  label="Session Start Time"
+                />
+                <Text style={modal.label}>Location (Optional)</Text>
+                <TextInput style={modal.input} value={location} onChangeText={setLocation} placeholder="e.g. Main Oval" placeholderTextColor={colors.textSecondary} />
+              </View>
+
+              {/* Session Objectives */}
+              <View style={modal.sectionBlock}>
+                <View style={modal.sectionHeader}>
+                  <MaterialIcons name="flag" size={16} color={colors.warning} />
+                  <Text style={[modal.sectionTitle, { color: colors.warning }]}>Session Objectives</Text>
+                </View>
+                {objectives.map((obj, i) => (
+                  <View key={i} style={modal.objRow}>
+                    <View style={[modal.objNum, { backgroundColor: colors.warning }]}>
+                      <Text style={modal.objNumText}>{i + 1}</Text>
+                    </View>
+                    <TextInput
+                      style={[modal.input, { flex: 1 }]}
+                      value={obj}
+                      onChangeText={v => { const arr = [...objectives]; arr[i] = v; setObjectives(arr); }}
+                      placeholder={`Objective ${i + 1}…`}
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                    {i === objectives.length - 1 && (
+                      <Pressable onPress={() => setObjectives(o => [...o, ''])} hitSlop={6}>
+                        <MaterialIcons name="add-circle" size={22} color={colors.warning} />
+                      </Pressable>
+                    )}
+                  </View>
+                ))}
+              </View>
+
+              {/* Training Plan Blocks */}
+              <View style={modal.sectionBlock}>
+                <View style={modal.sectionHeader}>
+                  <MaterialIcons name="schedule" size={16} color={sessionColor} />
+                  <Text style={[modal.sectionTitle, { color: sessionColor }]}>Training Plan</Text>
+                  <Text style={modal.sectionHint}>Visible to players · add drills in block notes</Text>
+                </View>
+                <PlanBlockEditor blocks={planBlocks} onChange={setPlanBlocks} sessionColor={sessionColor} />
+              </View>
+
+              {/* Coach Notes */}
+              <View style={modal.sectionBlock}>
+                <View style={modal.sectionHeader}>
+                  <MaterialIcons name="notes" size={16} color={colors.textSecondary} />
+                  <Text style={modal.sectionTitle}>Coach Notes (Optional)</Text>
+                </View>
+                <TextInput
+                  style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]}
+                  value={notes}
+                  onChangeText={setNotes}
+                  multiline
+                  placeholder="Anything else players should know…"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+
+              <Pressable
+                style={[modal.submitBtn, { backgroundColor: sessionColor, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]}
+                onPress={handleSave}
+              >
+                {saving ? <ActivityIndicator color={colors.textLight} /> : (
+                  <>
+                    <MaterialIcons name="save" size={18} color={colors.textLight} />
+                    <Text style={modal.submitBtnText}>Save Changes</Text>
+                  </>
+                )}
+              </Pressable>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -760,6 +948,8 @@ export default function AcademyScheduleScreen() {
   const [objectives, setObjectives] = useState<string[]>(['', '']);
   const [creating, setCreating] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [editingSession, setEditingSession] = useState<AcademySession | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await academyService.getAcademySessions(academyId);
@@ -810,6 +1000,11 @@ export default function AcademyScheduleScreen() {
   const upcoming = sessions.filter(s => s.session_date >= today).sort((a, b) => a.session_date.localeCompare(b.session_date));
   const past = sessions.filter(s => s.session_date < today).sort((a, b) => b.session_date.localeCompare(a.session_date));
   const sessionColor = TYPE_COLORS[newType] || colors.primary;
+
+  const handleEditSession = (s: AcademySession) => {
+    setEditingSession(s);
+    setShowEditModal(true);
+  };
 
   if (loading) {
     return (
@@ -862,16 +1057,25 @@ export default function AcademyScheduleScreen() {
         {upcoming.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
-            {upcoming.map(s => <SessionCard key={s.id} s={s} isCoach={isCoach} academyId={academyId} today={today} router={router} />)}
+            {upcoming.map(s => <SessionCard key={s.id} s={s} isCoach={isCoach} academyId={academyId} today={today} router={router} onEdit={handleEditSession} />)}
           </>
         )}
         {past.length > 0 && (
           <>
             <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Past Sessions</Text>
-            {past.map(s => <SessionCard key={s.id} s={s} isCoach={isCoach} academyId={academyId} today={today} router={router} />)}
+            {past.map(s => <SessionCard key={s.id} s={s} isCoach={isCoach} academyId={academyId} today={today} router={router} onEdit={handleEditSession} />)}
           </>
         )}
       </ScrollView>
+
+      {/* ── Edit Session Modal ────────────────────────────────────────────────── */}
+      <EditSessionModal
+        visible={showEditModal}
+        session={editingSession}
+        onClose={() => { setShowEditModal(false); setEditingSession(null); }}
+        onSaved={load}
+        sessionColor={colors.primary}
+      />
 
       {/* ── Create Session Modal ─────────────────────────────────────────────── */}
       <Modal visible={showCreateModal} animationType="slide" transparent onRequestClose={() => setShowCreateModal(false)}>
