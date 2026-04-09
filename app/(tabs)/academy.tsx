@@ -75,6 +75,7 @@ export default function AcademyScreen() {
 
   // Join modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [previewPlayerView, setPreviewPlayerView] = useState(false);
   const [joinCode, setJoinCode] = useState('');
   const [joinDisplayName, setJoinDisplayName] = useState('');
   const [joinPosition, setJoinPosition] = useState('Batsman');
@@ -170,6 +171,7 @@ export default function AcademyScreen() {
   }
 
   const isCoach = currentMembership?.member.role === 'coach';
+  const showPlayerView = !isCoach || previewPlayerView;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -178,9 +180,23 @@ export default function AcademyScreen() {
           <Text style={styles.headerTitle}>Academy Portal</Text>
           {memberships.length > 1 && <Text style={styles.headerSub}>{memberships.length} academies</Text>}
         </View>
-        <Pressable style={styles.joinMoreBtn} onPress={() => setShowJoinModal(true)} hitSlop={8}>
-          <MaterialIcons name="vpn-key" size={18} color={colors.primary} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          {isCoach && (
+            <Pressable
+              style={[styles.viewToggleBtn, previewPlayerView && styles.viewToggleBtnActive]}
+              onPress={() => setPreviewPlayerView(p => !p)}
+              hitSlop={8}
+            >
+              <MaterialIcons name={previewPlayerView ? 'school' : 'person'} size={16} color={previewPlayerView ? colors.warning : colors.primary} />
+              <Text style={[styles.viewToggleText, previewPlayerView && { color: colors.warning }]}>
+                {previewPlayerView ? 'Coach' : 'Player'}
+              </Text>
+            </Pressable>
+          )}
+          <Pressable style={styles.joinMoreBtn} onPress={() => setShowJoinModal(true)} hitSlop={8}>
+            <MaterialIcons name="vpn-key" size={18} color={colors.primary} />
+          </Pressable>
+        </View>
       </View>
 
       {memberships.length > 1 && (
@@ -247,7 +263,7 @@ export default function AcademyScreen() {
         </View>
 
         {/* Player View */}
-        {!isCoach && (
+        {showPlayerView && (
           <>
             <View style={styles.card}>
               <View style={styles.cardHeaderRow}>
@@ -351,7 +367,7 @@ export default function AcademyScreen() {
         )}
 
         {/* Coach View */}
-        {isCoach && (
+        {isCoach && !previewPlayerView && (
           <>
             <View style={styles.actionsGrid}>
               <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: currentMembership!.academy.id } } as any)}>
@@ -477,7 +493,10 @@ const styles = StyleSheet.create({
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
   headerSub: { ...typography.caption, color: colors.textSecondary },
-  joinMoreBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary + '15', borderRadius: borderRadius.full },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  viewToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.primary + '15', borderWidth: 1, borderColor: colors.primary + '30' },
+  viewToggleBtnActive: { backgroundColor: colors.warning + '15', borderColor: colors.warning + '30' },
+  viewToggleText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
   switcherScroll: { maxHeight: 52, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   switcherContent: { flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },
   switcherChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
