@@ -180,7 +180,18 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   };
 
   const handleConfirm = () => {
-    onConfirm(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    // Commit any in-progress typed values before confirming
+    let finalHour = hour;
+    let finalMinute = minute;
+    const typedH = parseInt(hourText, 10);
+    const typedM = parseInt(minText, 10);
+    if (!isNaN(typedH) && typedH >= 1 && typedH <= 12) {
+      finalHour = isPM ? (typedH === 12 ? 12 : typedH + 12) : (typedH === 12 ? 0 : typedH);
+    }
+    if (!isNaN(typedM) && typedM >= 0 && typedM <= 59) {
+      finalMinute = typedM;
+    }
+    onConfirm(`${String(finalHour).padStart(2, '0')}:${String(finalMinute).padStart(2, '0')}`);
     onClose();
   };
 
