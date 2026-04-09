@@ -13,10 +13,10 @@ import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 // ─── Training Plan Block ──────────────────────────────────────────────────────
 interface PlanBlock {
   id: string;
-  startTime: string;  // "07:15"
-  endTime: string;    // "07:45"
-  activity: string;   // "Batting"
-  notes: string;
+  startTime: string;    // "07:15"
+  endTime: string;      // "07:45"
+  activities: string[]; // ["Batting", "Bowling"] — multi-select
+  notes: string;        // notes + drills go here
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -51,7 +51,14 @@ function parsePlanBlocks(notes?: string): PlanBlock[] {
     const start = notes.indexOf('PLAN_BLOCKS:');
     if (start === -1) return [];
     const json = notes.slice(start + 12);
-    return JSON.parse(json);
+    const blocks = JSON.parse(json);
+    // Backward compat: convert old single `activity` string to array
+    return blocks.map((b: any) => ({
+      ...b,
+      activities: Array.isArray(b.activities)
+        ? b.activities
+        : b.activity ? [b.activity] : [],
+    }));
   } catch { return []; }
 }
 
@@ -59,25 +66,16 @@ function parseObjectives(notes?: string): string[] {
   if (!notes) return [];
   try {
     const start = notes.indexOf('OBJECTIVES:');
+    if (start === -1) return [];
     const end = notes.indexOf('PLAN_BLOCKS:');
     const slice = end === -1 ? notes.slice(start + 11) : notes.slice(start + 11, end);
     return JSON.parse(slice.trim().split('\n')[0]);
   } catch { return []; }
 }
 
-function parseDrills(notes?: string): string[] {
-  if (!notes) return [];
-  try {
-    const start = notes.indexOf('DRILLS:');
-    const end = notes.indexOf('OBJECTIVES:');
-    const slice = end === -1 ? notes.slice(start + 7) : notes.slice(start + 7, end);
-    return JSON.parse(slice.trim().split('\n')[0]);
-  } catch { return []; }
-}
-
 function parseCoachNotes(notes?: string): string {
   if (!notes) return '';
-  const markers = ['DRILLS:', 'OBJECTIVES:', 'PLAN_BLOCKS:'];
+  const markers = ['OBJECTIVES:', 'PLAN_BLOCKS:'];
   let result = notes;
   for (const m of markers) {
     const idx = result.indexOf(m);
@@ -86,10 +84,9 @@ function parseCoachNotes(notes?: string): string {
   return result.trim();
 }
 
-function buildNotes(coachNotes: string, drills: string[], objectives: string[], planBlocks: PlanBlock[]): string {
+function buildNotes(coachNotes: string, objectives: string[], planBlocks: PlanBlock[]): string {
   let out = '';
   if (coachNotes.trim()) out += coachNotes.trim() + '\n';
-  if (drills.filter(Boolean).length) out += `DRILLS:${JSON.stringify(drills.filter(Boolean))}\n`;
   if (objectives.filter(Boolean).length) out += `OBJECTIVES:${JSON.stringify(objectives.filter(Boolean))}\n`;
   if (planBlocks.length) out += `PLAN_BLOCKS:${JSON.stringify(planBlocks)}`;
   return out;
@@ -113,17 +110,34 @@ function PlanBlockEditor({ blocks, onChange, sessionColor }: {
   const addBlock = () => {
     const last = blocks[blocks.length - 1];
     const startT = last ? last.endTime : now12();
-    // Default end = start + 30 min
     const [h, m] = startT.split(':').map(Number);
     const endDate = new Date(2000, 0, 1, h, m + 30);
     const endT = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`;
-    onChange([...blocks, { id: Date.now().toString(), startTime: startT, endTime: endT, activity: 'Batting', notes: '' }]);
+    onChange([...blocks, { id: Date.now().toString(), startTime: startT, endTime: endT, activities: ['Batting'], notes: '' }]);
   };
 
-  const update = (id: string, field: keyof PlanBlock, value: string) =>
+  const updateField = (id: string, field: 'startTime' | 'endTime' | 'notes', value: string) =>
     onChange(blocks.map(b => b.id === id ? { ...b, [field]: value } : b));
 
+  // Multi-select toggle for activities
+  const toggleActivity = (id: string, activity: string) =>
+    onChange(blocks.map(b => {
+      if (b.id !== id) return b;
+      const has = b.activities.includes(activity);
+      const next = has
+        ? b.activities.filter(a => a !== activity)
+        : [...b.activities, activity];
+      return { ...b, activities: next.length ? next : [activity] };
+    }));
+
   const remove = (id: string) => onChange(blocks.filter(b => b.id !== id));
+
+  // Auto-fill time field with current time if empty
+  const handleTimeFocus = (id: string, field: 'startTime' | 'endTime', current: string) => {
+    if (!current || current === '00:00') {
+      updateField(id, field, now12());
+    }
+  };
 
   return (
     <View style={pb.wrapper}>
@@ -143,8 +157,9 @@ function PlanBlockEditor({ blocks, onChange, sessionColor }: {
               <TextInput
                 style={pb.timeInput}
                 value={block.startTime}
-                onChangeText={v => update(block.id, 'startTime', v)}
-                placeholder="07:15"
+                onChangeText={v => updateField(block.id, 'startTime', v)}
+                onFocus={() => handleTimeFocus(block.id, 'startTime', block.startTime)}
+                placeholder={now12()}
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
@@ -154,35 +169,39 @@ function PlanBlockEditor({ blocks, onChange, sessionColor }: {
               <TextInput
                 style={pb.timeInput}
                 value={block.endTime}
-                onChangeText={v => update(block.id, 'endTime', v)}
-                placeholder="07:45"
+                onChangeText={v => updateField(block.id, 'endTime', v)}
+                onFocus={() => handleTimeFocus(block.id, 'endTime', block.endTime)}
+                placeholder={now12()}
                 placeholderTextColor={colors.textSecondary}
               />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={pb.timeLabel}>Activity</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 2 }}>
-                <View style={{ flexDirection: 'row', gap: 5 }}>
-                  {ACTIVITIES.map(a => (
-                    <Pressable
-                      key={a}
-                      style={[pb.activityChip, block.activity === a && { backgroundColor: sessionColor, borderColor: sessionColor }]}
-                      onPress={() => update(block.id, 'activity', a)}
-                    >
-                      <Text style={[pb.activityChipText, block.activity === a && { color: colors.textLight }]}>{a}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
           </View>
 
-          {/* Block notes */}
+          {/* Activities — multi-select */}
+          <Text style={[pb.timeLabel, { marginTop: 6, marginBottom: 4 }]}>Activities (tap to select multiple)</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            <View style={{ flexDirection: 'row', gap: 5 }}>
+              {ACTIVITIES.map(a => {
+                const selected = block.activities.includes(a);
+                return (
+                  <Pressable
+                    key={a}
+                    style={[pb.activityChip, selected && { backgroundColor: sessionColor, borderColor: sessionColor }]}
+                    onPress={() => toggleActivity(block.id, a)}
+                  >
+                    <Text style={[pb.activityChipText, selected && { color: colors.textLight }]}>{a}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </ScrollView>
+
+          {/* Block notes — drills go here */}
           <TextInput
             style={pb.blockNotes}
             value={block.notes}
-            onChangeText={v => update(block.id, 'notes', v)}
-            placeholder="e.g. Focus on drive shots, 2 bowlers"
+            onChangeText={v => updateField(block.id, 'notes', v)}
+            placeholder="Notes & drills e.g. Short-arm jab drill, focus on drive shots"
             placeholderTextColor={colors.textSecondary}
             multiline
           />
@@ -202,12 +221,12 @@ const pb = StyleSheet.create({
   blockHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   blockNum: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   timeRow: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
-  timeField: { minWidth: 60 },
+  timeField: { minWidth: 64 },
   timeLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginBottom: 2 },
-  timeInput: { backgroundColor: colors.surface, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 6, fontSize: 14, color: colors.text, fontWeight: '700', textAlign: 'center', width: 60 },
+  timeInput: { backgroundColor: colors.surface, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 8, paddingVertical: 6, fontSize: 14, color: colors.text, fontWeight: '700', textAlign: 'center', width: 64 },
   activityChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
   activityChipText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
-  blockNotes: { backgroundColor: colors.surface, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: 6, fontSize: 13, color: colors.text, minHeight: 36 },
+  blockNotes: { backgroundColor: colors.surface, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: 6, fontSize: 13, color: colors.text, minHeight: 36, marginTop: 4 },
   addBlockBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1.5, borderRadius: borderRadius.md, borderStyle: 'dashed', paddingVertical: 10 },
   addBlockText: { fontSize: 13, fontWeight: '700' },
 });
@@ -223,9 +242,11 @@ function SessionCard({ s, isCoach, academyId, today, router }: {
 
   const planBlocks = parsePlanBlocks(s.notes);
   const objectives = parseObjectives(s.notes);
-  const drills = parseDrills(s.notes);
   const coachNotes = parseCoachNotes(s.notes);
-  const hasPlan = planBlocks.length > 0 || objectives.length > 0 || drills.length > 0 || coachNotes;
+  const hasPlan = planBlocks.length > 0 || objectives.length > 0 || !!coachNotes;
+
+  const getActivitiesLabel = (b: PlanBlock) =>
+    (b.activities && b.activities.length > 0 ? b.activities : ['Training']).join(' + ');
 
   return (
     <Pressable
@@ -253,14 +274,14 @@ function SessionCard({ s, isCoach, academyId, today, router }: {
           </View>
         </View>
 
-        {/* Collapsed preview */}
+        {/* Collapsed preview — activity chips */}
         {!expanded && planBlocks.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.xs }}>
             <View style={{ flexDirection: 'row', gap: 5 }}>
               {planBlocks.map(b => (
                 <View key={b.id} style={[styles.blockPreviewChip, { backgroundColor: color + '15', borderColor: color + '40' }]}>
                   <Text style={[styles.blockPreviewTime, { color }]}>{formatTime12(b.startTime)}</Text>
-                  <Text style={[styles.blockPreviewActivity, { color }]}>{b.activity}</Text>
+                  <Text style={[styles.blockPreviewActivity, { color }]}>{getActivitiesLabel(b)}</Text>
                 </View>
               ))}
             </View>
@@ -270,30 +291,7 @@ function SessionCard({ s, isCoach, academyId, today, router }: {
         {/* Expanded view — full training plan */}
         {expanded && hasPlan && (
           <View style={styles.planContainer}>
-            {/* Training Plan Blocks */}
-            {planBlocks.length > 0 && (
-              <View style={styles.planSection}>
-                <View style={styles.planSectionHeader}>
-                  <MaterialIcons name="schedule" size={14} color={color} />
-                  <Text style={[styles.planSectionTitle, { color }]}>Training Plan</Text>
-                </View>
-                {planBlocks.map((b, i) => (
-                  <View key={b.id} style={[styles.planBlockRow, i < planBlocks.length - 1 && styles.planBlockRowBorder]}>
-                    <View style={[styles.planBlockTimeCol, { backgroundColor: color + '12' }]}>
-                      <Text style={[styles.planBlockTime, { color }]}>{formatTime12(b.startTime)}</Text>
-                      <Text style={styles.planBlockArrow}>↓</Text>
-                      <Text style={[styles.planBlockTime, { color }]}>{formatTime12(b.endTime)}</Text>
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.planBlockActivity}>{b.activity}</Text>
-                      {b.notes ? <Text style={styles.planBlockNotes}>{b.notes}</Text> : null}
-                    </View>
-                  </View>
-                ))}
-              </View>
-            )}
-
-            {/* Objectives */}
+            {/* Objectives first */}
             {objectives.length > 0 && (
               <View style={styles.planSection}>
                 <View style={styles.planSectionHeader}>
@@ -311,17 +309,24 @@ function SessionCard({ s, isCoach, academyId, today, router }: {
               </View>
             )}
 
-            {/* Drills */}
-            {drills.length > 0 && (
+            {/* Training Plan Blocks */}
+            {planBlocks.length > 0 && (
               <View style={styles.planSection}>
                 <View style={styles.planSectionHeader}>
-                  <MaterialIcons name="sports-cricket" size={14} color={colors.mental} />
-                  <Text style={[styles.planSectionTitle, { color: colors.mental }]}>Drills</Text>
+                  <MaterialIcons name="schedule" size={14} color={color} />
+                  <Text style={[styles.planSectionTitle, { color }]}>Training Plan</Text>
                 </View>
-                {drills.map((d, i) => (
-                  <View key={i} style={styles.drillRow}>
-                    <MaterialIcons name="fiber-manual-record" size={8} color={colors.mental} />
-                    <Text style={styles.drillText}>{d}</Text>
+                {planBlocks.map((b, i) => (
+                  <View key={b.id} style={[styles.planBlockRow, i < planBlocks.length - 1 && styles.planBlockRowBorder]}>
+                    <View style={[styles.planBlockTimeCol, { backgroundColor: color + '12' }]}>
+                      <Text style={[styles.planBlockTime, { color }]}>{formatTime12(b.startTime)}</Text>
+                      <Text style={styles.planBlockArrow}>↓</Text>
+                      <Text style={[styles.planBlockTime, { color }]}>{formatTime12(b.endTime)}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.planBlockActivity}>{getActivitiesLabel(b)}</Text>
+                      {b.notes ? <Text style={styles.planBlockNotes}>{b.notes}</Text> : null}
+                    </View>
                   </View>
                 ))}
               </View>
@@ -380,7 +385,6 @@ export default function AcademyScheduleScreen() {
   const [newNotes, setNewNotes] = useState('');
   const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
   const [objectives, setObjectives] = useState<string[]>(['', '']);
-  const [drills, setDrills] = useState<string[]>(['']);
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
@@ -400,14 +404,13 @@ export default function AcademyScheduleScreen() {
   const resetForm = () => {
     setNewTitle(''); setNewDate(todayStr()); setNewTime(now12());
     setNewLocation(''); setNewType('Training'); setNewNotes('');
-    setPlanBlocks([]); setObjectives(['', '']); setDrills(['']);
+    setPlanBlocks([]); setObjectives(['', '']);
   };
 
   const openModal = () => {
     resetForm();
-    // Refresh time when opening
     setNewDate(todayStr());
-    setNewTime(now12());
+    setNewTime(now12()); // refresh to current time on open
     setShowCreateModal(true);
   };
 
@@ -415,7 +418,7 @@ export default function AcademyScheduleScreen() {
     if (!user) return;
     if (!newTitle.trim()) { showAlert('Error', 'Please enter a session title'); return; }
     setCreating(true);
-    const combinedNotes = buildNotes(newNotes, drills, objectives, planBlocks);
+    const combinedNotes = buildNotes(newNotes, objectives, planBlocks);
     const { error } = await academyService.createSession({
       academy_id: academyId, title: newTitle.trim(), session_date: newDate,
       session_time: newTime, location: newLocation.trim() || undefined,
@@ -527,8 +530,8 @@ export default function AcademyScheduleScreen() {
                       <TextInput style={modal.input} value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={modal.label}>Time</Text>
-                      <TextInput style={modal.input} value={newTime} onChangeText={setNewTime} placeholder="HH:MM" placeholderTextColor={colors.textSecondary} />
+                      <Text style={modal.label}>Time (auto-filled)</Text>
+                      <TextInput style={modal.input} value={newTime} onChangeText={setNewTime} placeholder={now12()} placeholderTextColor={colors.textSecondary} />
                     </View>
                   </View>
 
@@ -545,17 +548,7 @@ export default function AcademyScheduleScreen() {
                   </View>
                 </View>
 
-                {/* ── Training Plan Blocks ── */}
-                <View style={modal.sectionBlock}>
-                  <View style={modal.sectionHeader}>
-                    <MaterialIcons name="schedule" size={16} color={sessionColor} />
-                    <Text style={[modal.sectionTitle, { color: sessionColor }]}>Training Plan</Text>
-                    <Text style={modal.sectionHint}>Visible to players</Text>
-                  </View>
-                  <PlanBlockEditor blocks={planBlocks} onChange={setPlanBlocks} sessionColor={sessionColor} />
-                </View>
-
-                {/* ── Objectives ── */}
+                {/* ── Session Objectives — ABOVE Training Plan ── */}
                 <View style={modal.sectionBlock}>
                   <View style={modal.sectionHeader}>
                     <MaterialIcons name="flag" size={16} color={colors.warning} />
@@ -582,29 +575,14 @@ export default function AcademyScheduleScreen() {
                   ))}
                 </View>
 
-                {/* ── Drills ── */}
+                {/* ── Training Plan Blocks ── */}
                 <View style={modal.sectionBlock}>
                   <View style={modal.sectionHeader}>
-                    <MaterialIcons name="sports-cricket" size={16} color={colors.mental} />
-                    <Text style={[modal.sectionTitle, { color: colors.mental }]}>Drills</Text>
+                    <MaterialIcons name="schedule" size={16} color={sessionColor} />
+                    <Text style={[modal.sectionTitle, { color: sessionColor }]}>Training Plan</Text>
+                    <Text style={modal.sectionHint}>Visible to players · add drills in block notes</Text>
                   </View>
-                  {drills.map((d, i) => (
-                    <View key={i} style={modal.objRow}>
-                      <MaterialIcons name="fiber-manual-record" size={10} color={colors.mental} />
-                      <TextInput
-                        style={[modal.input, { flex: 1 }]}
-                        value={d}
-                        onChangeText={v => { const arr = [...drills]; arr[i] = v; setDrills(arr); }}
-                        placeholder={`Drill ${i + 1}…`}
-                        placeholderTextColor={colors.textSecondary}
-                      />
-                      {i === drills.length - 1 && (
-                        <Pressable onPress={() => setDrills(d => [...d, ''])} hitSlop={6}>
-                          <MaterialIcons name="add-circle" size={22} color={colors.mental} />
-                        </Pressable>
-                      )}
-                    </View>
-                  ))}
+                  <PlanBlockEditor blocks={planBlocks} onChange={setPlanBlocks} sessionColor={sessionColor} />
                 </View>
 
                 {/* ── Coach Notes ── */}
@@ -652,7 +630,7 @@ const modal = StyleSheet.create({
   sectionBlock: { backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md, gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
-  sectionHint: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginLeft: 4 },
+  sectionHint: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginLeft: 4, flex: 1 },
   label: { fontSize: 12, color: colors.text, fontWeight: '600', marginBottom: 3 },
   row: { flexDirection: 'row', gap: spacing.sm },
   input: { backgroundColor: colors.surface, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: 14, color: colors.text },
@@ -711,8 +689,6 @@ const styles = StyleSheet.create({
   objNum: { width: 20, height: 20, borderRadius: 10, justifyContent: 'center', alignItems: 'center', flexShrink: 0, marginTop: 2 },
   objNumText: { fontSize: 11, fontWeight: '900', color: colors.textLight },
   objText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 18 },
-  drillRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 2 },
-  drillText: { fontSize: 13, color: colors.text, lineHeight: 18 },
   coachNoteText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
