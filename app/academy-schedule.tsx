@@ -111,6 +111,7 @@ const tp = StyleSheet.create({
   col: { alignItems: 'center', minWidth: 56 },
   colLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   colValue: { fontSize: 38, fontWeight: '900', color: colors.text, lineHeight: 46, textAlign: 'center' },
+  colInput: { borderBottomWidth: 2, borderBottomColor: colors.primary + '60', minWidth: 56, paddingVertical: 2, backgroundColor: 'transparent' },
   arrowBtn: { padding: 4 },
   colon: { fontSize: 32, fontWeight: '900', color: colors.textSecondary, paddingBottom: 8 },
   ampmCol: { alignItems: 'center', gap: 4, marginLeft: 4 },
@@ -153,10 +154,30 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
 
   const incHour = () => setHour(h => (h + 1) % 24);
   const decHour = () => setHour(h => (h - 1 + 24) % 24);
-  const incMin = () => setMinute(m => (m + 5) % 60);
-  const decMin = () => setMinute(m => (m - 5 + 60) % 60);
+  const incMin = () => setMinute(m => (m + 1) % 60);
+  const decMin = () => setMinute(m => (m - 1 + 60) % 60);
   const setAM = () => { if (hour >= 12) setHour(h => h - 12); };
   const setPM = () => { if (hour < 12) setHour(h => h + 12); };
+
+  // Manual text editing
+  const [hourText, setHourText] = React.useState(String(h12).padStart(2, '0'));
+  const [minText, setMinText] = React.useState(String(minute).padStart(2, '0'));
+  React.useEffect(() => { setHourText(String(h12).padStart(2, '0')); }, [hour]);
+  React.useEffect(() => { setMinText(String(minute).padStart(2, '0')); }, [minute]);
+
+  const commitHourText = (txt: string) => {
+    const n = parseInt(txt, 10);
+    if (!isNaN(n) && n >= 1 && n <= 12) {
+      setHour(isPM ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n));
+    } else {
+      setHourText(String(h12).padStart(2, '0'));
+    }
+  };
+  const commitMinText = (txt: string) => {
+    const n = parseInt(txt, 10);
+    if (!isNaN(n) && n >= 0 && n <= 59) setMinute(n);
+    else setMinText(String(minute).padStart(2, '0'));
+  };
 
   const handleConfirm = () => {
     onConfirm(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
@@ -176,7 +197,16 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
               <Pressable style={tp.arrowBtn} onPress={incHour} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
               </Pressable>
-              <Text style={tp.colValue}>{String(h12).padStart(2, '0')}</Text>
+              <TextInput
+                style={[tp.colValue, tp.colInput]}
+                value={hourText}
+                onChangeText={setHourText}
+                onBlur={() => commitHourText(hourText)}
+                onSubmitEditing={() => commitHourText(hourText)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+              />
               <Pressable style={tp.arrowBtn} onPress={decHour} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
@@ -188,7 +218,16 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
               <Pressable style={tp.arrowBtn} onPress={incMin} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
               </Pressable>
-              <Text style={tp.colValue}>{String(minute).padStart(2, '0')}</Text>
+              <TextInput
+                style={[tp.colValue, tp.colInput]}
+                value={minText}
+                onChangeText={setMinText}
+                onBlur={() => commitMinText(minText)}
+                onSubmitEditing={() => commitMinText(minText)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+              />
               <Pressable style={tp.arrowBtn} onPress={decMin} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
@@ -270,6 +309,30 @@ function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
 
   const formatted = `${String(clampedDay).padStart(2,'0')} ${MONTHS[month-1]} ${year}`;
 
+  // Manual text state for each column
+  const [dayText, setDayText] = React.useState(String(clampedDay).padStart(2,'0'));
+  const [monthText, setMonthText] = React.useState(String(month).padStart(2,'0'));
+  const [yearText, setYearText] = React.useState(String(year));
+  React.useEffect(() => { setDayText(String(clampedDay).padStart(2,'0')); }, [day, month, year]);
+  React.useEffect(() => { setMonthText(String(month).padStart(2,'0')); }, [month]);
+  React.useEffect(() => { setYearText(String(year)); }, [year]);
+
+  const commitDay = (txt: string) => {
+    const n = parseInt(txt, 10);
+    if (!isNaN(n) && n >= 1 && n <= daysInMonth) setDay(n);
+    else setDayText(String(clampedDay).padStart(2,'0'));
+  };
+  const commitMonth = (txt: string) => {
+    const n = parseInt(txt, 10);
+    if (!isNaN(n) && n >= 1 && n <= 12) setMonth(n);
+    else setMonthText(String(month).padStart(2,'0'));
+  };
+  const commitYear = (txt: string) => {
+    const n = parseInt(txt, 10);
+    if (!isNaN(n) && n >= 2020 && n <= 2099) setYear(n);
+    else setYearText(String(year));
+  };
+
   const handleConfirm = () => {
     const mm = String(month).padStart(2,'0');
     const dd = String(clampedDay).padStart(2,'0');
@@ -290,29 +353,57 @@ function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
               <Pressable style={tp.arrowBtn} onPress={incDay} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
               </Pressable>
-              <Text style={tp.colValue}>{String(clampedDay).padStart(2,'0')}</Text>
+              <TextInput
+                style={[tp.colValue, tp.colInput]}
+                value={dayText}
+                onChangeText={setDayText}
+                onBlur={() => commitDay(dayText)}
+                onSubmitEditing={() => commitDay(dayText)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+              />
               <Pressable style={tp.arrowBtn} onPress={decDay} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
             </View>
             {/* Month */}
             <View style={[tp.col, { minWidth: 52 }]}>
-              <Text style={tp.colLabel}>Month</Text>
+              <Text style={tp.colLabel}>Month (1-12)</Text>
               <Pressable style={tp.arrowBtn} onPress={incMonth} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
               </Pressable>
-              <Text style={[tp.colValue, { fontSize: 26 }]}>{MONTHS[month-1]}</Text>
+              <TextInput
+                style={[tp.colValue, tp.colInput, { fontSize: 26 }]}
+                value={monthText}
+                onChangeText={setMonthText}
+                onBlur={() => commitMonth(monthText)}
+                onSubmitEditing={() => commitMonth(monthText)}
+                keyboardType="number-pad"
+                maxLength={2}
+                selectTextOnFocus
+              />
+              <Text style={[tp.colLabel, { marginTop: 2, fontSize: 10 }]}>{MONTHS[(parseInt(monthText,10)||month)-1] || ''}</Text>
               <Pressable style={tp.arrowBtn} onPress={decMonth} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
             </View>
             {/* Year */}
-            <View style={[tp.col, { minWidth: 64 }]}>
+            <View style={[tp.col, { minWidth: 72 }]}>
               <Text style={tp.colLabel}>Year</Text>
               <Pressable style={tp.arrowBtn} onPress={incYear} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
               </Pressable>
-              <Text style={[tp.colValue, { fontSize: 26 }]}>{year}</Text>
+              <TextInput
+                style={[tp.colValue, tp.colInput, { fontSize: 24 }]}
+                value={yearText}
+                onChangeText={setYearText}
+                onBlur={() => commitYear(yearText)}
+                onSubmitEditing={() => commitYear(yearText)}
+                keyboardType="number-pad"
+                maxLength={4}
+                selectTextOnFocus
+              />
               <Pressable style={tp.arrowBtn} onPress={decYear} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
