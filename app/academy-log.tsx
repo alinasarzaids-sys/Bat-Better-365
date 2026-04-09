@@ -1,119 +1,126 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  TextInput, ActivityIndicator, Animated, KeyboardAvoidingView, Platform,
+  TextInput, ActivityIndicator, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuth, useAlert } from '@/template';
-import { getSupabaseClient } from '@/template';
+import { useAuth, useAlert, getSupabaseClient } from '@/template';
 import { academyService } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-interface SessionStats {
-  sessionType: string;
-  duration: string;
-  intensity: number;
-  logDate: string;
-  // Batting
-  ballsFaced: string;
-  runsScored: string;
-  // Bowling
-  ballsBowled: string;
-  wickets: string;
-  runsConceded: string;
-  // Fielding
-  catches: string;
-  runOuts: string;
-  stumpings: string;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface AIQuestion { question: string; answer: string; }
 
-interface AIQuestion {
-  question: string;
-  answer: string;
-}
-
-// ─── Constants ───────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 const SESSION_TYPES = [
-  'Nets — Batting', 'Nets — Bowling', 'Nets — Mixed',
-  'Match Practice', 'Fielding Drills', 'Fitness / Conditioning',
-  'Skill Work', 'Team Training', 'Individual Training',
+  { id: 'Nets — Batting', label: 'Nets — Batting', icon: 'sports-cricket', color: colors.technical },
+  { id: 'Nets — Bowling', label: 'Nets — Bowling', icon: 'sports-cricket', color: colors.physical },
+  { id: 'Nets — Mixed', label: 'Nets — Mixed', icon: 'sports-cricket', color: colors.primary },
+  { id: 'Match Practice', label: 'Match Practice', icon: 'emoji-events', color: colors.warning },
+  { id: 'Fielding Drills', label: 'Fielding Drills', icon: 'sports-handball', color: colors.tactical },
+  { id: 'Fitness / Conditioning', label: 'Fitness', icon: 'fitness-center', color: colors.mental },
+  { id: 'Team Training', label: 'Team Training', icon: 'people', color: colors.success },
+  { id: 'Individual Training', label: 'Individual', icon: 'person', color: colors.textSecondary },
 ];
 
-const INTENSITY_LABELS: Record<number, { label: string; color: string }> = {
-  1: { label: 'Very Light', color: colors.success },
-  2: { label: 'Light', color: colors.success },
-  3: { label: 'Easy', color: colors.success },
-  4: { label: 'Moderate', color: colors.warning },
-  5: { label: 'Steady', color: colors.warning },
-  6: { label: 'Challenging', color: colors.warning },
-  7: { label: 'Hard', color: colors.error },
-  8: { label: 'Very Hard', color: colors.error },
-  9: { label: 'Intense', color: colors.error },
-  10: { label: 'Maximum', color: colors.error },
+const INTENSITY_DATA: Record<number, { label: string; color: string }> = {
+  1: { label: 'Very Light', color: '#4CAF50' }, 2: { label: 'Light', color: '#66BB6A' },
+  3: { label: 'Easy', color: '#8BC34A' }, 4: { label: 'Moderate', color: '#FFC107' },
+  5: { label: 'Steady', color: '#FFB300' }, 6: { label: 'Challenging', color: '#FF9800' },
+  7: { label: 'Hard', color: '#F44336' }, 8: { label: 'Very Hard', color: '#E53935' },
+  9: { label: 'Intense', color: '#C62828' }, 10: { label: 'Maximum', color: '#B71C1C' },
 };
 
+const TIPS: Record<string, string[]> = {
+  Batsman: [
+    'Watch the ball all the way onto the bat.',
+    'Reset your mental state after every delivery.',
+    'Back foot or front foot — decide early.',
+    'Stay balanced through your shot. Head still!',
+  ],
+  Bowler: [
+    'Focus on landing in your target zone consistently.',
+    'Control your run-up length and rhythm.',
+    'Vary your pace — keep the batter guessing.',
+    'Follow through fully for maximum pace.',
+  ],
+  default: [
+    'Stay focused. Quality over quantity.',
+    'Communicate with your teammates.',
+    'Visualise before every action.',
+    'Champions embrace the grind.',
+  ],
+};
+
+function formatTime(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
-function StepIndicator({ current, total }: { current: number; total: number }) {
+function ProgressBar({ step, total }: { step: number; total: number }) {
   return (
-    <View style={stepStyles.row}>
+    <View style={pb.row}>
       {Array.from({ length: total }).map((_, i) => (
-        <View key={i} style={[stepStyles.dot, i < current && stepStyles.dotDone, i === current && stepStyles.dotActive]} />
+        <View key={i} style={[pb.seg, i < step ? pb.done : i === step ? pb.active : pb.idle]} />
       ))}
     </View>
   );
 }
-
-const stepStyles = StyleSheet.create({
-  row: { flexDirection: 'row', gap: 6, justifyContent: 'center', paddingVertical: spacing.sm },
-  dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.border },
-  dotDone: { backgroundColor: colors.primary + '60', width: 24 },
-  dotActive: { backgroundColor: colors.primary, width: 24 },
+const pb = StyleSheet.create({
+  row: { flexDirection: 'row', gap: 4, paddingHorizontal: spacing.md, paddingVertical: 10, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  seg: { flex: 1, height: 4, borderRadius: 2 },
+  idle: { backgroundColor: colors.border },
+  active: { backgroundColor: colors.primary },
+  done: { backgroundColor: colors.primary + '80' },
 });
 
-function StatInput({
-  label, value, onChange, icon, iconColor, suffix,
+function CounterButton({
+  icon, value, label, color, onInc, onDec, note,
 }: {
-  label: string; value: string; onChange: (v: string) => void;
-  icon: string; iconColor: string; suffix?: string;
+  icon: string; value: number; label: string; color: string;
+  onInc: () => void; onDec: () => void; note?: string;
 }) {
   return (
-    <View style={statStyles.block}>
-      <View style={statStyles.iconRow}>
-        <MaterialIcons name={icon as any} size={16} color={iconColor} />
-        <Text style={[statStyles.label, { color: iconColor }]}>{label}</Text>
+    <View style={ctr.card}>
+      <View style={[ctr.iconWrap, { backgroundColor: color + '20' }]}>
+        <MaterialIcons name={icon as any} size={24} color={color} />
       </View>
-      <View style={statStyles.inputRow}>
-        <TextInput
-          style={statStyles.input}
-          value={value}
-          onChangeText={onChange}
-          keyboardType="number-pad"
-          placeholder="—"
-          placeholderTextColor={colors.textSecondary}
-          textAlign="center"
-          maxLength={4}
-        />
-        {suffix ? <Text style={statStyles.suffix}>{suffix}</Text> : null}
+      <Text style={[ctr.label, { color }]}>{label}</Text>
+      <Text style={ctr.value}>{value}</Text>
+      {note ? <Text style={ctr.note}>{note}</Text> : null}
+      <View style={ctr.btnRow}>
+        <Pressable style={[ctr.btn, { backgroundColor: colors.error + '20' }]} onPress={onDec} hitSlop={4}>
+          <MaterialIcons name="remove" size={22} color={colors.error} />
+        </Pressable>
+        <Pressable style={[ctr.btn, { backgroundColor: color }]} onPress={onInc} hitSlop={4}>
+          <MaterialIcons name="add" size={22} color={colors.textLight} />
+        </Pressable>
       </View>
     </View>
   );
 }
-
-const statStyles = StyleSheet.create({
-  block: { flex: 1, alignItems: 'center' },
-  iconRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 },
-  label: { fontSize: 11, fontWeight: '700' },
-  inputRow: { alignItems: 'center' },
-  input: {
-    width: 72, height: 56, borderRadius: borderRadius.md,
-    backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border,
-    fontSize: 22, fontWeight: '800', color: colors.text,
-  },
-  suffix: { fontSize: 10, color: colors.textSecondary, marginTop: 3 },
+const ctr = StyleSheet.create({
+  card: { flex: 1, minWidth: '45%', backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.08, shadowRadius: 6, elevation: 3 },
+  iconWrap: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  label: { fontSize: 11, fontWeight: '800', textAlign: 'center', letterSpacing: 0.3 },
+  value: { fontSize: 48, fontWeight: '900', color: colors.text, letterSpacing: -1 },
+  note: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: 2 },
+  btn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
 });
+
+function MiniBar({ value, max, color }: { value: number; max: number; color: string }) {
+  const pct = max > 0 ? Math.min((value / max) * 100, 100) : 0;
+  return (
+    <View style={{ height: 8, flex: 1, backgroundColor: colors.border, borderRadius: 4, overflow: 'hidden' }}>
+      <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color, borderRadius: 4, minWidth: value > 0 ? 8 : 0 }} />
+    </View>
+  );
+}
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function AcademyLogScreen() {
@@ -131,52 +138,69 @@ export default function AcademyLogScreen() {
   const isFielder = ['Fielder', 'All-Rounder', 'Wicket-Keeper'].includes(position);
   const isKeeper = position === 'Wicket-Keeper';
 
-  const TOTAL_STEPS = 4; // setup → stats → AI questions → summary
-  const [step, setStep] = useState(0);
+  const TOTAL_STEPS = 4;
+  const [step, setStep] = useState(0); // 0=Setup 1=Live 2=Reflect 3=Summary
 
-  // Step 0 — Session setup
+  // ── Step 0: Setup ──────────────────────────────────────────────────────────
   const [sessionType, setSessionType] = useState('');
-  const [duration, setDuration] = useState('60');
   const [intensity, setIntensity] = useState(5);
-  const [logDate, setLogDate] = useState(new Date().toISOString().split('T')[0]);
+  const [logDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Step 1 — Stats
-  const [stats, setStats] = useState<SessionStats>({
-    sessionType: '', duration: '60', intensity: 5, logDate: new Date().toISOString().split('T')[0],
-    ballsFaced: '', runsScored: '', ballsBowled: '', wickets: '', runsConceded: '',
-    catches: '', runOuts: '', stumpings: '',
-  });
+  // ── Step 1: Live counters ──────────────────────────────────────────────────
+  const [elapsed, setElapsed] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const [tipIdx, setTipIdx] = useState(0);
+  const tipList = TIPS[position] || TIPS.default;
 
-  // Step 2 — AI Questions
+  // Batting
+  const [ballsFaced, setBallsFaced] = useState(0);
+  const [runsScored, setRunsScored] = useState(0);
+  const [ballsMiddled, setBallsMiddled] = useState(0);
+  // Bowling
+  const [ballsBowled, setBallsBowled] = useState(0);
+  const [wickets, setWickets] = useState(0);
+  const [runsConceded, setRunsConceded] = useState(0);
+  // Fielding
+  const [catches, setCatches] = useState(0);
+  const [runOuts, setRunOuts] = useState(0);
+  const [stumpings, setStumpings] = useState(0);
+
+  // Timer
+  useEffect(() => {
+    if (running && !paused) {
+      timerRef.current = setInterval(() => setElapsed(s => s + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [running, paused]);
+
+  // Tip rotation
+  useEffect(() => {
+    if (!running || paused) return;
+    const t = setInterval(() => setTipIdx(i => (i + 1) % tipList.length), 18000);
+    return () => clearInterval(t);
+  }, [running, paused]);
+
+  const startSession = () => {
+    setRunning(true);
+    setPaused(false);
+  };
+
+  const endSession = () => {
+    setRunning(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+    setStep(2);
+    loadAIQuestions();
+  };
+
+  // ── Step 2: AI reflection ──────────────────────────────────────────────────
   const [questions, setQuestions] = useState<AIQuestion[]>([]);
   const [aiLoading, setAiLoading] = useState(false);
   const [notes, setNotes] = useState('');
 
-  // Step 3 — Summary / Save
-  const [saving, setSaving] = useState(false);
-
-  // ── Navigation ──────────────────────────────────────────────────────────────
-  const goNext = async () => {
-    if (step === 0) {
-      if (!sessionType) { showAlert('Required', 'Please select a session type'); return; }
-      if (!duration || parseInt(duration) < 1) { showAlert('Required', 'Please enter session duration'); return; }
-      setStep(1);
-    } else if (step === 1) {
-      setStep(2);
-      await loadAIQuestions();
-    } else if (step === 2) {
-      setStep(3);
-    } else {
-      await handleSave();
-    }
-  };
-
-  const goBack = () => {
-    if (step === 0) router.back();
-    else setStep(s => s - 1);
-  };
-
-  // ── AI Question Generation ─────────────────────────────────────────────────
   const loadAIQuestions = async () => {
     setAiLoading(true);
     try {
@@ -187,17 +211,17 @@ export default function AcademyLogScreen() {
           position,
           sessionType,
           stats: {
-            duration_minutes: parseInt(duration),
+            duration_minutes: Math.max(1, Math.floor(elapsed / 60)),
             intensity,
-            session_type: sessionType,
-            balls_faced: stats.ballsFaced ? parseInt(stats.ballsFaced) : undefined,
-            runs_scored: stats.runsScored ? parseInt(stats.runsScored) : undefined,
-            balls_bowled: stats.ballsBowled ? parseInt(stats.ballsBowled) : undefined,
-            wickets: stats.wickets ? parseInt(stats.wickets) : undefined,
-            runs_conceded: stats.runsConceded ? parseInt(stats.runsConceded) : undefined,
-            catches: stats.catches ? parseInt(stats.catches) : undefined,
-            run_outs: stats.runOuts ? parseInt(stats.runOuts) : undefined,
-            stumpings: stats.stumpings ? parseInt(stats.stumpings) : undefined,
+            balls_faced: ballsFaced || undefined,
+            runs_scored: runsScored || undefined,
+            balls_middled: ballsMiddled || undefined,
+            balls_bowled: ballsBowled || undefined,
+            wickets: wickets || undefined,
+            runs_conceded: runsConceded || undefined,
+            catches: catches || undefined,
+            run_outs: runOuts || undefined,
+            stumpings: stumpings || undefined,
           },
         },
       });
@@ -216,16 +240,14 @@ export default function AcademyLogScreen() {
     setQuestions(prev => prev.map((q, i) => i === idx ? { ...q, answer } : q));
   };
 
-  // ── Save ───────────────────────────────────────────────────────────────────
+  // ── Step 3 / Save ──────────────────────────────────────────────────────────
+  const [saving, setSaving] = useState(false);
+
   const handleSave = async () => {
     if (!user) return;
     setSaving(true);
-
-    // Build notes from AI answers
-    const answersText = questions
-      .filter(q => q.answer.trim())
-      .map(q => `Q: ${q.question}\nA: ${q.answer}`)
-      .join('\n\n');
+    const answersText = questions.filter(q => q.answer.trim())
+      .map(q => `Q: ${q.question}\nA: ${q.answer}`).join('\n\n');
     const finalNotes = [notes.trim(), answersText].filter(Boolean).join('\n\n');
 
     const { error } = await academyService.logTraining({
@@ -233,16 +255,16 @@ export default function AcademyLogScreen() {
       academy_id: academyId,
       log_date: logDate,
       session_type: sessionType,
-      duration_minutes: parseInt(duration),
+      duration_minutes: Math.max(1, Math.floor(elapsed / 60)),
       intensity,
-      balls_faced: stats.ballsFaced ? parseInt(stats.ballsFaced) : undefined,
-      runs_scored: stats.runsScored ? parseInt(stats.runsScored) : undefined,
-      balls_bowled: stats.ballsBowled ? parseInt(stats.ballsBowled) : undefined,
-      wickets: stats.wickets ? parseInt(stats.wickets) : undefined,
-      runs_conceded: stats.runsConceded ? parseInt(stats.runsConceded) : undefined,
-      catches: stats.catches ? parseInt(stats.catches) : undefined,
-      run_outs: stats.runOuts ? parseInt(stats.runOuts) : undefined,
-      stumpings: stats.stumpings ? parseInt(stats.stumpings) : undefined,
+      balls_faced: ballsFaced || undefined,
+      runs_scored: runsScored || undefined,
+      balls_bowled: ballsBowled || undefined,
+      wickets: wickets || undefined,
+      runs_conceded: runsConceded || undefined,
+      catches: catches || undefined,
+      run_outs: runOuts || undefined,
+      stumpings: stumpings || undefined,
       notes: finalNotes || undefined,
     });
 
@@ -251,417 +273,560 @@ export default function AcademyLogScreen() {
     router.back();
   };
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  const intensityInfo = INTENSITY_LABELS[intensity];
+  // ── Derived calcs ──────────────────────────────────────────────────────────
+  const strikeRate = ballsFaced > 0 ? Math.round((runsScored / ballsFaced) * 100) : 0;
+  const middlePct = ballsFaced > 0 ? Math.round((ballsMiddled / ballsFaced) * 100) : 0;
+  const oversBowled = `${Math.floor(ballsBowled / 6)}.${ballsBowled % 6}`;
+  const economy = ballsBowled > 0 ? (runsConceded / (ballsBowled / 6)).toFixed(1) : '—';
+
+  const intensityInfo = INTENSITY_DATA[intensity];
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Step 0 — Setup
+  // ──────────────────────────────────────────────────────────────────────────
+  const renderSetup = () => (
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.stepHero}>
+        <View style={[styles.heroIconCircle, { backgroundColor: colors.primary + '20' }]}>
+          <MaterialIcons name="sports-cricket" size={36} color={colors.primary} />
+        </View>
+        <Text style={styles.heroTitle}>Start Training Log</Text>
+        <Text style={styles.heroSub}>
+          Logging as <Text style={{ fontWeight: '800', color: colors.primary }}>{position}</Text>
+        </Text>
+      </View>
+
+      {/* Session Type */}
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>What type of session?</Text>
+        <View style={styles.sessionTypeGrid}>
+          {SESSION_TYPES.map(t => {
+            const active = sessionType === t.id;
+            return (
+              <Pressable key={t.id} style={[styles.typeCard, active && { borderColor: t.color, backgroundColor: t.color + '12' }]} onPress={() => setSessionType(t.id)}>
+                <View style={[styles.typeIconWrap, { backgroundColor: active ? t.color : colors.border + '60' }]}>
+                  <MaterialIcons name={t.icon as any} size={20} color={active ? colors.textLight : colors.textSecondary} />
+                </View>
+                <Text style={[styles.typeLabel, active && { color: t.color, fontWeight: '800' }]} numberOfLines={2}>{t.label}</Text>
+                {active && <MaterialIcons name="check-circle" size={16} color={t.color} style={styles.typeCheck} />}
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Intensity */}
+      <View style={styles.card}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardLabel}>Planned Intensity</Text>
+          <View style={[styles.intensityBadge, { backgroundColor: intensityInfo.color + '20' }]}>
+            <Text style={[styles.intensityBadgeText, { color: intensityInfo.color }]}>{intensity}/10 · {intensityInfo.label}</Text>
+          </View>
+        </View>
+        <View style={styles.intensityTrack}>
+          <View style={[styles.intensityFill, { width: `${intensity * 10}%`, backgroundColor: intensityInfo.color }]} />
+        </View>
+        <View style={styles.intensityBtnRow}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => {
+            const active = intensity === n;
+            const info = INTENSITY_DATA[n];
+            return (
+              <Pressable key={n} onPress={() => setIntensity(n)}
+                style={[styles.intBtn, active && { backgroundColor: info.color, borderColor: info.color }]}>
+                <Text style={[styles.intBtnText, active && { color: colors.textLight }]}>{n}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+
+      {/* Position-specific hint */}
+      <View style={styles.hintCard}>
+        <MaterialIcons name="info-outline" size={18} color={colors.primary} />
+        <Text style={styles.hintText}>
+          {isBatter && 'Track balls faced, runs, and middle percentage live during training.'}
+          {isBowler && !isBatter && 'Track balls bowled, wickets, and economy rate live.'}
+          {isFielder && !isBatter && !isBowler && 'Track catches, run outs, and stumpings in real time.'}
+          {!isBatter && !isBowler && !isFielder && 'Track your key metrics during the session.'}
+        </Text>
+      </View>
+    </ScrollView>
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Step 1 — Live Session
+  // ──────────────────────────────────────────────────────────────────────────
+  const renderLive = () => (
+    <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollContent, { gap: spacing.md }]} showsVerticalScrollIndicator={false}>
+      {/* Timer */}
+      <View style={styles.timerCard}>
+        <Text style={styles.timerLabel}>Session Time</Text>
+        <Text style={styles.timerValue}>{formatTime(elapsed)}</Text>
+        <Text style={styles.timerType}>{sessionType}</Text>
+        <View style={styles.timerBtns}>
+          <Pressable style={[styles.timerBtn, { backgroundColor: paused ? colors.primary : colors.warning }]}
+            onPress={() => setPaused(p => !p)}>
+            <MaterialIcons name={paused ? 'play-arrow' : 'pause'} size={22} color={colors.textLight} />
+            <Text style={styles.timerBtnText}>{paused ? 'Resume' : 'Pause'}</Text>
+          </Pressable>
+        </View>
+        {paused && (
+          <View style={styles.pausedBanner}>
+            <MaterialIcons name="pause-circle-filled" size={16} color={colors.warning} />
+            <Text style={styles.pausedText}>Session paused — timer stopped</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Batting counters */}
+      {isBatter && (
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionDot, { backgroundColor: colors.technical }]} />
+            <Text style={[styles.sectionTitle, { color: colors.technical }]}>Batting</Text>
+          </View>
+          <View style={styles.countersGrid}>
+            <CounterButton icon="sports-cricket" value={ballsFaced} label="BALLS FACED" color={colors.technical}
+              onInc={() => setBallsFaced(v => v + 1)} onDec={() => setBallsFaced(v => Math.max(0, v - 1))} />
+            <CounterButton icon="trending-up" value={runsScored} label="RUNS SCORED" color={colors.success}
+              onInc={() => setRunsScored(v => v + 1)} onDec={() => setRunsScored(v => Math.max(0, v - 1))} />
+          </View>
+          <View style={styles.countersGrid}>
+            <CounterButton icon="gps-fixed" value={ballsMiddled} label="BALLS MIDDLED" color={colors.primary}
+              note={ballsFaced > 0 ? `${middlePct}% middle rate` : undefined}
+              onInc={() => setBallsMiddled(v => Math.min(ballsFaced, v + 1))} onDec={() => setBallsMiddled(v => Math.max(0, v - 1))} />
+          </View>
+          {ballsFaced > 0 && (
+            <View style={styles.derivedRow}>
+              {strikeRate > 0 && (
+                <View style={styles.derivedChip}>
+                  <Text style={styles.derivedLabel}>Strike Rate</Text>
+                  <Text style={[styles.derivedVal, { color: strikeRate > 100 ? colors.success : strikeRate > 60 ? colors.warning : colors.error }]}>{strikeRate}</Text>
+                </View>
+              )}
+              {middlePct > 0 && (
+                <View style={styles.derivedChip}>
+                  <Text style={styles.derivedLabel}>Middle %</Text>
+                  <Text style={[styles.derivedVal, { color: middlePct > 60 ? colors.success : middlePct > 40 ? colors.warning : colors.error }]}>{middlePct}%</Text>
+                </View>
+              )}
+              {runsScored > 0 && ballsFaced > 0 && (
+                <View style={styles.derivedChip}>
+                  <Text style={styles.derivedLabel}>Avg Run/Ball</Text>
+                  <Text style={[styles.derivedVal, { color: colors.primary }]}>{(runsScored / ballsFaced).toFixed(2)}</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Bowling counters */}
+      {isBowler && (
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionDot, { backgroundColor: colors.physical }]} />
+            <Text style={[styles.sectionTitle, { color: colors.physical }]}>Bowling</Text>
+          </View>
+          <View style={styles.countersGrid}>
+            <CounterButton icon="sports-cricket" value={ballsBowled} label="BALLS BOWLED" color={colors.physical}
+              note={`${oversBowled} overs`}
+              onInc={() => setBallsBowled(v => v + 1)} onDec={() => setBallsBowled(v => Math.max(0, v - 1))} />
+            <CounterButton icon="star" value={wickets} label="WICKETS" color={colors.warning}
+              onInc={() => setWickets(v => v + 1)} onDec={() => setWickets(v => Math.max(0, v - 1))} />
+          </View>
+          <View style={styles.countersGrid}>
+            <CounterButton icon="trending-down" value={runsConceded} label="RUNS CONCEDED" color={colors.error}
+              note={ballsBowled > 0 ? `Eco ${economy}` : undefined}
+              onInc={() => setRunsConceded(v => v + 1)} onDec={() => setRunsConceded(v => Math.max(0, v - 1))} />
+          </View>
+          {ballsBowled > 0 && (
+            <View style={styles.derivedRow}>
+              <View style={styles.derivedChip}>
+                <Text style={styles.derivedLabel}>Overs</Text>
+                <Text style={[styles.derivedVal, { color: colors.physical }]}>{oversBowled}</Text>
+              </View>
+              {wickets > 0 && (
+                <View style={styles.derivedChip}>
+                  <Text style={styles.derivedLabel}>Wickets</Text>
+                  <Text style={[styles.derivedVal, { color: colors.warning }]}>{wickets}</Text>
+                </View>
+              )}
+              {runsConceded > 0 && ballsBowled > 0 && (
+                <View style={styles.derivedChip}>
+                  <Text style={styles.derivedLabel}>Economy</Text>
+                  <Text style={[styles.derivedVal, { color: parseFloat(economy) < 6 ? colors.success : parseFloat(economy) < 9 ? colors.warning : colors.error }]}>{economy}</Text>
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Fielding counters */}
+      {(isFielder || isKeeper) && (
+        <View style={styles.sectionBlock}>
+          <View style={styles.sectionHeader}>
+            <View style={[styles.sectionDot, { backgroundColor: colors.tactical }]} />
+            <Text style={[styles.sectionTitle, { color: colors.tactical }]}>Fielding{isKeeper ? ' & Keeping' : ''}</Text>
+          </View>
+          <View style={styles.countersGrid}>
+            <CounterButton icon="sports-handball" value={catches} label="CATCHES" color={colors.tactical}
+              onInc={() => setCatches(v => v + 1)} onDec={() => setCatches(v => Math.max(0, v - 1))} />
+            <CounterButton icon="flash-on" value={runOuts} label="RUN OUTS" color={colors.warning}
+              onInc={() => setRunOuts(v => v + 1)} onDec={() => setRunOuts(v => Math.max(0, v - 1))} />
+          </View>
+          {isKeeper && (
+            <View style={styles.countersGrid}>
+              <CounterButton icon="location-on" value={stumpings} label="STUMPINGS" color={colors.mental}
+                onInc={() => setStumpings(v => v + 1)} onDec={() => setStumpings(v => Math.max(0, v - 1))} />
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Live tip */}
+      <View style={styles.tipCard}>
+        <MaterialIcons name="lightbulb" size={18} color={colors.warning} />
+        <Text style={styles.tipText}>{tipList[tipIdx]}</Text>
+      </View>
+    </ScrollView>
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Step 2 — AI Reflection Questions
+  // ──────────────────────────────────────────────────────────────────────────
+  const renderReflect = () => (
+    <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <View style={styles.stepHero}>
+        <View style={[styles.heroIconCircle, { backgroundColor: colors.primary + '20' }]}>
+          <MaterialIcons name="psychology" size={36} color={colors.primary} />
+        </View>
+        <Text style={styles.heroTitle}>Coaching Reflection</Text>
+        <Text style={styles.heroSub}>AI questions personalised to your session</Text>
+      </View>
+
+      {aiLoading ? (
+        <View style={styles.aiLoadCard}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.aiLoadText}>Generating your coaching questions...</Text>
+        </View>
+      ) : (
+        <>
+          {questions.map((q, idx) => (
+            <View key={idx} style={styles.questionCard}>
+              <View style={styles.qHeaderRow}>
+                <View style={styles.qNumCircle}><Text style={styles.qNum}>{idx + 1}</Text></View>
+                <Text style={styles.qText}>{q.question}</Text>
+              </View>
+              <TextInput
+                style={styles.answerInput}
+                value={q.answer}
+                onChangeText={v => updateAnswer(idx, v)}
+                placeholder="Type your answer here..."
+                placeholderTextColor={colors.textSecondary}
+                multiline
+                numberOfLines={3}
+                textAlignVertical="top"
+              />
+            </View>
+          ))}
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Any other notes?</Text>
+            <TextInput
+              style={styles.notesInput}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Anything else to record..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+        </>
+      )}
+    </ScrollView>
+  );
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Step 3 — Summary + Graphics
+  // ──────────────────────────────────────────────────────────────────────────
+  const renderSummary = () => {
+    const durationMins = Math.max(1, Math.floor(elapsed / 60));
+    const intInfo = INTENSITY_DATA[intensity];
+
+    return (
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={[styles.stepHero, { paddingBottom: spacing.sm }]}>
+          <View style={[styles.heroIconCircle, { backgroundColor: colors.success + '20' }]}>
+            <MaterialIcons name="check-circle" size={40} color={colors.success} />
+          </View>
+          <Text style={styles.heroTitle}>Session Complete!</Text>
+          <Text style={styles.heroSub}>{logDate} · {position}</Text>
+        </View>
+
+        {/* Quick stat row */}
+        <View style={styles.quickStatRow}>
+          <View style={styles.quickStat}>
+            <MaterialIcons name="timer" size={20} color={colors.primary} />
+            <Text style={styles.quickStatVal}>{durationMins}m</Text>
+            <Text style={styles.quickStatLabel}>Duration</Text>
+          </View>
+          <View style={styles.quickStat}>
+            <MaterialIcons name="flash-on" size={20} color={intInfo.color} />
+            <Text style={[styles.quickStatVal, { color: intInfo.color }]}>{intensity}/10</Text>
+            <Text style={styles.quickStatLabel}>Intensity</Text>
+          </View>
+          <View style={styles.quickStat}>
+            <MaterialIcons name="event" size={20} color={colors.textSecondary} />
+            <Text style={styles.quickStatVal}>{sessionType.split(' — ')[0] || sessionType}</Text>
+            <Text style={styles.quickStatLabel}>Type</Text>
+          </View>
+        </View>
+
+        {/* Batting performance card */}
+        {isBatter && ballsFaced > 0 && (
+          <View style={[styles.perfCard, { borderLeftColor: colors.technical }]}>
+            <View style={styles.perfHeader}>
+              <MaterialIcons name="sports-cricket" size={18} color={colors.technical} />
+              <Text style={[styles.perfTitle, { color: colors.technical }]}>Batting Performance</Text>
+            </View>
+
+            {/* Big stats */}
+            <View style={styles.bigStatRow}>
+              <View style={styles.bigStat}>
+                <Text style={[styles.bigStatVal, { color: colors.technical }]}>{ballsFaced}</Text>
+                <Text style={styles.bigStatLabel}>Balls Faced</Text>
+              </View>
+              <View style={styles.bigStat}>
+                <Text style={[styles.bigStatVal, { color: colors.success }]}>{runsScored}</Text>
+                <Text style={styles.bigStatLabel}>Runs Scored</Text>
+              </View>
+              {strikeRate > 0 && (
+                <View style={styles.bigStat}>
+                  <Text style={[styles.bigStatVal, { color: strikeRate > 100 ? colors.success : strikeRate > 60 ? colors.warning : colors.error }]}>{strikeRate}</Text>
+                  <Text style={styles.bigStatLabel}>Strike Rate</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Middle % progress bar */}
+            {ballsMiddled > 0 && (
+              <View style={styles.metricBarRow}>
+                <View style={styles.metricBarLabel}>
+                  <MaterialIcons name="gps-fixed" size={13} color={colors.primary} />
+                  <Text style={styles.metricBarLabelText}>Middle %</Text>
+                </View>
+                <MiniBar value={middlePct} max={100} color={middlePct > 60 ? colors.success : middlePct > 40 ? colors.warning : colors.error} />
+                <Text style={[styles.metricBarVal, { color: middlePct > 60 ? colors.success : middlePct > 40 ? colors.warning : colors.error }]}>{middlePct}%</Text>
+              </View>
+            )}
+
+            {/* Mini bar chart — visual breakdown */}
+            <View style={styles.vizRow}>
+              {ballsFaced > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: '100%', backgroundColor: colors.technical + '80' }]} /><Text style={styles.vizLabel}>Faced</Text><Text style={styles.vizNum}>{ballsFaced}</Text></View>}
+              {runsScored > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: `${Math.min((runsScored / (ballsFaced * 1.5)) * 100, 100)}%`, backgroundColor: colors.success }]} /><Text style={styles.vizLabel}>Runs</Text><Text style={styles.vizNum}>{runsScored}</Text></View>}
+              {ballsMiddled > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: `${middlePct}%`, backgroundColor: colors.primary }]} /><Text style={styles.vizLabel}>Middled</Text><Text style={styles.vizNum}>{ballsMiddled}</Text></View>}
+            </View>
+          </View>
+        )}
+
+        {/* Bowling performance card */}
+        {isBowler && ballsBowled > 0 && (
+          <View style={[styles.perfCard, { borderLeftColor: colors.physical }]}>
+            <View style={styles.perfHeader}>
+              <MaterialIcons name="sports-cricket" size={18} color={colors.physical} />
+              <Text style={[styles.perfTitle, { color: colors.physical }]}>Bowling Performance</Text>
+            </View>
+            <View style={styles.bigStatRow}>
+              <View style={styles.bigStat}>
+                <Text style={[styles.bigStatVal, { color: colors.physical }]}>{oversBowled}</Text>
+                <Text style={styles.bigStatLabel}>Overs</Text>
+              </View>
+              <View style={styles.bigStat}>
+                <Text style={[styles.bigStatVal, { color: colors.warning }]}>{wickets}</Text>
+                <Text style={styles.bigStatLabel}>Wickets</Text>
+              </View>
+              <View style={styles.bigStat}>
+                <Text style={[styles.bigStatVal, { color: parseFloat(economy) < 6 ? colors.success : parseFloat(economy) < 9 ? colors.warning : colors.error }]}>{economy}</Text>
+                <Text style={styles.bigStatLabel}>Economy</Text>
+              </View>
+            </View>
+            {runsConceded > 0 && (
+              <View style={styles.metricBarRow}>
+                <View style={styles.metricBarLabel}>
+                  <MaterialIcons name="trending-down" size={13} color={colors.error} />
+                  <Text style={styles.metricBarLabelText}>Economy</Text>
+                </View>
+                <MiniBar value={Math.min(parseFloat(economy), 12)} max={12} color={parseFloat(economy) < 6 ? colors.success : parseFloat(economy) < 9 ? colors.warning : colors.error} />
+                <Text style={[styles.metricBarVal, { color: parseFloat(economy) < 6 ? colors.success : colors.error }]}>{economy}</Text>
+              </View>
+            )}
+            <View style={styles.vizRow}>
+              {ballsBowled > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: '100%', backgroundColor: colors.physical + '80' }]} /><Text style={styles.vizLabel}>Bowled</Text><Text style={styles.vizNum}>{ballsBowled}</Text></View>}
+              {wickets > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: `${Math.min((wickets / (ballsBowled / 6)) * 30, 100)}%`, backgroundColor: colors.warning }]} /><Text style={styles.vizLabel}>Wkts</Text><Text style={styles.vizNum}>{wickets}</Text></View>}
+              {runsConceded > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: `${Math.min((runsConceded / (ballsBowled * 2)) * 100, 100)}%`, backgroundColor: colors.error + '90' }]} /><Text style={styles.vizLabel}>Runs</Text><Text style={styles.vizNum}>{runsConceded}</Text></View>}
+            </View>
+          </View>
+        )}
+
+        {/* Fielding card */}
+        {(isFielder || isKeeper) && (catches > 0 || runOuts > 0 || stumpings > 0) && (
+          <View style={[styles.perfCard, { borderLeftColor: colors.tactical }]}>
+            <View style={styles.perfHeader}>
+              <MaterialIcons name="sports-handball" size={18} color={colors.tactical} />
+              <Text style={[styles.perfTitle, { color: colors.tactical }]}>Fielding{isKeeper ? ' & Keeping' : ''}</Text>
+            </View>
+            <View style={styles.bigStatRow}>
+              {catches > 0 && <View style={styles.bigStat}><Text style={[styles.bigStatVal, { color: colors.tactical }]}>{catches}</Text><Text style={styles.bigStatLabel}>Catches</Text></View>}
+              {runOuts > 0 && <View style={styles.bigStat}><Text style={[styles.bigStatVal, { color: colors.warning }]}>{runOuts}</Text><Text style={styles.bigStatLabel}>Run Outs</Text></View>}
+              {stumpings > 0 && <View style={styles.bigStat}><Text style={[styles.bigStatVal, { color: colors.mental }]}>{stumpings}</Text><Text style={styles.bigStatLabel}>Stumpings</Text></View>}
+            </View>
+            <View style={styles.vizRow}>
+              {catches > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: '100%', backgroundColor: colors.tactical }]} /><Text style={styles.vizLabel}>Catches</Text><Text style={styles.vizNum}>{catches}</Text></View>}
+              {runOuts > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: `${Math.min((runOuts / Math.max(catches, 1)) * 100, 100)}%`, backgroundColor: colors.warning }]} /><Text style={styles.vizLabel}>Run Outs</Text><Text style={styles.vizNum}>{runOuts}</Text></View>}
+              {stumpings > 0 && <View style={styles.vizBar}><View style={[styles.vizFill, { height: `${Math.min((stumpings / Math.max(catches, 1)) * 100, 100)}%`, backgroundColor: colors.mental }]} /><Text style={styles.vizLabel}>Stumpings</Text><Text style={styles.vizNum}>{stumpings}</Text></View>}
+            </View>
+          </View>
+        )}
+
+        {/* Intensity visual */}
+        <View style={styles.card}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.cardLabel}>Session Intensity</Text>
+            <View style={[styles.intensityBadge, { backgroundColor: intInfo.color + '20' }]}>
+              <Text style={[styles.intensityBadgeText, { color: intInfo.color }]}>{intensity}/10 · {intInfo.label}</Text>
+            </View>
+          </View>
+          <View style={styles.intensityTrack}>
+            <View style={[styles.intensityFill, { width: `${intensity * 10}%`, backgroundColor: intInfo.color }]} />
+          </View>
+          <View style={styles.intensityScale}>
+            <Text style={styles.intensityScaleLabel}>Light</Text>
+            <Text style={styles.intensityScaleLabel}>Moderate</Text>
+            <Text style={styles.intensityScaleLabel}>Maximum</Text>
+          </View>
+        </View>
+
+        {/* Reflection preview */}
+        {questions.filter(q => q.answer.trim()).length > 0 && (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Coach's Reflection</Text>
+            {questions.filter(q => q.answer.trim()).map((q, i) => (
+              <View key={i} style={styles.reflectRow}>
+                <Text style={styles.reflectQ} numberOfLines={2}>{q.question}</Text>
+                <Text style={styles.reflectA}>{q.answer}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
+
+  // ─── Navigation ────────────────────────────────────────────────────────────
+  const goNext = () => {
+    if (step === 0) {
+      if (!sessionType) { showAlert('Required', 'Please select a session type'); return; }
+      setStep(1);
+      startSession();
+    } else if (step === 1) {
+      endSession();
+    } else if (step === 2) {
+      setStep(3);
+    } else {
+      handleSave();
+    }
+  };
+
+  const goBack = () => {
+    if (step === 0) { router.back(); return; }
+    if (step === 1) { showAlert('Leave Session?', 'Your session data will be lost.', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Leave', style: 'destructive', onPress: () => { setRunning(false); router.back(); } },
+    ]); return; }
+    setStep(s => s - 1);
+  };
+
+  const STEP_TITLES = ['Session Setup', 'Live Training', 'Coach Reflection', 'Summary'];
+  const CTAs = ['Start Session', 'End Session', 'Review Summary', saving ? 'Saving...' : 'Save Training Log'];
+
+  const footerColor = step === 1
+    ? paused ? colors.warning : colors.error
+    : step === 3 ? colors.success : colors.primary;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
-        <Pressable onPress={goBack} style={styles.backBtn} hitSlop={8}>
-          <MaterialIcons name={step === 0 ? 'close' : 'arrow-back'} size={24} color={colors.text} />
+        <Pressable onPress={goBack} style={styles.headerBtn} hitSlop={8}>
+          <MaterialIcons name={step === 0 ? 'close' : step === 1 ? 'stop' : 'arrow-back'} size={24} color={step === 1 ? colors.error : colors.text} />
         </Pressable>
         <View style={{ flex: 1, alignItems: 'center' }}>
-          <Text style={styles.headerTitle}>
-            {step === 0 ? 'Session Setup' : step === 1 ? 'Your Stats' : step === 2 ? 'Reflection' : 'Summary'}
-          </Text>
-          <StepIndicator current={step} total={TOTAL_STEPS} />
+          <Text style={styles.headerTitle}>{STEP_TITLES[step]}</Text>
+          <Text style={styles.headerSub}>Step {step + 1} of {TOTAL_STEPS}</Text>
         </View>
-        <View style={{ width: 40 }} />
+        {step === 1 ? (
+          <View style={styles.headerLiveChip}>
+            <View style={[styles.liveDot, { backgroundColor: paused ? colors.warning : colors.error }]} />
+            <Text style={[styles.liveText, { color: paused ? colors.warning : colors.error }]}>{paused ? 'PAUSED' : 'LIVE'}</Text>
+          </View>
+        ) : <View style={{ width: 60 }} />}
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
-          style={styles.scroll}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* ── STEP 0: Session Setup ─────────────────────────────────────── */}
-          {step === 0 && (
-            <>
-              <View style={styles.stepHeader}>
-                <Text style={styles.stepTitle}>What did you train today?</Text>
-                <Text style={styles.stepSubtitle}>Set up the basics of your session</Text>
-              </View>
+      <ProgressBar step={step} total={TOTAL_STEPS} />
 
-              {/* Date */}
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Session Date</Text>
-                <TextInput
-                  style={styles.dateInput}
-                  value={logDate}
-                  onChangeText={setLogDate}
-                  placeholder="YYYY-MM-DD"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
+      {step === 0 && renderSetup()}
+      {step === 1 && renderLive()}
+      {step === 2 && renderReflect()}
+      {step === 3 && renderSummary()}
 
-              {/* Session Type */}
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Session Type</Text>
-                <View style={styles.chipGrid}>
-                  {SESSION_TYPES.map(t => (
-                    <Pressable
-                      key={t}
-                      style={[styles.chip, sessionType === t && styles.chipActive]}
-                      onPress={() => setSessionType(t)}
-                    >
-                      <Text style={[styles.chipText, sessionType === t && styles.chipTextActive]}>{t}</Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-
-              {/* Duration */}
-              <View style={styles.card}>
-                <Text style={styles.cardLabel}>Duration (minutes)</Text>
-                <View style={styles.durationRow}>
-                  {['30', '45', '60', '90', '120'].map(d => (
-                    <Pressable
-                      key={d}
-                      style={[styles.durationBtn, duration === d && styles.durationBtnActive]}
-                      onPress={() => setDuration(d)}
-                    >
-                      <Text style={[styles.durationBtnText, duration === d && { color: colors.textLight }]}>{d}</Text>
-                    </Pressable>
-                  ))}
-                  <TextInput
-                    style={[styles.durationCustom, !['30', '45', '60', '90', '120'].includes(duration) && styles.durationCustomActive]}
-                    value={['30', '45', '60', '90', '120'].includes(duration) ? '' : duration}
-                    onChangeText={setDuration}
-                    placeholder="Other"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="number-pad"
-                    maxLength={3}
-                  />
-                </View>
-              </View>
-
-              {/* Intensity */}
-              <View style={styles.card}>
-                <View style={styles.intensityHeader}>
-                  <Text style={styles.cardLabel}>Training Intensity</Text>
-                  <View style={[styles.intensityBadge, { backgroundColor: intensityInfo.color + '20' }]}>
-                    <Text style={[styles.intensityBadgeText, { color: intensityInfo.color }]}>
-                      {intensity}/10 · {intensityInfo.label}
-                    </Text>
-                  </View>
-                </View>
-                <View style={[styles.intensityTrack, { backgroundColor: intensityInfo.color + '20' }]}>
-                  <View style={[styles.intensityFill, { width: `${intensity * 10}%`, backgroundColor: intensityInfo.color }]} />
-                </View>
-                <View style={styles.intensityBtns}>
-                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => {
-                    const active = intensity === n;
-                    return (
-                      <Pressable
-                        key={n}
-                        style={[styles.intensityBtn, active && { backgroundColor: INTENSITY_LABELS[n].color }]}
-                        onPress={() => setIntensity(n)}
-                      >
-                        <Text style={[styles.intensityBtnText, active && { color: colors.textLight }]}>{n}</Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-              </View>
-            </>
-          )}
-
-          {/* ── STEP 1: Position-specific Stats ──────────────────────────── */}
-          {step === 1 && (
-            <>
-              <View style={styles.stepHeader}>
-                <Text style={styles.stepTitle}>How did the numbers look?</Text>
-                <Text style={styles.stepSubtitle}>
-                  Log your {position} stats from today's {sessionType}
-                </Text>
-              </View>
-
-              {/* Batting */}
-              {isBatter && (
-                <View style={styles.card}>
-                  <View style={styles.sectionHeaderRow}>
-                    <View style={[styles.pillIcon, { backgroundColor: colors.technical + '25' }]}>
-                      <MaterialIcons name="sports-cricket" size={16} color={colors.technical} />
-                    </View>
-                    <Text style={[styles.sectionTitle, { color: colors.technical }]}>Batting</Text>
-                  </View>
-                  <View style={styles.statsRow}>
-                    <StatInput label="Balls Faced" value={stats.ballsFaced} onChange={v => setStats(p => ({ ...p, ballsFaced: v }))} icon="sports-cricket" iconColor={colors.technical} />
-                    <StatInput label="Runs Scored" value={stats.runsScored} onChange={v => setStats(p => ({ ...p, runsScored: v }))} icon="trending-up" iconColor={colors.success} />
-                  </View>
-                  {stats.ballsFaced && stats.runsScored && parseInt(stats.ballsFaced) > 0 ? (
-                    <View style={styles.calcBadge}>
-                      <MaterialIcons name="calculate" size={14} color={colors.technical} />
-                      <Text style={[styles.calcText, { color: colors.technical }]}>
-                        Strike Rate: {Math.round((parseInt(stats.runsScored) / parseInt(stats.ballsFaced)) * 100)}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              )}
-
-              {/* Bowling */}
-              {isBowler && (
-                <View style={styles.card}>
-                  <View style={styles.sectionHeaderRow}>
-                    <View style={[styles.pillIcon, { backgroundColor: colors.physical + '25' }]}>
-                      <MaterialIcons name="sports-cricket" size={16} color={colors.physical} />
-                    </View>
-                    <Text style={[styles.sectionTitle, { color: colors.physical }]}>Bowling</Text>
-                  </View>
-                  <View style={styles.statsRow}>
-                    <StatInput label="Balls Bowled" value={stats.ballsBowled} onChange={v => setStats(p => ({ ...p, ballsBowled: v }))} icon="sports-cricket" iconColor={colors.physical} />
-                    <StatInput label="Wickets" value={stats.wickets} onChange={v => setStats(p => ({ ...p, wickets: v }))} icon="star" iconColor={colors.warning} />
-                    <StatInput label="Runs Given" value={stats.runsConceded} onChange={v => setStats(p => ({ ...p, runsConceded: v }))} icon="trending-down" iconColor={colors.error} />
-                  </View>
-                  {stats.ballsBowled && parseInt(stats.ballsBowled) > 0 ? (
-                    <View style={styles.calcBadge}>
-                      <MaterialIcons name="calculate" size={14} color={colors.physical} />
-                      <Text style={[styles.calcText, { color: colors.physical }]}>
-                        {Math.floor(parseInt(stats.ballsBowled) / 6)}.{parseInt(stats.ballsBowled) % 6} overs
-                        {stats.wickets ? ` · ${stats.wickets} wkt` : ''}
-                        {stats.runsConceded && parseInt(stats.ballsBowled) > 0
-                          ? ` · Eco ${(parseInt(stats.runsConceded) / (parseInt(stats.ballsBowled) / 6)).toFixed(1)}`
-                          : ''}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
-              )}
-
-              {/* Fielding / Keeping */}
-              {(isFielder || isKeeper) && (
-                <View style={styles.card}>
-                  <View style={styles.sectionHeaderRow}>
-                    <View style={[styles.pillIcon, { backgroundColor: colors.tactical + '25' }]}>
-                      <MaterialIcons name="sports-handball" size={16} color={colors.tactical} />
-                    </View>
-                    <Text style={[styles.sectionTitle, { color: colors.tactical }]}>Fielding {isKeeper ? '& Keeping' : ''}</Text>
-                  </View>
-                  <View style={styles.statsRow}>
-                    <StatInput label="Catches" value={stats.catches} onChange={v => setStats(p => ({ ...p, catches: v }))} icon="sports-handball" iconColor={colors.tactical} />
-                    <StatInput label="Run Outs" value={stats.runOuts} onChange={v => setStats(p => ({ ...p, runOuts: v }))} icon="flash-on" iconColor={colors.warning} />
-                    {isKeeper && (
-                      <StatInput label="Stumpings" value={stats.stumpings} onChange={v => setStats(p => ({ ...p, stumpings: v }))} icon="location-on" iconColor={colors.mental} />
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {/* Session summary recap */}
-              <View style={styles.recapCard}>
-                <MaterialIcons name="event" size={16} color={colors.textSecondary} />
-                <Text style={styles.recapText}>{sessionType} · {duration}min · Intensity {intensity}/10</Text>
-              </View>
-            </>
-          )}
-
-          {/* ── STEP 2: AI Coaching Questions ─────────────────────────────── */}
-          {step === 2 && (
-            <>
-              <View style={styles.stepHeader}>
-                <View style={styles.aiHeaderIcon}>
-                  <MaterialIcons name="psychology" size={28} color={colors.primary} />
-                </View>
-                <Text style={styles.stepTitle}>Coach's Reflection</Text>
-                <Text style={styles.stepSubtitle}>
-                  AI-generated questions based on your {position} session. Answer as much or little as you like.
-                </Text>
-              </View>
-
-              {aiLoading ? (
-                <View style={styles.aiLoadingCard}>
-                  <ActivityIndicator size="large" color={colors.primary} />
-                  <Text style={styles.aiLoadingText}>Generating coaching questions...</Text>
-                  <Text style={styles.aiLoadingSubtext}>Analysing your {position} stats</Text>
-                </View>
-              ) : (
-                <>
-                  {questions.map((q, idx) => (
-                    <View key={idx} style={styles.questionCard}>
-                      <View style={styles.questionHeader}>
-                        <View style={styles.questionNumCircle}>
-                          <Text style={styles.questionNum}>{idx + 1}</Text>
-                        </View>
-                        <Text style={styles.questionText}>{q.question}</Text>
-                      </View>
-                      <TextInput
-                        style={styles.answerInput}
-                        value={q.answer}
-                        onChangeText={v => updateAnswer(idx, v)}
-                        placeholder="Type your answer here..."
-                        placeholderTextColor={colors.textSecondary}
-                        multiline
-                        numberOfLines={3}
-                        textAlignVertical="top"
-                      />
-                    </View>
-                  ))}
-
-                  {/* Extra notes */}
-                  <View style={styles.card}>
-                    <Text style={styles.cardLabel}>Additional Notes (Optional)</Text>
-                    <TextInput
-                      style={styles.notesInput}
-                      value={notes}
-                      onChangeText={setNotes}
-                      placeholder="Anything else you want to record about today's session..."
-                      placeholderTextColor={colors.textSecondary}
-                      multiline
-                      numberOfLines={3}
-                      textAlignVertical="top"
-                    />
-                  </View>
-                </>
-              )}
-            </>
-          )}
-
-          {/* ── STEP 3: Summary ───────────────────────────────────────────── */}
-          {step === 3 && (
-            <>
-              <View style={styles.stepHeader}>
-                <View style={[styles.summaryIcon, { backgroundColor: colors.success + '20' }]}>
-                  <MaterialIcons name="check-circle" size={40} color={colors.success} />
-                </View>
-                <Text style={styles.stepTitle}>Session Summary</Text>
-                <Text style={styles.stepSubtitle}>Review your training log before saving</Text>
-              </View>
-
-              {/* Session info */}
-              <View style={styles.summaryCard}>
-                <Text style={styles.summarySectionTitle}>Session Info</Text>
-                <SummaryRow icon="event" label="Date" value={logDate} />
-                <SummaryRow icon="sports" label="Type" value={sessionType} />
-                <SummaryRow icon="timer" label="Duration" value={`${duration} minutes`} />
-                <SummaryRow icon="flash-on" label="Intensity" value={`${intensity}/10 — ${intensityInfo.label}`} valueColor={intensityInfo.color} />
-              </View>
-
-              {/* Stats */}
-              {(isBatter && (stats.ballsFaced || stats.runsScored)) ? (
-                <View style={[styles.summaryCard, { borderLeftColor: colors.technical }]}>
-                  <Text style={[styles.summarySectionTitle, { color: colors.technical }]}>Batting Stats</Text>
-                  {stats.ballsFaced ? <SummaryRow icon="sports-cricket" label="Balls Faced" value={stats.ballsFaced} /> : null}
-                  {stats.runsScored ? <SummaryRow icon="trending-up" label="Runs Scored" value={stats.runsScored} /> : null}
-                  {stats.ballsFaced && stats.runsScored && parseInt(stats.ballsFaced) > 0 ? (
-                    <SummaryRow icon="calculate" label="Strike Rate" value={String(Math.round((parseInt(stats.runsScored) / parseInt(stats.ballsFaced)) * 100))} />
-                  ) : null}
-                </View>
-              ) : null}
-
-              {(isBowler && (stats.ballsBowled || stats.wickets)) ? (
-                <View style={[styles.summaryCard, { borderLeftColor: colors.physical }]}>
-                  <Text style={[styles.summarySectionTitle, { color: colors.physical }]}>Bowling Stats</Text>
-                  {stats.ballsBowled ? <SummaryRow icon="sports-cricket" label="Overs" value={`${Math.floor(parseInt(stats.ballsBowled) / 6)}.${parseInt(stats.ballsBowled) % 6}`} /> : null}
-                  {stats.wickets ? <SummaryRow icon="star" label="Wickets" value={stats.wickets} /> : null}
-                  {stats.runsConceded ? <SummaryRow icon="trending-down" label="Runs Conceded" value={stats.runsConceded} /> : null}
-                </View>
-              ) : null}
-
-              {(isFielder && (stats.catches || stats.runOuts || stats.stumpings)) ? (
-                <View style={[styles.summaryCard, { borderLeftColor: colors.tactical }]}>
-                  <Text style={[styles.summarySectionTitle, { color: colors.tactical }]}>Fielding Stats</Text>
-                  {stats.catches ? <SummaryRow icon="sports-handball" label="Catches" value={stats.catches} /> : null}
-                  {stats.runOuts ? <SummaryRow icon="flash-on" label="Run Outs" value={stats.runOuts} /> : null}
-                  {stats.stumpings ? <SummaryRow icon="location-on" label="Stumpings" value={stats.stumpings} /> : null}
-                </View>
-              ) : null}
-
-              {/* Answered questions */}
-              {questions.filter(q => q.answer.trim()).length > 0 ? (
-                <View style={styles.summaryCard}>
-                  <Text style={styles.summarySectionTitle}>Coach's Reflection</Text>
-                  {questions.filter(q => q.answer.trim()).map((q, i) => (
-                    <View key={i} style={styles.answerPreview}>
-                      <Text style={styles.answerPreviewQ} numberOfLines={2}>{q.question}</Text>
-                      <Text style={styles.answerPreviewA} numberOfLines={3}>{q.answer}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-            </>
-          )}
-        </ScrollView>
-      </KeyboardAvoidingView>
-
-      {/* Footer CTA */}
+      {/* Footer */}
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + spacing.sm, spacing.md) }]}>
+        {step === 2 && !aiLoading && (
+          <Pressable style={styles.skipBtn} onPress={() => setStep(3)}>
+            <Text style={styles.skipText}>Skip reflection</Text>
+          </Pressable>
+        )}
         <Pressable
-          style={[styles.nextBtn, (saving || (step === 2 && aiLoading)) && styles.nextBtnDisabled]}
+          style={[styles.ctaBtn, { backgroundColor: footerColor }, saving && styles.ctaDisabled]}
           onPress={goNext}
         >
           {saving ? (
             <ActivityIndicator color={colors.textLight} />
           ) : (
             <>
-              <Text style={styles.nextBtnText}>
-                {step === 0 ? 'Continue to Stats →'
-                  : step === 1 ? 'Continue to Reflection →'
-                  : step === 2 ? 'Review & Save →'
-                  : 'Save Training Log'}
-              </Text>
-              {step === 3 && <MaterialIcons name="check-circle" size={20} color={colors.textLight} />}
+              <MaterialIcons
+                name={step === 0 ? 'play-arrow' : step === 1 ? 'stop' : step === 2 ? 'navigate-next' : 'check-circle'}
+                size={22}
+                color={colors.textLight}
+              />
+              <Text style={styles.ctaBtnText}>{CTAs[step]}</Text>
             </>
           )}
         </Pressable>
-        {step > 0 && (
-          <Pressable style={styles.skipBtn} onPress={() => step === 2 ? setStep(3) : goNext()}>
-            {step === 2 && !aiLoading ? <Text style={styles.skipText}>Skip reflection</Text> : null}
-          </Pressable>
-        )}
       </View>
     </SafeAreaView>
   );
 }
 
-function SummaryRow({ icon, label, value, valueColor }: { icon: string; label: string; value: string; valueColor?: string }) {
-  return (
-    <View style={summaryRowStyles.row}>
-      <MaterialIcons name={icon as any} size={15} color={colors.textSecondary} style={{ marginTop: 1 }} />
-      <Text style={summaryRowStyles.label}>{label}</Text>
-      <Text style={[summaryRowStyles.value, valueColor ? { color: valueColor, fontWeight: '700' } : {}]} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-const summaryRowStyles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.border + '50' },
-  label: { flex: 1, fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
-  value: { fontSize: 13, color: colors.text, fontWeight: '600', maxWidth: '55%', textAlign: 'right' },
-});
-
 function getFallbackQuestions(position: string): string[] {
-  if (position === 'Bowler') {
-    return [
-      'How was your line and length control today?',
-      'Did you vary your pace and trajectory effectively?',
-      'How did you handle batters who were playing you well?',
-      'How was your physical stamina and run-up consistency?',
-    ];
-  }
-  if (position === 'Fielder') {
-    return [
-      'How sharp was your concentration during drills?',
-      'Were you proactive in your ground coverage and positioning?',
-      'How confident were you in your throwing and catching?',
-      'How did you handle any errors mentally during the session?',
-    ];
-  }
-  if (position === 'Wicket-Keeper') {
-    return [
-      'How consistent was your footwork behind the stumps?',
-      'Did you read the bowlers well and anticipate deliveries?',
-      'How confident were you in your catching and stumping attempts?',
-      'How did you communicate with the fielders around you?',
-    ];
-  }
+  if (position === 'Bowler') return [
+    'How consistent was your line and length today?', 'Did you vary your pace and trajectory effectively?',
+    'How did you respond when batters played you well?', 'How was your physical stamina during the session?',
+  ];
+  if (position === 'Fielder') return [
+    'How sharp was your concentration throughout?', 'Were you proactive in your positioning and movement?',
+    'How confident were you in your throwing and catching?', 'How did you mentally handle any errors?',
+  ];
+  if (position === 'Wicket-Keeper') return [
+    'How consistent was your footwork behind the stumps?', 'Did you read the bowlers well and anticipate deliveries?',
+    'How confident were you in your catching and stumping attempts?', 'How was your communication with fielders?',
+  ];
   return [
-    'How well did you judge which balls to attack vs defend?',
-    'Describe your footwork and balance at the crease today.',
-    'How did you handle any difficult deliveries or pressure moments?',
-    'What specific technical aspect did you focus on improving?',
+    'How well did you judge which balls to attack vs defend?', 'Describe your footwork and balance at the crease today.',
+    'How did you handle difficult deliveries or pressure moments?', 'What specific technical aspect did you focus on improving?',
   ];
 }
 
@@ -670,94 +835,122 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.md,
-    paddingTop: spacing.sm, paddingBottom: 4,
-    backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingVertical: spacing.md, backgroundColor: colors.surface,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
   },
-  backBtn: { width: 40, height: 40, justifyContent: 'center' },
-  headerTitle: { ...typography.body, color: colors.text, fontWeight: '700', textAlign: 'center' },
+  headerBtn: { width: 40, height: 40, justifyContent: 'center' },
+  headerTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
+  headerSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  headerLiveChip: { flexDirection: 'row', alignItems: 'center', gap: 5, width: 60, justifyContent: 'flex-end' },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  liveText: { fontSize: 11, fontWeight: '800' },
+
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 100 },
 
-  stepHeader: { alignItems: 'center', marginBottom: spacing.lg, gap: spacing.xs },
-  stepTitle: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center' },
-  stepSubtitle: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
-  aiHeaderIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
-  summaryIcon: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center' },
+  stepHero: { alignItems: 'center', paddingVertical: spacing.lg, gap: spacing.xs },
+  heroIconCircle: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xs },
+  heroTitle: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center' },
+  heroSub: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
 
   card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },
   cardLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '700', marginBottom: spacing.sm },
 
-  dateInput: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1.5,
-    borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.md,
-    ...typography.body, color: colors.text,
+  sessionTypeGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  typeCard: {
+    width: '47%', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm,
+    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center', gap: 6, position: 'relative',
+    minHeight: 88,
   },
+  typeIconWrap: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  typeLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', textAlign: 'center' },
+  typeCheck: { position: 'absolute', top: 6, right: 6 },
 
-  chipGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs },
-  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
-  chipTextActive: { color: colors.textLight },
-
-  durationRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: spacing.sm },
-  durationBtn: { width: 52, height: 44, borderRadius: borderRadius.md, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
-  durationBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  durationBtnText: { fontSize: 14, fontWeight: '700', color: colors.text },
-  durationCustom: {
-    flex: 1, minWidth: 60, height: 44, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border,
-    backgroundColor: colors.background, paddingHorizontal: spacing.sm, textAlign: 'center', ...typography.body, color: colors.text,
-  },
-  durationCustomActive: { borderColor: colors.primary, backgroundColor: colors.primary + '15' },
-
-  intensityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  intensityBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: borderRadius.full },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  intensityBadge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full },
   intensityBadgeText: { fontSize: 12, fontWeight: '800' },
-  intensityTrack: { height: 10, borderRadius: 5, overflow: 'hidden', marginBottom: spacing.sm },
-  intensityFill: { height: '100%', borderRadius: 5 },
-  intensityBtns: { flexDirection: 'row', justifyContent: 'space-between' },
-  intensityBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border, justifyContent: 'center', alignItems: 'center' },
-  intensityBtnText: { fontSize: 11, fontWeight: '700', color: colors.text },
+  intensityTrack: { height: 12, backgroundColor: colors.border, borderRadius: 6, overflow: 'hidden', marginBottom: spacing.sm },
+  intensityFill: { height: '100%', borderRadius: 6, minWidth: 12 },
+  intensityBtnRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  intBtn: { width: 29, height: 29, borderRadius: 14, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background },
+  intBtnText: { fontSize: 11, fontWeight: '800', color: colors.text },
+  intensityScale: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 2 },
+  intensityScaleLabel: { fontSize: 9, color: colors.textSecondary },
 
-  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
-  pillIcon: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center' },
+  hintCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '30', marginBottom: spacing.md },
+  hintText: { flex: 1, ...typography.bodySmall, color: colors.primary, lineHeight: 18 },
+
+  // Live session
+  timerCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl,
+    alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 12, elevation: 6,
+  },
+  timerLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  timerValue: { fontSize: 64, fontWeight: '900', color: colors.text, letterSpacing: -2, lineHeight: 72 },
+  timerType: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 2 },
+  timerBtns: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  timerBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs, paddingVertical: spacing.sm + 2, borderRadius: borderRadius.md },
+  timerBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700' },
+  pausedBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm, backgroundColor: colors.warning + '15', borderRadius: borderRadius.sm, paddingHorizontal: spacing.md, paddingVertical: 6 },
+  pausedText: { fontSize: 12, color: colors.warning, fontWeight: '600' },
+
+  sectionBlock: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  sectionDot: { width: 10, height: 10, borderRadius: 5 },
   sectionTitle: { ...typography.body, fontWeight: '800' },
-  statsRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.sm },
-  calcBadge: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.background, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: 5, alignSelf: 'flex-start' },
-  calcText: { fontSize: 12, fontWeight: '700' },
+  countersGrid: { flexDirection: 'row', gap: spacing.sm },
+  derivedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, paddingTop: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border + '50' },
+  derivedChip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: colors.background, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: 5 },
+  derivedLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  derivedVal: { fontSize: 13, fontWeight: '900' },
 
-  recapCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, marginTop: spacing.sm },
-  recapText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
+  tipCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: '#FFF4E6', borderRadius: borderRadius.md, padding: spacing.md, borderLeftWidth: 4, borderLeftColor: colors.warning },
+  tipText: { flex: 1, ...typography.bodySmall, color: colors.text, lineHeight: 20 },
 
-  aiLoadingCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xxl, alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border },
-  aiLoadingText: { ...typography.body, color: colors.text, fontWeight: '700' },
-  aiLoadingSubtext: { ...typography.caption, color: colors.textSecondary },
+  // Reflect step
+  aiLoadCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: 40, alignItems: 'center', gap: spacing.md, borderWidth: 1, borderColor: colors.border },
+  aiLoadText: { ...typography.body, color: colors.text, fontWeight: '600' },
+  questionCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, borderLeftColor: colors.primary },
+  qHeaderRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm },
+  qNumCircle: { width: 26, height: 26, borderRadius: 13, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
+  qNum: { fontSize: 12, fontWeight: '800', color: colors.textLight },
+  qText: { flex: 1, ...typography.body, color: colors.text, fontWeight: '600', lineHeight: 22 },
+  answerInput: { backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border, padding: spacing.md, ...typography.bodySmall, color: colors.text, minHeight: 80, lineHeight: 20 },
+  notesInput: { backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border, padding: spacing.md, ...typography.bodySmall, color: colors.text, minHeight: 72, lineHeight: 20 },
 
-  questionCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 3, borderLeftColor: colors.primary },
-  questionHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm },
-  questionNumCircle: { width: 24, height: 24, borderRadius: 12, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center', flexShrink: 0, marginTop: 1 },
-  questionNum: { fontSize: 12, fontWeight: '800', color: colors.textLight },
-  questionText: { flex: 1, ...typography.body, color: colors.text, fontWeight: '600', lineHeight: 22 },
-  answerInput: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1.5,
-    borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    ...typography.bodySmall, color: colors.text, minHeight: 80, lineHeight: 20,
-  },
-  notesInput: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1.5,
-    borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
-    ...typography.bodySmall, color: colors.text, minHeight: 72, lineHeight: 20,
-  },
+  // Summary step
+  quickStatRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.xs },
+  quickStat: { flex: 1, alignItems: 'center', gap: 3 },
+  quickStatVal: { ...typography.h4, color: colors.text, fontWeight: '900' },
+  quickStatLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
+  perfCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4 },
+  perfHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
+  perfTitle: { ...typography.body, fontWeight: '800' },
+  bigStatRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: spacing.md },
+  bigStat: { alignItems: 'center', gap: 3 },
+  bigStatVal: { fontSize: 36, fontWeight: '900', letterSpacing: -1 },
+  bigStatLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '500', textAlign: 'center' },
 
-  summaryCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, borderLeftWidth: 4, borderLeftColor: colors.primary },
-  summarySectionTitle: { ...typography.bodySmall, color: colors.text, fontWeight: '800', marginBottom: spacing.sm },
-  answerPreview: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border + '50' },
-  answerPreviewQ: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', marginBottom: 3, fontStyle: 'italic' },
-  answerPreviewA: { fontSize: 13, color: colors.text, lineHeight: 18 },
+  metricBarRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  metricBarLabel: { flexDirection: 'row', alignItems: 'center', gap: 3, width: 80 },
+  metricBarLabelText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  metricBarVal: { fontSize: 12, fontWeight: '800', width: 36, textAlign: 'right' },
+
+  vizRow: { flexDirection: 'row', height: 100, gap: spacing.sm, alignItems: 'flex-end', marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border + '40' },
+  vizBar: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', gap: 3, height: '100%' },
+  vizFill: { width: '70%', borderRadius: 4, minHeight: 6 },
+  vizLabel: { fontSize: 9, color: colors.textSecondary, textAlign: 'center' },
+  vizNum: { fontSize: 11, fontWeight: '800', color: colors.text },
+
+  reflectRow: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border + '50' },
+  reflectQ: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', fontWeight: '600', marginBottom: 3 },
+  reflectA: { fontSize: 13, color: colors.text, lineHeight: 18 },
 
   footer: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.md, gap: spacing.xs },
-  nextBtn: { backgroundColor: colors.primary, paddingVertical: spacing.md + 2, borderRadius: borderRadius.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
-  nextBtnDisabled: { opacity: 0.6 },
-  nextBtnText: { ...typography.body, color: colors.textLight, fontWeight: '800', fontSize: 16 },
-  skipBtn: { alignItems: 'center', paddingVertical: spacing.xs },
+  ctaBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md + 2, borderRadius: borderRadius.md },
+  ctaDisabled: { opacity: 0.6 },
+  ctaBtnText: { ...typography.body, color: colors.textLight, fontWeight: '800', fontSize: 17 },
+  skipBtn: { alignItems: 'center', paddingVertical: 4 },
   skipText: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
 });
