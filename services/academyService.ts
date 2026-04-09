@@ -386,6 +386,14 @@ export const academyService = {
     return { error: error?.message || null };
   },
 
+  // ─── App-wide Stats ───────────────────────────────────────────────────────────
+  async getAppStats(): Promise<{ data: { total_users: number; individual_users: number; academy_users: number; no_mode: number; total_academies: number; active_players: number; inactive_players: number; active_coaches: number; total_training_logs: number; total_sessions_planned: number } | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase.rpc('get_app_stats');
+    if (error) return { data: null, error: error.message };
+    return { data: data as any, error: null };
+  },
+
   // ─── AI Analytics ─────────────────────────────────────────────────────────────
   async getAIAnalytics(logs: AcademyTrainingLog[], memberName: string, position: string): Promise<{ data: string | null; error: string | null }> {
     const supabase = getSupabaseClient();
