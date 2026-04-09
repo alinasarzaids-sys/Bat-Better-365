@@ -30,6 +30,7 @@ interface ClosingQuestion {
   text: string;
   type: 'stars' | 'number';
   suffix?: string;
+  hint?: string;  // e.g. scale description shown below the question
 }
 
 const SESSION_CONFIGS: SessionConfig[] = [
@@ -42,11 +43,10 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Label: 'Successful Shots',
     counter2Sub: 'Clean, well-timed contact',
     closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
+      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'technique', text: 'How clean and correct was your technique?', type: 'stars' },
       { id: 'focus', text: 'How focused were you throughout?', type: 'stars' },
-      { id: 'confidence', text: 'How confident did you feel at the crease?', type: 'stars' },
-      { id: 'runs', text: 'How many runs did you score?', type: 'number', suffix: 'runs' },
+      { id: 'confidence', text: 'How confident did you feel?', type: 'stars' },
     ],
   },
   {
@@ -58,7 +58,7 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Label: 'Good Balls',
     counter2Sub: 'On target / wicket-taking deliveries',
     closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
+      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'consistency', text: 'How consistent was your line and length?', type: 'stars' },
       { id: 'rhythm', text: 'How was your run-up rhythm and action?', type: 'stars' },
       { id: 'wickets', text: 'How many wickets / breakthroughs did you get?', type: 'number', suffix: 'wickets' },
@@ -74,7 +74,7 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Label: 'Clean Takes',
     counter2Sub: 'Catches / stops / throws completed',
     closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
+      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'concentration', text: 'How sharp was your concentration?', type: 'stars' },
       { id: 'agility', text: 'How was your agility and movement?', type: 'stars' },
       { id: 'runouts', text: 'How many run-outs were you involved in?', type: 'number', suffix: 'run-outs' },
@@ -90,7 +90,7 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Label: 'Dismissals',
     counter2Sub: 'Catches + stumpings completed',
     closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
+      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'footwork', text: 'How was your footwork behind the stumps?', type: 'stars' },
       { id: 'communication', text: 'How was your communication with the bowlers?', type: 'stars' },
       { id: 'stumpings', text: 'How many stumping opportunities were there?', type: 'number', suffix: 'chances' },
@@ -106,7 +106,7 @@ const SESSION_CONFIGS: SessionConfig[] = [
     counter2Label: 'Reps Done',
     counter2Sub: 'Total repetitions completed',
     closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars' },
+      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'energy', text: 'How was your energy throughout?', type: 'stars' },
       { id: 'effort', text: 'Rate your effort and intensity today', type: 'stars' },
       { id: 'recovery', text: 'How was your recovery between sets?', type: 'stars' },
@@ -543,6 +543,9 @@ export default function AcademyLogScreen() {
             {c.closingQuestions.map((q, i) => (
               <View key={q.id} style={[styles.questionRow, i < c.closingQuestions.length - 1 && styles.questionRowBorder]}>
                 <Text style={styles.questionText}>{q.text}</Text>
+                {q.hint ? (
+                  <Text style={styles.questionHint}>{q.hint}</Text>
+                ) : null}
                 {q.type === 'stars' ? (
                   <View style={{ marginTop: spacing.sm }}>
                     <StarRow
@@ -873,6 +876,7 @@ const styles = StyleSheet.create({
   questionRow: { paddingBottom: spacing.md, gap: spacing.sm },
   questionRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border + '60', marginBottom: spacing.sm },
   questionText: { fontSize: 14, color: colors.text, fontWeight: '600', lineHeight: 20 },
+  questionHint: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 2, lineHeight: 15 },
   starValueLabel: { fontSize: 12, fontWeight: '800', marginTop: 4 },
   numberInputRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   numberInput: { width: 80, borderWidth: 2, borderRadius: borderRadius.md, paddingVertical: spacing.sm, fontSize: 22, fontWeight: '800', color: colors.text, backgroundColor: colors.background, textAlign: 'center' },
