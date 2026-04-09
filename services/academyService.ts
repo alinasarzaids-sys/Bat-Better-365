@@ -107,7 +107,7 @@ export const academyService = {
     return { data, error: null };
   },
 
-  async joinAcademy(code: string, userId: string, displayName: string, position: string, jerseyNumber: string): Promise<{ data: { academy: Academy; role: 'player' | 'coach' } | null; error: string | null }> {
+  async joinAcademy(code: string, userId: string, displayName: string, position: string, jerseyNumber: string, deviceId?: string): Promise<{ data: { academy: Academy; role: 'player' | 'coach' } | null; error: string | null }> {
     const supabase = getSupabaseClient();
     const upperCode = code.trim().toUpperCase();
 
@@ -140,6 +140,19 @@ export const academyService = {
 
     if (existing) return { data: null, error: 'You are already a member of this academy.' };
 
+    // Device-lock: check if this device_id is already used by another member in this academy
+    if (deviceId) {
+      const { data: deviceCheck } = await supabase
+        .from('academy_members')
+        .select('id, user_id')
+        .eq('academy_id', academy.id)
+        .eq('device_id', deviceId)
+        .maybeSingle();
+      if (deviceCheck && deviceCheck.user_id !== userId) {
+        return { data: null, error: 'This device is already registered to another member. Each device can only be used by one player.' };
+      }
+    }
+
     const { error: joinError } = await supabase.from('academy_members').insert({
       academy_id: academy.id,
       user_id: userId,
@@ -147,6 +160,7 @@ export const academyService = {
       position,
       display_name: displayName,
       jersey_number: jerseyNumber,
+      ...(deviceId ? { device_id: deviceId } : {}),
     });
 
     if (joinError) return { data: null, error: joinError.message };
@@ -232,6 +246,44 @@ export const academyService = {
 
     if (error) return { data: null, error: error.message };
     return { data: data as any[], error: null };
+  },
+
+  // ─── Audit & Licensing ───────────────────────────────────────────────────────
+  async getMonthlyAuditData(): Promise<{ data: { academies: number; players: number; coaches: number; totalMembers: number; perAcademy: Array<{ id: string; name: string; players: number; coaches: number }> } | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data: academies, error: aErr } = await supabase
+      .from('academies')
+      .select('id, name');
+    if (aErr) return { data: null, error: aErr.message };
+
+    const { data: members, error: mErr } = await supabase
+      .from('academy_members')
+      .select('academy_id, role');
+    if (mErr) return { data: null, error: mErr.message };
+
+    const perAcademy = (academies || []).map((a: any) => {
+      const am = (members || []).filter((m: any) => m.academy_id === a.id);
+      return {
+        id: a.id,
+        name: a.name,
+        players: am.filter((m: any) => m.role === 'player').length,
+        coaches: am.filter((m: any) => m.role === 'coach').length,
+      };
+    });
+
+    const totalPlayers = (members || []).filter((m: any) => m.role === 'player').length;
+    const totalCoaches = (members || []).filter((m: any) => m.role === 'coach').length;
+
+    return {
+      data: {
+        academies: (academies || []).length,
+        players: totalPlayers,
+        coaches: totalCoaches,
+        totalMembers: totalPlayers + totalCoaches,
+        perAcademy,
+      },
+      error: null,
+    };
   },
 
   async deleteLog(logId: string): Promise<{ error: string | null }> {

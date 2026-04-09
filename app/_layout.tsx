@@ -176,6 +176,14 @@ export default function RootLayout() {
               }} 
             />
             <Stack.Screen 
+              name="academy-audit" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
+            <Stack.Screen 
               name="mode-selection" 
               options={{ 
                 headerShown: false,

@@ -10,6 +10,21 @@ import { useAuth, useAlert } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { academyService } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
+import * as Application from 'expo-application';
+
+async function getDeviceId(): Promise<string> {
+  try {
+    if (Platform.OS === 'android') {
+      return Application.androidId || 'unknown-android';
+    } else if (Platform.OS === 'ios') {
+      const id = await Application.getIosIdForVendorAsync();
+      return id || 'unknown-ios';
+    }
+    return 'unknown-platform';
+  } catch {
+    return 'unknown-device';
+  }
+}
 
 type Step = 'choose' | 'academy-code';
 
@@ -53,12 +68,14 @@ export default function ModeSelectionScreen() {
     if (!displayName.trim()) { showAlert('Error', 'Please enter your name'); return; }
 
     setLoading(true);
+    const deviceId = await getDeviceId();
     const { data, error } = await academyService.joinAcademy(
       joinCode.trim(),
       user.id,
       displayName.trim(),
       position,
       jerseyNumber.trim(),
+      deviceId,
     );
     if (error) {
       setLoading(false);

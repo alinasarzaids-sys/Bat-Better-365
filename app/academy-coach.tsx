@@ -154,10 +154,13 @@ export default function AcademyCoachScreen() {
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Coach Dashboard</Text>
-        <View style={{ width: 40 }} />
+        <Pressable
+          style={styles.auditBtn}
+          onPress={() => router.push('/academy-audit' as any)}
+        >
+          <MaterialIcons name="assessment" size={20} color={colors.primary} />
+        </Pressable>
       </View>
-
-      {/* Sub tabs */}
       <View style={styles.tabBar}>
         {(['squad', 'analytics'] as const).map(tab => (
           <Pressable key={tab} style={[styles.tab, activeTab === tab && styles.tabActive]} onPress={() => setActiveTab(tab)}>
@@ -507,6 +510,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
   headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  auditBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
   tabBar: { flexDirection: 'row', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   tabActive: { borderBottomColor: colors.primary },
