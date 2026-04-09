@@ -536,7 +536,7 @@ export default function AcademyScheduleScreen() {
 
   const resetForm = () => {
     setNewTitle(''); setNewDate(todayStr()); setNewTime(now12());
-    setNewLocation(''); setNewType('Training'); setNewNotes('');
+    setNewLocation(''); setNewNotes('');
     setPlanBlocks([]); setObjectives(['', '']);
   };
 
