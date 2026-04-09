@@ -181,12 +181,7 @@ export default function AcademyCoachScreen() {
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Coach Dashboard</Text>
-        <Pressable
-          style={styles.auditBtn}
-          onPress={() => router.push('/academy-audit' as any)}
-        >
-          <MaterialIcons name="assessment" size={20} color={colors.primary} />
-        </Pressable>
+        <View style={{ width: 40 }} />
       </View>
 
       <View style={styles.tabBar}>
@@ -213,9 +208,7 @@ export default function AcademyCoachScreen() {
                 <Text style={{ fontWeight: '800' }}>{activePlayers.length} Active</Text> players billed
                 {inactivePlayers.length > 0 ? ` · ${inactivePlayers.length} deactivated (not billed)` : ''}
               </Text>
-              <Pressable onPress={() => router.push('/academy-audit' as any)}>
-                <Text style={styles.billingLink}>View Audit →</Text>
-              </Pressable>
+              <View />
             </View>
 
             {/* Quick stats */}
