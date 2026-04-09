@@ -101,6 +101,28 @@ const TYPE_COLORS: Record<string, string> = {
   Fielding: colors.tactical, Batting: colors.technical, Bowling: colors.physical,
 };
 
+// ─── Shared picker sheet styles ──────────────────────────────────────────────
+const tp = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 340, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 16 },
+  pickerLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', marginBottom: spacing.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
+  display: { fontSize: 32, fontWeight: '900', color: colors.primary, textAlign: 'center', marginBottom: spacing.lg, letterSpacing: 1 },
+  columns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', gap: 6, marginBottom: spacing.lg },
+  col: { alignItems: 'center', minWidth: 56 },
+  colLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
+  colValue: { fontSize: 38, fontWeight: '900', color: colors.text, lineHeight: 46, textAlign: 'center' },
+  arrowBtn: { padding: 4 },
+  colon: { fontSize: 32, fontWeight: '900', color: colors.textSecondary, paddingBottom: 8 },
+  ampmCol: { alignItems: 'center', gap: 4, marginLeft: 4 },
+  ampmBtn: { paddingHorizontal: 10, paddingVertical: 8, borderRadius: borderRadius.md, minWidth: 48, alignItems: 'center', borderWidth: 1.5 },
+  ampmText: { fontSize: 14, fontWeight: '800' },
+  btnRow: { flexDirection: 'row', gap: spacing.sm },
+  cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border },
+  cancelText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+  confirmBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.primary },
+  confirmText: { fontSize: 15, fontWeight: '700', color: colors.textLight },
+});
+
 // ─── Time Picker Component ───────────────────────────────────────────────────
 function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   visible: boolean;
@@ -113,11 +135,10 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
     const [h, m] = (t || '00:00').split(':').map(Number);
     return { h: isNaN(h) ? 0 : h, m: isNaN(m) ? 0 : m };
   };
-  const { h: initH, m: initM } = parseTime(value);
-  const [hour, setHour] = useState(initH);
-  const [minute, setMinute] = useState(initM);
 
-  // Sync when value prop changes
+  const [hour, setHour] = useState(0);
+  const [minute, setMinute] = useState(0);
+
   React.useEffect(() => {
     if (visible) {
       const { h, m } = parseTime(value);
@@ -126,23 +147,19 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
     }
   }, [visible, value]);
 
-  const fmtH = (h: number) => {
-    const period = h >= 12 ? 'PM' : 'AM';
-    const h12 = h % 12 || 12;
-    return { h12, period };
-  };
-  const { h12, period } = fmtH(hour);
-  const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${period}`;
+  const isPM = hour >= 12;
+  const h12 = hour % 12 || 12;
+  const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
 
   const incHour = () => setHour(h => (h + 1) % 24);
   const decHour = () => setHour(h => (h - 1 + 24) % 24);
   const incMin = () => setMinute(m => (m + 5) % 60);
   const decMin = () => setMinute(m => (m - 5 + 60) % 60);
+  const setAM = () => { if (hour >= 12) setHour(h => h - 12); };
+  const setPM = () => { if (hour < 12) setHour(h => h + 12); };
 
   const handleConfirm = () => {
-    const hh = String(hour).padStart(2, '0');
-    const mm = String(minute).padStart(2, '0');
-    onConfirm(`${hh}:${mm}`);
+    onConfirm(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
     onClose();
   };
 
@@ -150,7 +167,7 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={tp.overlay} onPress={onClose}>
         <Pressable style={tp.card} onPress={e => e.stopPropagation()}>
-          {label ? <Text style={tp.label}>{label}</Text> : null}
+          {label ? <Text style={tp.pickerLabel}>{label}</Text> : null}
           <Text style={tp.display}>{formatted}</Text>
           <View style={tp.columns}>
             {/* Hour */}
@@ -176,17 +193,25 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
             </View>
-            {/* AM/PM */}
-            <View style={tp.col}>
+            {/* AM / PM — two separate buttons */}
+            <View style={tp.ampmCol}>
               <Text style={tp.colLabel}>&nbsp;</Text>
-              <View style={{ height: 32 }} />
               <Pressable
-                style={[tp.ampmBtn, { backgroundColor: colors.primary }]}
-                onPress={() => setHour(h => h >= 12 ? h - 12 : h + 12)}
+                style={[tp.ampmBtn, !isPM
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: 'transparent', borderColor: colors.border }]}
+                onPress={setAM}
               >
-                <Text style={tp.ampmText}>{period}</Text>
+                <Text style={[tp.ampmText, { color: !isPM ? colors.textLight : colors.textSecondary }]}>AM</Text>
               </Pressable>
-              <View style={{ height: 32 }} />
+              <Pressable
+                style={[tp.ampmBtn, isPM
+                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                  : { backgroundColor: 'transparent', borderColor: colors.border }]}
+                onPress={setPM}
+              >
+                <Text style={[tp.ampmText, { color: isPM ? colors.textLight : colors.textSecondary }]}>PM</Text>
+              </Pressable>
             </View>
           </View>
           <View style={tp.btnRow}>
@@ -204,25 +229,139 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   );
 }
 
-const tp = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
-  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 320, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 16 },
-  label: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', marginBottom: spacing.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
-  display: { fontSize: 36, fontWeight: '900', color: colors.primary, textAlign: 'center', marginBottom: spacing.lg, letterSpacing: 1 },
-  columns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg },
-  col: { alignItems: 'center', minWidth: 64 },
-  colLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.xs },
-  colValue: { fontSize: 40, fontWeight: '900', color: colors.text, lineHeight: 48 },
-  arrowBtn: { padding: 4 },
-  colon: { fontSize: 36, fontWeight: '900', color: colors.textSecondary, marginTop: 20 },
-  ampmBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md },
-  ampmText: { fontSize: 16, fontWeight: '800', color: colors.textLight },
-  btnRow: { flexDirection: 'row', gap: spacing.sm },
-  cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border },
-  cancelText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
-  confirmBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.primary },
-  confirmText: { fontSize: 15, fontWeight: '700', color: colors.textLight },
-});
+// ─── Date Picker Component ────────────────────────────────────────────────────
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
+  visible: boolean;
+  value: string; // 'YYYY-MM-DD'
+  onConfirm: (v: string) => void;
+  onClose: () => void;
+  label?: string;
+}) {
+  const parseDate = (s: string) => {
+    const parts = (s || '').split('-').map(Number);
+    const y = parts[0] || new Date().getFullYear();
+    const mo = parts[1] || new Date().getMonth() + 1;
+    const d = parts[2] || new Date().getDate();
+    return { y, mo, d };
+  };
+
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [month, setMonth] = useState(new Date().getMonth() + 1);
+  const [day, setDay] = useState(new Date().getDate());
+
+  React.useEffect(() => {
+    if (visible) {
+      const { y, mo, d } = parseDate(value);
+      setYear(y); setMonth(mo); setDay(d);
+    }
+  }, [visible, value]);
+
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const clampedDay = Math.min(day, daysInMonth);
+
+  const incDay = () => setDay(d => d >= daysInMonth ? 1 : d + 1);
+  const decDay = () => setDay(d => d <= 1 ? daysInMonth : d - 1);
+  const incMonth = () => { const nm = month >= 12 ? 1 : month + 1; setMonth(nm); };
+  const decMonth = () => { const pm = month <= 1 ? 12 : month - 1; setMonth(pm); };
+  const incYear = () => setYear(y => y + 1);
+  const decYear = () => setYear(y => Math.max(2020, y - 1));
+
+  const formatted = `${String(clampedDay).padStart(2,'0')} ${MONTHS[month-1]} ${year}`;
+
+  const handleConfirm = () => {
+    const mm = String(month).padStart(2,'0');
+    const dd = String(clampedDay).padStart(2,'0');
+    onConfirm(`${year}-${mm}-${dd}`);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={tp.overlay} onPress={onClose}>
+        <Pressable style={tp.card} onPress={e => e.stopPropagation()}>
+          {label ? <Text style={tp.pickerLabel}>{label}</Text> : null}
+          <Text style={tp.display}>{formatted}</Text>
+          <View style={tp.columns}>
+            {/* Day */}
+            <View style={tp.col}>
+              <Text style={tp.colLabel}>Day</Text>
+              <Pressable style={tp.arrowBtn} onPress={incDay} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
+              </Pressable>
+              <Text style={tp.colValue}>{String(clampedDay).padStart(2,'0')}</Text>
+              <Pressable style={tp.arrowBtn} onPress={decDay} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
+              </Pressable>
+            </View>
+            {/* Month */}
+            <View style={[tp.col, { minWidth: 52 }]}>
+              <Text style={tp.colLabel}>Month</Text>
+              <Pressable style={tp.arrowBtn} onPress={incMonth} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
+              </Pressable>
+              <Text style={[tp.colValue, { fontSize: 26 }]}>{MONTHS[month-1]}</Text>
+              <Pressable style={tp.arrowBtn} onPress={decMonth} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
+              </Pressable>
+            </View>
+            {/* Year */}
+            <View style={[tp.col, { minWidth: 64 }]}>
+              <Text style={tp.colLabel}>Year</Text>
+              <Pressable style={tp.arrowBtn} onPress={incYear} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
+              </Pressable>
+              <Text style={[tp.colValue, { fontSize: 26 }]}>{year}</Text>
+              <Pressable style={tp.arrowBtn} onPress={decYear} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
+              </Pressable>
+            </View>
+          </View>
+          <View style={tp.btnRow}>
+            <Pressable style={tp.cancelBtn} onPress={onClose}>
+              <Text style={tp.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={tp.confirmBtn} onPress={handleConfirm}>
+              <MaterialIcons name="check" size={18} color={colors.textLight} />
+              <Text style={tp.confirmText}>Set Date</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+// ─── DateField — tappable display that opens the date picker ─────────────────
+function DateField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
+  const [open, setOpen] = useState(false);
+  const display = (() => {
+    try {
+      const [y, m, d] = value.split('-').map(Number);
+      return new Date(y, m-1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return value; }
+  })();
+  return (
+    <>
+      {label ? <Text style={modal.label}>{label}</Text> : null}
+      <Pressable
+        style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+        onPress={() => setOpen(true)}
+      >
+        <MaterialIcons name="calendar-today" size={16} color={colors.primary} />
+        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{display}</Text>
+      </Pressable>
+      <DatePickerModal
+        visible={open}
+        value={value}
+        onConfirm={onChange}
+        onClose={() => setOpen(false)}
+        label={label}
+      />
+    </>
+  );
+}
 
 // ─── TimeField — tappable display that opens the picker ───────────────────────
 function TimeField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
@@ -657,22 +796,16 @@ export default function AcademyScheduleScreen() {
                   <Text style={modal.label}>Session Title *</Text>
                   <TextInput style={modal.input} value={newTitle} onChangeText={setNewTitle} placeholder="e.g. Tuesday Nets" placeholderTextColor={colors.textSecondary} />
 
-                  <View style={modal.row}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={modal.label}>Date</Text>
-                      <TextInput style={modal.input} value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={modal.label}>Session Time</Text>
-                      <Pressable
-                        style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-                        onPress={() => setShowTimePicker(true)}
-                      >
-                        <MaterialIcons name="access-time" size={16} color={colors.primary} />
-                        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(newTime)}</Text>
-                      </Pressable>
-                    </View>
-                  </View>
+                  <DateField label="Date" value={newDate} onChange={setNewDate} />
+
+                  <Text style={modal.label}>Session Time</Text>
+                  <Pressable
+                    style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                    onPress={() => setShowTimePicker(true)}
+                  >
+                    <MaterialIcons name="access-time" size={16} color={colors.primary} />
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(newTime)}</Text>
+                  </Pressable>
                   <TimePickerModal
                     visible={showTimePicker}
                     value={newTime}
