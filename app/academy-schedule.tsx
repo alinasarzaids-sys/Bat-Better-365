@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator,
-  Modal, TextInput, RefreshControl, KeyboardAvoidingView, Platform,
+  Modal, TextInput, RefreshControl, KeyboardAvoidingView, Platform, TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -94,12 +94,159 @@ function buildNotes(coachNotes: string, objectives: string[], planBlocks: PlanBl
 
 // ─── Activity Pill Options ────────────────────────────────────────────────────
 const ACTIVITIES = ['Batting', 'Bowling', 'Fielding', 'Keeping', 'Fitness', 'Warm-up', 'Cool-down', 'Team Talk', 'Match Sim'];
-const SESSION_TYPES = ['Training', 'Match', 'Fitness', 'Fielding', 'Batting', 'Bowling'];
+const SESSION_TYPES = ['Training'];
 
 const TYPE_COLORS: Record<string, string> = {
   Training: colors.primary, Match: colors.error, Fitness: colors.physical,
   Fielding: colors.tactical, Batting: colors.technical, Bowling: colors.physical,
 };
+
+// ─── Time Picker Component ───────────────────────────────────────────────────
+function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
+  visible: boolean;
+  value: string;
+  onConfirm: (v: string) => void;
+  onClose: () => void;
+  label?: string;
+}) {
+  const parseTime = (t: string) => {
+    const [h, m] = (t || '00:00').split(':').map(Number);
+    return { h: isNaN(h) ? 0 : h, m: isNaN(m) ? 0 : m };
+  };
+  const { h: initH, m: initM } = parseTime(value);
+  const [hour, setHour] = useState(initH);
+  const [minute, setMinute] = useState(initM);
+
+  // Sync when value prop changes
+  React.useEffect(() => {
+    if (visible) {
+      const { h, m } = parseTime(value);
+      setHour(h);
+      setMinute(m);
+    }
+  }, [visible, value]);
+
+  const fmtH = (h: number) => {
+    const period = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return { h12, period };
+  };
+  const { h12, period } = fmtH(hour);
+  const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${period}`;
+
+  const incHour = () => setHour(h => (h + 1) % 24);
+  const decHour = () => setHour(h => (h - 1 + 24) % 24);
+  const incMin = () => setMinute(m => (m + 5) % 60);
+  const decMin = () => setMinute(m => (m - 5 + 60) % 60);
+
+  const handleConfirm = () => {
+    const hh = String(hour).padStart(2, '0');
+    const mm = String(minute).padStart(2, '0');
+    onConfirm(`${hh}:${mm}`);
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={tp.overlay} onPress={onClose}>
+        <Pressable style={tp.card} onPress={e => e.stopPropagation()}>
+          {label ? <Text style={tp.label}>{label}</Text> : null}
+          <Text style={tp.display}>{formatted}</Text>
+          <View style={tp.columns}>
+            {/* Hour */}
+            <View style={tp.col}>
+              <Text style={tp.colLabel}>Hour</Text>
+              <Pressable style={tp.arrowBtn} onPress={incHour} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
+              </Pressable>
+              <Text style={tp.colValue}>{String(h12).padStart(2, '0')}</Text>
+              <Pressable style={tp.arrowBtn} onPress={decHour} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
+              </Pressable>
+            </View>
+            <Text style={tp.colon}>:</Text>
+            {/* Minute */}
+            <View style={tp.col}>
+              <Text style={tp.colLabel}>Min</Text>
+              <Pressable style={tp.arrowBtn} onPress={incMin} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
+              </Pressable>
+              <Text style={tp.colValue}>{String(minute).padStart(2, '0')}</Text>
+              <Pressable style={tp.arrowBtn} onPress={decMin} hitSlop={8}>
+                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
+              </Pressable>
+            </View>
+            {/* AM/PM */}
+            <View style={tp.col}>
+              <Text style={tp.colLabel}>&nbsp;</Text>
+              <View style={{ height: 32 }} />
+              <Pressable
+                style={[tp.ampmBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setHour(h => h >= 12 ? h - 12 : h + 12)}
+              >
+                <Text style={tp.ampmText}>{period}</Text>
+              </Pressable>
+              <View style={{ height: 32 }} />
+            </View>
+          </View>
+          <View style={tp.btnRow}>
+            <Pressable style={tp.cancelBtn} onPress={onClose}>
+              <Text style={tp.cancelText}>Cancel</Text>
+            </Pressable>
+            <Pressable style={tp.confirmBtn} onPress={handleConfirm}>
+              <MaterialIcons name="check" size={18} color={colors.textLight} />
+              <Text style={tp.confirmText}>Set Time</Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+  );
+}
+
+const tp = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 320, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 16 },
+  label: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', marginBottom: spacing.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
+  display: { fontSize: 36, fontWeight: '900', color: colors.primary, textAlign: 'center', marginBottom: spacing.lg, letterSpacing: 1 },
+  columns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.lg },
+  col: { alignItems: 'center', minWidth: 64 },
+  colLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.xs },
+  colValue: { fontSize: 40, fontWeight: '900', color: colors.text, lineHeight: 48 },
+  arrowBtn: { padding: 4 },
+  colon: { fontSize: 36, fontWeight: '900', color: colors.textSecondary, marginTop: 20 },
+  ampmBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: borderRadius.md },
+  ampmText: { fontSize: 16, fontWeight: '800', color: colors.textLight },
+  btnRow: { flexDirection: 'row', gap: spacing.sm },
+  cancelBtn: { flex: 1, alignItems: 'center', paddingVertical: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border },
+  cancelText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+  confirmBtn: { flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.primary },
+  confirmText: { fontSize: 15, fontWeight: '700', color: colors.textLight },
+});
+
+// ─── TimeField — tappable display that opens the picker ───────────────────────
+function TimeField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      {label ? <Text style={pb.timeLabel}>{label}</Text> : null}
+      <Pressable
+        style={[pb.timeInput, { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' }]}
+        onPress={() => setOpen(true)}
+      >
+        <MaterialIcons name="access-time" size={14} color={colors.primary} />
+        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(value)}</Text>
+      </Pressable>
+      <TimePickerModal
+        visible={open}
+        value={value}
+        onConfirm={onChange}
+        onClose={() => setOpen(false)}
+        label={label}
+      />
+    </>
+  );
+}
 
 // ─── Plan Block Builder ───────────────────────────────────────────────────────
 function PlanBlockEditor({ blocks, onChange, sessionColor }: {
@@ -132,13 +279,6 @@ function PlanBlockEditor({ blocks, onChange, sessionColor }: {
 
   const remove = (id: string) => onChange(blocks.filter(b => b.id !== id));
 
-  // Auto-fill time field with current time if empty
-  const handleTimeFocus = (id: string, field: 'startTime' | 'endTime', current: string) => {
-    if (!current || current === '00:00') {
-      updateField(id, field, now12());
-    }
-  };
-
   return (
     <View style={pb.wrapper}>
       {blocks.map((block, idx) => (
@@ -150,29 +290,21 @@ function PlanBlockEditor({ blocks, onChange, sessionColor }: {
             </Pressable>
           </View>
 
-          {/* Time row */}
+          {/* Time row — tappable time picker */}
           <View style={pb.timeRow}>
             <View style={pb.timeField}>
-              <Text style={pb.timeLabel}>Start</Text>
-              <TextInput
-                style={pb.timeInput}
+              <TimeField
+                label="Start"
                 value={block.startTime}
-                onChangeText={v => updateField(block.id, 'startTime', v)}
-                onFocus={() => handleTimeFocus(block.id, 'startTime', block.startTime)}
-                placeholder={now12()}
-                placeholderTextColor={colors.textSecondary}
+                onChange={v => updateField(block.id, 'startTime', v)}
               />
             </View>
             <MaterialIcons name="arrow-forward" size={16} color={colors.textSecondary} style={{ marginTop: 20 }} />
             <View style={pb.timeField}>
-              <Text style={pb.timeLabel}>End</Text>
-              <TextInput
-                style={pb.timeInput}
+              <TimeField
+                label="End"
                 value={block.endTime}
-                onChangeText={v => updateField(block.id, 'endTime', v)}
-                onFocus={() => handleTimeFocus(block.id, 'endTime', block.endTime)}
-                placeholder={now12()}
-                placeholderTextColor={colors.textSecondary}
+                onChange={v => updateField(block.id, 'endTime', v)}
               />
             </View>
           </View>
@@ -381,11 +513,12 @@ export default function AcademyScheduleScreen() {
   const [newDate, setNewDate] = useState(todayStr());
   const [newTime, setNewTime] = useState(now12());
   const [newLocation, setNewLocation] = useState('');
-  const [newType, setNewType] = useState('Training');
+  const [newType] = useState('Training'); // Fixed to Training only
   const [newNotes, setNewNotes] = useState('');
   const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
   const [objectives, setObjectives] = useState<string[]>(['', '']);
   const [creating, setCreating] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   const load = useCallback(async () => {
     const { data } = await academyService.getAcademySessions(academyId);
@@ -511,8 +644,8 @@ export default function AcademyScheduleScreen() {
               </Pressable>
             </View>
 
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-              <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+              <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
 
                 {/* ── Session Details ── */}
                 <View style={modal.sectionBlock}>
@@ -530,21 +663,30 @@ export default function AcademyScheduleScreen() {
                       <TextInput style={modal.input} value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.textSecondary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={modal.label}>Time (auto-filled)</Text>
-                      <TextInput style={modal.input} value={newTime} onChangeText={setNewTime} placeholder={now12()} placeholderTextColor={colors.textSecondary} />
+                      <Text style={modal.label}>Session Time</Text>
+                      <Pressable
+                        style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                        onPress={() => setShowTimePicker(true)}
+                      >
+                        <MaterialIcons name="access-time" size={16} color={colors.primary} />
+                        <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(newTime)}</Text>
+                      </Pressable>
                     </View>
                   </View>
+                  <TimePickerModal
+                    visible={showTimePicker}
+                    value={newTime}
+                    onConfirm={setNewTime}
+                    onClose={() => setShowTimePicker(false)}
+                    label="Session Start Time"
+                  />
 
                   <Text style={modal.label}>Location (Optional)</Text>
                   <TextInput style={modal.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Main Oval" placeholderTextColor={colors.textSecondary} />
 
                   <Text style={modal.label}>Session Type</Text>
-                  <View style={modal.chipRow}>
-                    {SESSION_TYPES.map(t => (
-                      <Pressable key={t} style={[modal.chip, newType === t && { backgroundColor: TYPE_COLORS[t] || colors.primary, borderColor: TYPE_COLORS[t] || colors.primary }]} onPress={() => setNewType(t)}>
-                        <Text style={[modal.chipText, newType === t && modal.chipTextActive]}>{t}</Text>
-                      </Pressable>
-                    ))}
+                  <View style={[modal.chip, { backgroundColor: colors.primary, borderColor: colors.primary, alignSelf: 'flex-start' }]}>
+                    <Text style={modal.chipTextActive}>Training</Text>
                   </View>
                 </View>
 
@@ -601,7 +743,7 @@ export default function AcademyScheduleScreen() {
                   />
                 </View>
 
-                <Pressable style={[modal.submitBtn, { backgroundColor: sessionColor }, creating && { opacity: 0.6 }]} onPress={handleCreate}>
+                <Pressable style={[modal.submitBtn, { backgroundColor: sessionColor, marginTop: spacing.md, marginBottom: spacing.xl }, creating && { opacity: 0.6 }]} onPress={handleCreate}>
                   {creating ? <ActivityIndicator color={colors.textLight} /> : (
                     <>
                       <MaterialIcons name="event" size={18} color={colors.textLight} />
@@ -621,12 +763,12 @@ export default function AcademyScheduleScreen() {
 // ─── Modal Styles ─────────────────────────────────────────────────────────────
 const modal = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%', flex: 0 },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%', flex: 1 },
   handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
   headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
   closeBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  content: { padding: spacing.md, paddingBottom: 40, gap: spacing.sm },
+  content: { padding: spacing.md, paddingBottom: 80, gap: spacing.sm },
   sectionBlock: { backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md, gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.xs },
   sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.text },

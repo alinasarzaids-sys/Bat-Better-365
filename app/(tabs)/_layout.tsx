@@ -192,13 +192,7 @@ export default function TabLayout() {
         />
         <Tabs.Screen
           name="calendar"
-          options={{
-            title: 'Calendar',
-            tabBarIcon: ({ color, size, focused }) => (
-              <MaterialIcons name="calendar-today" size={size} color={focused ? '#3B82F6' : color} />
-            ),
-            tabBarActiveTintColor: '#3B82F6',
-          }}
+          options={{ href: null }}
         />
         <Tabs.Screen
           name="journal"
