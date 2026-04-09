@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  TextInput, Modal, ActivityIndicator, RefreshControl,
+  TextInput, Modal, ActivityIndicator, RefreshControl, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -400,7 +400,16 @@ export default function AcademyScreen() {
               </Pressable>
             </View>
 
-            <View style={styles.shareReminderCard}>
+            <Pressable
+              style={styles.shareReminderCard}
+              onPress={() => Share.share({
+                message: `Join ${currentMembership!.academy.name} on Bat Better 365!\n\n` +
+                  `🏏 Players Code: ${currentMembership!.academy.player_code}\n` +
+                  `🎓 Coaches Code: ${currentMembership!.academy.coach_code}\n\n` +
+                  `Download Bat Better 365 and enter your code under Academy Portal → Join.`,
+                title: `Join ${currentMembership!.academy.name}`,
+              })}
+            >
               <MaterialIcons name="share" size={20} color={colors.primary} />
               <View style={{ flex: 1 }}>
                 <Text style={styles.shareReminderTitle}>Share Join Codes with Your Squad</Text>
@@ -409,7 +418,8 @@ export default function AcademyScreen() {
                   {'   '}Coaches: <Text style={styles.codeHighlight}>{currentMembership!.academy.coach_code}</Text>
                 </Text>
               </View>
-            </View>
+              <MaterialIcons name="chevron-right" size={18} color={colors.primary} />
+            </Pressable>
           </>
         )}
       </ScrollView>

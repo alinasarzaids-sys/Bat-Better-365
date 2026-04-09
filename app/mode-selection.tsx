@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { academyService } from '@/services/academyService';
@@ -33,8 +33,11 @@ export default function ModeSelectionScreen() {
   const { user } = useAuth();
   const { showAlert } = useAlert();
 
-  const [step, setStep] = useState<Step>('choose');
-  const [joinCode, setJoinCode] = useState('');
+  const routeParams = useLocalSearchParams();
+  const prefillCode = (routeParams.prefillCode as string) || '';
+
+  const [step, setStep] = useState<Step>(prefillCode ? 'academy-code' : 'choose');
+  const [joinCode, setJoinCode] = useState(prefillCode);
   const [displayName, setDisplayName] = useState('');
   const [position, setPosition] = useState('Batsman');
   const [jerseyNumber, setJerseyNumber] = useState('');
