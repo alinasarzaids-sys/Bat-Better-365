@@ -153,9 +153,9 @@ export default function AcademyAuditScreen() {
         <View style={styles.lockCard}>
           <MaterialIcons name="phonelink-lock" size={20} color={colors.primary} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.lockTitle}>Device-Locked Registrations</Text>
+            <Text style={styles.lockTitle}>Device-Locked · Active-Only Billing</Text>
             <Text style={styles.lockSub}>
-              Each player is locked to their device. Sharing a code with a friend on a different phone is automatically blocked — ensuring 1 Code = 1 Player accuracy.
+              Each player is device-locked (1 device = 1 player). Only <Text style={{ fontWeight: '800', color: colors.primary }}>Active</Text> players count toward revenue. Coaches deactivate players who have left the academy, removing them from next month's billing instantly.
             </Text>
           </View>
         </View>

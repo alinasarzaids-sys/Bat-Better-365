@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, RefreshControl, Modal, TextInput,
+  ActivityIndicator, RefreshControl, Modal,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
@@ -72,6 +72,8 @@ export default function AcademyCoachScreen() {
   const [showPlayerModal, setShowPlayerModal] = useState(false);
   const [aiReport, setAiReport] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [showInactive, setShowInactive] = useState(false);
 
   const load = useCallback(async () => {
     const [membersRes, logsRes] = await Promise.all([
@@ -89,6 +91,29 @@ export default function AcademyCoachScreen() {
     setRefreshing(true);
     await load();
     setRefreshing(false);
+  };
+
+  const handleToggleActive = async (member: AcademyMember) => {
+    const action = member.is_active !== false ? 'Deactivate' : 'Reactivate';
+    const name = member.display_name || 'this player';
+    const msg = member.is_active !== false
+      ? `Deactivating ${name} removes them from your active roster and they will not be billed next month. They can still log in but cannot log new sessions.`
+      : `Reactivating ${name} adds them back to your active roster and they will be billed again next month.`;
+    showAlert(`${action} Player?`, msg, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: action,
+        style: member.is_active !== false ? 'destructive' : 'default',
+        onPress: async () => {
+          setTogglingId(member.id);
+          const { error } = await academyService.setPlayerActive(member.id, member.is_active === false);
+          setTogglingId(null);
+          if (error) { showAlert('Error', error); return; }
+          await load();
+          showAlert(`${action}d`, `${name} has been ${action.toLowerCase()}d.`);
+        },
+      },
+    ]);
   };
 
   const handleViewPlayer = async (member: AcademyMember) => {
@@ -109,10 +134,12 @@ export default function AcademyCoachScreen() {
     setAiReport(data || '');
   };
 
-  const players = members.filter(m => m.role === 'player');
+  // Split active vs inactive
+  const activePlayers = members.filter(m => m.role === 'player' && m.is_active !== false);
+  const inactivePlayers = members.filter(m => m.role === 'player' && m.is_active === false);
   const coaches = members.filter(m => m.role === 'coach');
 
-  // Team analytics aggregation
+  // Team analytics aggregation (all logs regardless of active status)
   const totalSessions = allLogs.length;
   const totalMinutes = allLogs.reduce((a, l) => a + l.duration_minutes, 0);
   const avgIntensity = allLogs.length > 0
@@ -120,8 +147,8 @@ export default function AcademyCoachScreen() {
   const totalBallsFaced = allLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
   const totalBallsBowled = allLogs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
 
-  // Sessions per player
-  const sessionCounts = players.map(m => ({
+  // Sessions per active player
+  const sessionCounts = activePlayers.map(m => ({
     member: m,
     count: allLogs.filter(l => l.user_id === m.user_id).length,
     avgIntensity: (() => {
@@ -161,6 +188,7 @@ export default function AcademyCoachScreen() {
           <MaterialIcons name="assessment" size={20} color={colors.primary} />
         </Pressable>
       </View>
+
       <View style={styles.tabBar}>
         {(['squad', 'analytics'] as const).map(tab => (
           <Pressable key={tab} style={[styles.tab, activeTab === tab && styles.tabActive]} onPress={() => setActiveTab(tab)}>
@@ -178,32 +206,45 @@ export default function AcademyCoachScreen() {
 
         {activeTab === 'squad' && (
           <>
+            {/* Billing banner */}
+            <View style={styles.billingBanner}>
+              <MaterialIcons name="receipt" size={14} color={colors.primary} />
+              <Text style={styles.billingText}>
+                <Text style={{ fontWeight: '800' }}>{activePlayers.length} Active</Text> players billed
+                {inactivePlayers.length > 0 ? ` · ${inactivePlayers.length} deactivated (not billed)` : ''}
+              </Text>
+              <Pressable onPress={() => router.push('/academy-audit' as any)}>
+                <Text style={styles.billingLink}>View Audit →</Text>
+              </Pressable>
+            </View>
+
             {/* Quick stats */}
             <View style={styles.statsRow}>
               <View style={styles.statCard}>
-                <Text style={styles.statVal}>{players.length}</Text>
-                <Text style={styles.statLabel}>Players</Text>
+                <Text style={styles.statVal}>{activePlayers.length}</Text>
+                <Text style={styles.statLabel}>Active{'\n'}Players</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statVal}>{totalSessions}</Text>
-                <Text style={styles.statLabel}>Logs (30d)</Text>
+                <Text style={styles.statLabel}>Logs{'\n'}(30d)</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={[styles.statVal, { color: parseFloat(avgIntensity as string) >= 7 ? colors.error : colors.warning }]}>{avgIntensity}</Text>
-                <Text style={styles.statLabel}>Avg Intensity</Text>
+                <Text style={styles.statLabel}>Avg{'\n'}Intensity</Text>
               </View>
               <View style={styles.statCard}>
                 <Text style={styles.statVal}>{Math.round(totalMinutes / 60)}h</Text>
-                <Text style={styles.statLabel}>Total Hours</Text>
+                <Text style={styles.statLabel}>Total{'\n'}Hours</Text>
               </View>
             </View>
 
-            {/* Player List */}
-            <Text style={styles.sectionLabel}>Players — tap to view training details</Text>
+            {/* Active Player List */}
+            <Text style={styles.sectionLabel}>Active Players ({activePlayers.length}) — tap to view · press ✕ to deactivate</Text>
             {sessionCounts.map(({ member, count, avgIntensity: ai, lastLog }) => {
               const name = member.display_name || member.user_profiles?.username || member.user_profiles?.email || 'Player';
               const daysSinceLast = lastLog
                 ? Math.floor((Date.now() - new Date(lastLog.log_date).getTime()) / 86400000) : null;
+              const isToggling = togglingId === member.id;
               return (
                 <Pressable key={member.id} style={styles.playerCard} onPress={() => handleViewPlayer(member)}>
                   <View style={styles.playerTop}>
@@ -221,7 +262,15 @@ export default function AcademyCoachScreen() {
                       <Text style={styles.playerSessionCount}>{count}</Text>
                       <Text style={styles.playerSessionLabel}>sessions</Text>
                     </View>
-                    <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
+                    <Pressable
+                      style={styles.deactivateBtn}
+                      onPress={() => handleToggleActive(member)}
+                      hitSlop={8}
+                    >
+                      {isToggling
+                        ? <ActivityIndicator size={14} color={colors.error} />
+                        : <MaterialIcons name="person-off" size={18} color={colors.error} />}
+                    </Pressable>
                   </View>
                   <View style={styles.playerBottom}>
                     <MiniHeatmap logs={allLogs.filter(l => l.user_id === member.user_id)} />
@@ -245,11 +294,58 @@ export default function AcademyCoachScreen() {
               );
             })}
 
-            {players.length === 0 && (
+            {activePlayers.length === 0 && inactivePlayers.length === 0 && (
               <View style={styles.emptyState}>
                 <MaterialIcons name="people-outline" size={48} color={colors.border} />
                 <Text style={styles.emptyText}>No players yet. Share the player code!</Text>
               </View>
+            )}
+
+            {/* Deactivated Players Collapsible */}
+            {inactivePlayers.length > 0 && (
+              <>
+                <Pressable
+                  style={styles.inactiveToggleBtn}
+                  onPress={() => setShowInactive(s => !s)}
+                >
+                  <MaterialIcons name="person-off" size={14} color={colors.textSecondary} />
+                  <Text style={styles.inactiveToggleText}>
+                    {inactivePlayers.length} Deactivated player{inactivePlayers.length > 1 ? 's' : ''} · not billed
+                  </Text>
+                  <MaterialIcons name={showInactive ? 'expand-less' : 'expand-more'} size={16} color={colors.textSecondary} />
+                </Pressable>
+                {showInactive && inactivePlayers.map(member => {
+                  const name = member.display_name || member.user_profiles?.username || member.user_profiles?.email || 'Player';
+                  const isToggling = togglingId === member.id;
+                  return (
+                    <View key={member.id} style={[styles.playerCard, styles.playerCardInactive]}>
+                      <View style={styles.playerTop}>
+                        <View style={[styles.positionDot, { backgroundColor: colors.border }]}>
+                          <Text style={[styles.positionDotText, { color: colors.textSecondary }]}>{name.charAt(0).toUpperCase()}</Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <View style={styles.playerNameRow}>
+                            <Text style={[styles.playerName, { color: colors.textSecondary }]}>{name}</Text>
+                            <View style={styles.inactiveBadge}>
+                              <Text style={styles.inactiveBadgeText}>INACTIVE · NOT BILLED</Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.playerPosition, { color: colors.border }]}>{member.position}</Text>
+                        </View>
+                        <Pressable
+                          style={[styles.deactivateBtn, { backgroundColor: colors.success + '15' }]}
+                          onPress={() => handleToggleActive(member)}
+                          hitSlop={8}
+                        >
+                          {isToggling
+                            ? <ActivityIndicator size={14} color={colors.success} />
+                            : <MaterialIcons name="person-add" size={18} color={colors.success} />}
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })}
+              </>
             )}
 
             {coaches.length > 0 && (
@@ -308,7 +404,7 @@ export default function AcademyCoachScreen() {
             {/* Training load per player (bar chart) */}
             <View style={styles.card}>
               <Text style={styles.cardTitle}>Training Volume by Player</Text>
-              <Text style={styles.cardSub}>Sessions in last 30 days</Text>
+              <Text style={styles.cardSub}>Sessions in last 30 days (active players)</Text>
               {sessionCounts.map(({ member, count }) => {
                 const name = member.display_name || member.user_profiles?.username || 'Player';
                 const maxCount = Math.max(...sessionCounts.map(s => s.count), 1);
@@ -392,7 +488,6 @@ export default function AcademyCoachScreen() {
                   </View>
                 ) : (
                   <>
-                    {/* Stats summary */}
                     <View style={modalStyles.statsRow}>
                       <View style={modalStyles.statBlock}>
                         <Text style={modalStyles.statVal}>{Math.round(playerLogs.reduce((a, l) => a + l.duration_minutes, 0) / 60)}h</Text>
@@ -408,7 +503,6 @@ export default function AcademyCoachScreen() {
                       </View>
                     </View>
 
-                    {/* AI Report */}
                     {!aiReport ? (
                       <Pressable style={[modalStyles.aiBtn, aiLoading && { opacity: 0.6 }]} onPress={handleGenerateAI}>
                         {aiLoading ? (
@@ -433,7 +527,6 @@ export default function AcademyCoachScreen() {
                       </View>
                     )}
 
-                    {/* Recent logs */}
                     <Text style={modalStyles.recentLabel}>Recent Sessions</Text>
                     {playerLogs.slice(0, 8).map(log => (
                       <View key={log.id} style={modalStyles.logRow}>
@@ -518,16 +611,25 @@ const styles = StyleSheet.create({
   tabTextActive: { color: colors.primary },
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 80 },
+  billingBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap',
+    backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
+    padding: spacing.sm, marginBottom: spacing.sm,
+    borderWidth: 1, borderColor: colors.primary + '20',
+  },
+  billingText: { fontSize: 12, color: colors.textSecondary, flex: 1 },
+  billingLink: { fontSize: 12, color: colors.primary, fontWeight: '700' },
   statsRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
   statCard: { flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm, alignItems: 'center', borderWidth: 1, borderColor: colors.border },
   statVal: { ...typography.h4, color: colors.text, fontWeight: '800' },
   statLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
   sectionLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
   playerCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  playerCardInactive: { opacity: 0.55, borderStyle: 'dashed' },
   playerTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
   positionDot: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   positionDotText: { color: colors.textLight, fontWeight: '800', fontSize: 16 },
-  playerNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  playerNameRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   playerName: { ...typography.body, color: colors.text, fontWeight: '700' },
   jerseyBadge: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
   playerPosition: { ...typography.caption, fontWeight: '600', marginTop: 1 },
@@ -538,6 +640,22 @@ const styles = StyleSheet.create({
   lastSeen: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
   intensityPill: { paddingHorizontal: spacing.xs + 2, paddingVertical: 2, borderRadius: borderRadius.sm },
   intensityPillText: { fontSize: 10, fontWeight: '700' },
+  deactivateBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: colors.error + '12',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  inactiveBadge: {
+    backgroundColor: colors.border, paddingHorizontal: 5, paddingVertical: 1,
+    borderRadius: borderRadius.sm,
+  },
+  inactiveBadgeText: { fontSize: 9, fontWeight: '800', color: colors.textSecondary },
+  inactiveToggleBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  inactiveToggleText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', flex: 1 },
   emptyState: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   emptyText: { ...typography.body, color: colors.textSecondary, textAlign: 'center' },
   card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border },

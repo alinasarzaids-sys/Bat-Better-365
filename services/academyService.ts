@@ -20,6 +20,8 @@ export interface AcademyMember {
   display_name?: string;
   jersey_number?: string;
   joined_at: string;
+  is_active: boolean;
+  device_id?: string;
   user_profiles?: { username?: string; email: string; full_name?: string };
 }
 
@@ -258,7 +260,7 @@ export const academyService = {
 
     const { data: members, error: mErr } = await supabase
       .from('academy_members')
-      .select('academy_id, role');
+      .select('academy_id, role, is_active');
     if (mErr) return { data: null, error: mErr.message };
 
     const perAcademy = (academies || []).map((a: any) => {
@@ -266,13 +268,14 @@ export const academyService = {
       return {
         id: a.id,
         name: a.name,
-        players: am.filter((m: any) => m.role === 'player').length,
-        coaches: am.filter((m: any) => m.role === 'coach').length,
+        players: am.filter((m: any) => m.role === 'player' && m.is_active !== false).length,
+        coaches: am.filter((m: any) => m.role === 'coach' && m.is_active !== false).length,
       };
     });
 
-    const totalPlayers = (members || []).filter((m: any) => m.role === 'player').length;
-    const totalCoaches = (members || []).filter((m: any) => m.role === 'coach').length;
+    // Only count ACTIVE players for billing
+    const totalPlayers = (members || []).filter((m: any) => m.role === 'player' && m.is_active !== false).length;
+    const totalCoaches = (members || []).filter((m: any) => m.role === 'coach' && m.is_active !== false).length;
 
     return {
       data: {
@@ -284,6 +287,16 @@ export const academyService = {
       },
       error: null,
     };
+  },
+
+  // ─── Player Deactivation ─────────────────────────────────────────────────────
+  async setPlayerActive(memberId: string, isActive: boolean): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase
+      .from('academy_members')
+      .update({ is_active: isActive })
+      .eq('id', memberId);
+    return { error: error?.message || null };
   },
 
   async deleteLog(logId: string): Promise<{ error: string | null }> {
