@@ -400,26 +400,47 @@ export default function AcademyScreen() {
               </Pressable>
             </View>
 
-            <Pressable
-              style={styles.shareReminderCard}
-              onPress={() => Share.share({
-                message: `Join ${currentMembership!.academy.name} on Bat Better 365!\n\n` +
-                  `🏏 Players Code: ${currentMembership!.academy.player_code}\n` +
-                  `🎓 Coaches Code: ${currentMembership!.academy.coach_code}\n\n` +
-                  `Download Bat Better 365 and enter your code under Academy Portal → Join.`,
-                title: `Join ${currentMembership!.academy.name}`,
-              })}
-            >
-              <MaterialIcons name="share" size={20} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={styles.shareReminderTitle}>Share Join Codes with Your Squad</Text>
-                <Text style={styles.shareReminderText}>
-                  Players: <Text style={styles.codeHighlight}>{currentMembership!.academy.player_code}</Text>
-                  {'   '}Coaches: <Text style={styles.codeHighlight}>{currentMembership!.academy.coach_code}</Text>
-                </Text>
-              </View>
-              <MaterialIcons name="chevron-right" size={18} color={colors.primary} />
-            </Pressable>
+            <View style={styles.shareCodesRow}>
+              <Pressable
+                style={[styles.shareCodeCard, { borderColor: colors.primary + '40' }]}
+                onPress={() => Share.share({
+                  message: `Join ${currentMembership!.academy.name} on Bat Better 365 as a Player!\n\n` +
+                    `🏏 Player Code: ${currentMembership!.academy.player_code}\n\n` +
+                    `Download Bat Better 365 and enter this code under Academy Portal → Join.`,
+                  title: `Player Code — ${currentMembership!.academy.name}`,
+                })}
+              >
+                <View style={[styles.shareCodeIconCircle, { backgroundColor: colors.primary + '15' }]}>
+                  <MaterialIcons name="sports-cricket" size={20} color={colors.primary} />
+                </View>
+                <Text style={styles.shareCodeLabel}>Player Code</Text>
+                <Text style={[styles.shareCodeValue, { color: colors.primary }]}>{currentMembership!.academy.player_code}</Text>
+                <View style={[styles.shareCodeBtn, { backgroundColor: colors.primary + '15' }]}>
+                  <MaterialIcons name="share" size={14} color={colors.primary} />
+                  <Text style={[styles.shareCodeBtnText, { color: colors.primary }]}>Share</Text>
+                </View>
+              </Pressable>
+
+              <Pressable
+                style={[styles.shareCodeCard, { borderColor: colors.warning + '40' }]}
+                onPress={() => Share.share({
+                  message: `Join ${currentMembership!.academy.name} on Bat Better 365 as a Coach!\n\n` +
+                    `🎓 Coach Code: ${currentMembership!.academy.coach_code}\n\n` +
+                    `Download Bat Better 365 and enter this code under Academy Portal → Join.`,
+                  title: `Coach Code — ${currentMembership!.academy.name}`,
+                })}
+              >
+                <View style={[styles.shareCodeIconCircle, { backgroundColor: colors.warning + '15' }]}>
+                  <MaterialIcons name="school" size={20} color={colors.warning} />
+                </View>
+                <Text style={styles.shareCodeLabel}>Coach Code</Text>
+                <Text style={[styles.shareCodeValue, { color: colors.warning }]}>{currentMembership!.academy.coach_code}</Text>
+                <View style={[styles.shareCodeBtn, { backgroundColor: colors.warning + '15' }]}>
+                  <MaterialIcons name="share" size={14} color={colors.warning} />
+                  <Text style={[styles.shareCodeBtnText, { color: colors.warning }]}>Share</Text>
+                </View>
+              </Pressable>
+            </View>
           </>
         )}
       </ScrollView>
@@ -562,8 +583,12 @@ const styles = StyleSheet.create({
   intensityBadge: { paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: borderRadius.sm },
   intensityBadgeText: { fontSize: 11, fontWeight: '800' },
 
-  shareReminderCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary + '10', borderRadius: borderRadius.lg, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.primary + '30' },
-  shareReminderTitle: { ...typography.bodySmall, color: colors.text, fontWeight: '700', marginBottom: 2 },
-  shareReminderText: { fontSize: 12, color: colors.textSecondary },
+  shareCodesRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  shareCodeCard: { flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', gap: spacing.xs, borderWidth: 1.5 },
+  shareCodeIconCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', marginBottom: 2 },
+  shareCodeLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  shareCodeValue: { fontSize: 18, fontWeight: '900', letterSpacing: 3, marginBottom: 2 },
+  shareCodeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 5, borderRadius: borderRadius.full, marginTop: 2 },
+  shareCodeBtnText: { fontSize: 12, fontWeight: '700' },
   codeHighlight: { fontWeight: '800', color: colors.primary, letterSpacing: 1 },
 });
