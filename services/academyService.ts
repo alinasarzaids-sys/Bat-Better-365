@@ -22,7 +22,9 @@ export interface AcademyMember {
   joined_at: string;
   is_active: boolean;
   device_id?: string;
+  squad_id?: string;
   user_profiles?: { username?: string; email: string; full_name?: string };
+  academy_squads?: { id: string; name: string; color: string } | null;
 }
 
 export interface AcademyTrainingLog {
@@ -58,7 +60,17 @@ export interface AcademySession {
   location?: string;
   session_type: string;
   notes?: string;
+  squad_id?: string | null;
   created_by: string;
+  created_at: string;
+  academy_squads?: { id: string; name: string; color: string } | null;
+}
+
+export interface AcademySquad {
+  id: string;
+  academy_id: string;
+  name: string;
+  color: string;
   created_at: string;
 }
 
@@ -109,7 +121,7 @@ export const academyService = {
     return { data, error: null };
   },
 
-  async joinAcademy(code: string, userId: string, displayName: string, position: string, jerseyNumber: string, deviceId?: string): Promise<{ data: { academy: Academy; role: 'player' | 'coach' } | null; error: string | null }> {
+  async joinAcademy(code: string, userId: string, displayName: string, position: string, jerseyNumber: string, deviceId?: string, squadId?: string): Promise<{ data: { academy: Academy; role: 'player' | 'coach' } | null; error: string | null }> {
     const supabase = getSupabaseClient();
     const upperCode = code.trim().toUpperCase();
 
@@ -163,6 +175,7 @@ export const academyService = {
       display_name: displayName,
       jersey_number: jerseyNumber,
       ...(deviceId ? { device_id: deviceId } : {}),
+      ...(squadId && role === 'player' ? { squad_id: squadId } : {}),
     });
 
     if (joinError) return { data: null, error: joinError.message };
@@ -190,12 +203,56 @@ export const academyService = {
     return { error: error?.message || null };
   },
 
+  // ─── Squads ──────────────────────────────────────────────────────────────────
+  async getSquads(academyId: string): Promise<{ data: AcademySquad[] | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('academy_squads')
+      .select('*')
+      .eq('academy_id', academyId)
+      .order('created_at', { ascending: true });
+    if (error) return { data: null, error: error.message };
+    return { data: data as AcademySquad[], error: null };
+  },
+
+  async createSquad(academyId: string, name: string, color: string): Promise<{ data: AcademySquad | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('academy_squads')
+      .insert({ academy_id: academyId, name: name.trim(), color })
+      .select()
+      .single();
+    if (error) return { data: null, error: error.message };
+    return { data, error: null };
+  },
+
+  async updateSquad(squadId: string, updates: { name?: string; color?: string }): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('academy_squads').update(updates).eq('id', squadId);
+    return { error: error?.message || null };
+  },
+
+  async deleteSquad(squadId: string): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase.from('academy_squads').delete().eq('id', squadId);
+    return { error: error?.message || null };
+  },
+
+  async assignPlayerToSquad(memberId: string, squadId: string | null): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase
+      .from('academy_members')
+      .update({ squad_id: squadId })
+      .eq('id', memberId);
+    return { error: error?.message || null };
+  },
+
   // ─── Members ────────────────────────────────────────────────────────────────
   async getAcademyMembers(academyId: string): Promise<{ data: AcademyMember[] | null; error: string | null }> {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('academy_members')
-      .select('*, user_profiles(username, email, full_name)')
+      .select('*, user_profiles(username, email, full_name), academy_squads(id, name, color)')
       .eq('academy_id', academyId)
       .order('role', { ascending: false })
       .order('joined_at', { ascending: true });
@@ -336,7 +393,7 @@ export const academyService = {
   },
 
   // ─── Academy Sessions ────────────────────────────────────────────────────────
-  async createSession(session: Omit<AcademySession, 'id' | 'created_at'>): Promise<{ data: AcademySession | null; error: string | null }> {
+  async createSession(session: Omit<AcademySession, 'id' | 'created_at'> & { squad_id?: string | null }): Promise<{ data: AcademySession | null; error: string | null }> {
     const supabase = getSupabaseClient();
     const { data, error } = await supabase
       .from('academy_sessions')
@@ -348,13 +405,17 @@ export const academyService = {
     return { data, error: null };
   },
 
-  async getAcademySessions(academyId: string): Promise<{ data: AcademySession[] | null; error: string | null }> {
+  async getAcademySessions(academyId: string, squadId?: string | null): Promise<{ data: AcademySession[] | null; error: string | null }> {
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase
+    let query = supabase
       .from('academy_sessions')
-      .select('*')
-      .eq('academy_id', academyId)
-      .order('session_date', { ascending: false });
+      .select('*, academy_squads(id, name, color)')
+      .eq('academy_id', academyId);
+    // Filter: show sessions assigned to this squad OR sessions with no squad (all-squad)
+    if (squadId) {
+      query = query.or(`squad_id.eq.${squadId},squad_id.is.null`);
+    }
+    const { data, error } = await query.order('session_date', { ascending: false });
 
     if (error) return { data: null, error: error.message };
     return { data: data as AcademySession[], error: null };

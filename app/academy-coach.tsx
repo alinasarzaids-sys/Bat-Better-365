@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
-import { academyService, AcademyMember, AcademyTrainingLog } from '@/services/academyService';
+import { academyService, AcademyMember, AcademyTrainingLog, AcademySquad } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 function getPositionColor(position: string): string {
@@ -76,14 +76,25 @@ export default function AcademyCoachScreen() {
   const [showInactive, setShowInactive] = useState(false);
   const [showDeactivateModal, setShowDeactivateModal] = useState(false);
   const [deactivateTarget, setDeactivateTarget] = useState<AcademyMember | null>(null);
+  // Squad state
+  const [squads, setSquads] = useState<AcademySquad[]>([]);
+  const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
+  const [showSquadModal, setShowSquadModal] = useState(false);
+  const [squadModalName, setSquadModalName] = useState('');
+  const [squadModalColor, setSquadModalColor] = useState('#2196F3');
+  const [creatingSquad, setCreatingSquad] = useState(false);
+  const [assigningMember, setAssigningMember] = useState<AcademyMember | null>(null);
+  const [showAssignModal, setShowAssignModal] = useState(false);
 
   const load = useCallback(async () => {
-    const [membersRes, logsRes] = await Promise.all([
+    const [membersRes, logsRes, squadsRes] = await Promise.all([
       academyService.getAcademyMembers(academyId),
       academyService.getAcademyLogs(academyId, 30),
+      academyService.getSquads(academyId),
     ]);
     setMembers(membersRes.data || []);
     setAllLogs(logsRes.data || []);
+    setSquads(squadsRes.data || []);
     setLoading(false);
   }, [academyId]);
 
@@ -162,10 +173,35 @@ export default function AcademyCoachScreen() {
     setAiReport(data || '');
   };
 
+  // Squad helpers
+  const allActivePlayers = members.filter(m => m.role === 'player' && m.is_active !== false);
+  const activePlayers = selectedSquadFilter
+    ? allActivePlayers.filter(m => (m as any).squad_id === selectedSquadFilter)
+    : allActivePlayers;
   // Split active vs inactive
-  const activePlayers = members.filter(m => m.role === 'player' && m.is_active !== false);
   const inactivePlayers = members.filter(m => m.role === 'player' && m.is_active === false);
   const coaches = members.filter(m => m.role === 'coach');
+
+  const handleCreateSquad = async () => {
+    if (!squadModalName.trim()) return;
+    setCreatingSquad(true);
+    const { error } = await academyService.createSquad(academyId, squadModalName, squadModalColor);
+    setCreatingSquad(false);
+    if (error) { showAlert('Error', error); return; }
+    setShowSquadModal(false);
+    setSquadModalName('');
+    setSquadModalColor('#2196F3');
+    await load();
+  };
+
+  const handleAssignSquad = async (squadId: string | null) => {
+    if (!assigningMember) return;
+    const { error } = await academyService.assignPlayerToSquad(assigningMember.id, squadId);
+    if (error) { showAlert('Error', error); return; }
+    setShowAssignModal(false);
+    setAssigningMember(null);
+    await load();
+  };
 
   // Team analytics aggregation (all logs regardless of active status)
   const totalSessions = allLogs.length;
@@ -175,8 +211,8 @@ export default function AcademyCoachScreen() {
   const totalBallsFaced = allLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
   const totalBallsBowled = allLogs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
 
-  // Sessions per active player
-  const sessionCounts = activePlayers.map(m => ({
+  // Sessions per active player (use allActivePlayers for analytics)
+  const sessionCounts = allActivePlayers.map(m => ({
     member: m,
     count: allLogs.filter(l => l.user_id === m.user_id).length,
     avgIntensity: (() => {
@@ -223,6 +259,41 @@ export default function AcademyCoachScreen() {
         ))}
       </View>
 
+      {/* Squad filter bar */}
+      {activeTab === 'squad' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          style={{ maxHeight: 52, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}
+          contentContainerStyle={{ flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm, alignItems: 'center' }}>
+          <Pressable
+            style={[squadFilterStyles.chip, !selectedSquadFilter && squadFilterStyles.chipAll]}
+            onPress={() => setSelectedSquadFilter(null)}
+          >
+            <Text style={[squadFilterStyles.chipText, !selectedSquadFilter && squadFilterStyles.chipTextActive]}>
+              All ({allActivePlayers.length})
+            </Text>
+          </Pressable>
+          {squads.map(sq => (
+            <Pressable
+              key={sq.id}
+              style={[squadFilterStyles.chip, selectedSquadFilter === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]}
+              onPress={() => setSelectedSquadFilter(selectedSquadFilter === sq.id ? null : sq.id)}
+            >
+              <View style={[squadFilterStyles.dot, { backgroundColor: selectedSquadFilter === sq.id ? 'rgba(255,255,255,0.7)' : sq.color }]} />
+              <Text style={[squadFilterStyles.chipText, selectedSquadFilter === sq.id && squadFilterStyles.chipTextActive]}>
+                {sq.name} ({allActivePlayers.filter(m => (m as any).squad_id === sq.id).length})
+              </Text>
+            </Pressable>
+          ))}
+          <Pressable
+            style={[squadFilterStyles.chip, { borderStyle: 'dashed', borderColor: colors.primary + '60' }]}
+            onPress={() => setShowSquadModal(true)}
+          >
+            <MaterialIcons name="add" size={12} color={colors.primary} />
+            <Text style={[squadFilterStyles.chipText, { color: colors.primary }]}>New</Text>
+          </Pressable>
+        </ScrollView>
+      )}
+
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
@@ -260,7 +331,11 @@ export default function AcademyCoachScreen() {
             </View>
 
             {/* Active Player List */}
-            <Text style={styles.sectionLabel}>Active Players ({activePlayers.length}) — tap to view · press ✕ to deactivate</Text>
+            <Text style={styles.sectionLabel}>
+              {selectedSquadFilter
+                ? `${squads.find(s => s.id === selectedSquadFilter)?.name || 'Squad'} — ${activePlayers.length} player(s) · tap to view`
+                : `Active Players (${allActivePlayers.length}) — tap to view · press ✕ to deactivate`}
+            </Text>
             {sessionCounts.map(({ member, count, avgIntensity: ai, lastLog }) => {
               const name = member.display_name || member.user_profiles?.username || member.user_profiles?.email || 'Player';
               const daysSinceLast = lastLog
@@ -276,6 +351,13 @@ export default function AcademyCoachScreen() {
                       <View style={styles.playerNameRow}>
                         <Text style={styles.playerName}>{name}</Text>
                         {member.jersey_number ? <Text style={styles.jerseyBadge}>#{member.jersey_number}</Text> : null}
+                        {(member as any).academy_squads && (
+                          <View style={[squadFilterStyles.squadBadge, { backgroundColor: ((member as any).academy_squads?.color || colors.primary) + '20' }]}>
+                            <Text style={[squadFilterStyles.squadBadgeText, { color: (member as any).academy_squads?.color || colors.primary }]}>
+                              {(member as any).academy_squads?.name}
+                            </Text>
+                          </View>
+                        )}
                       </View>
                       <Text style={[styles.playerPosition, { color: getPositionColor(member.position) }]}>{member.position}</Text>
                     </View>
@@ -283,6 +365,13 @@ export default function AcademyCoachScreen() {
                       <Text style={styles.playerSessionCount}>{count}</Text>
                       <Text style={styles.playerSessionLabel}>sessions</Text>
                     </View>
+                    <Pressable
+                      style={[styles.deactivateBtn, { backgroundColor: colors.mental + '12', marginRight: 3 }]}
+                      onPress={() => { setAssigningMember(member); setShowAssignModal(true); }}
+                      hitSlop={8}
+                    >
+                      <MaterialIcons name="swap-horiz" size={16} color={colors.mental} />
+                    </Pressable>
                     <Pressable
                       style={styles.deactivateBtn}
                       onPress={() => handleToggleActive(member)}
@@ -479,6 +568,90 @@ export default function AcademyCoachScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* Squad Create Modal */}
+      <Modal visible={showSquadModal} transparent animationType="fade" onRequestClose={() => setShowSquadModal(false)}>
+        <View style={deactivateModalStyles.overlay}>
+          <View style={deactivateModalStyles.card}>
+            <Text style={[deactivateModalStyles.title, { fontSize: 17 }]}>Create Squad</Text>
+            <Text style={deactivateModalStyles.playerNameSub}>Organise players into groups (e.g. U14, U16, Seniors)</Text>
+            <TextInput
+              style={[squadFilterStyles.squadInput, { marginTop: spacing.sm }]}
+              placeholder="Squad name e.g. Under 16s"
+              placeholderTextColor={colors.textSecondary}
+              value={squadModalName}
+              onChangeText={setSquadModalName}
+              autoFocus
+            />
+            <Text style={[deactivateModalStyles.playerNameSub, { textAlign: 'left', marginTop: spacing.sm }]}>Colour</Text>
+            <View style={squadFilterStyles.colorRow}>
+              {['#2196F3','#4CAF50','#FF9800','#9C27B0','#F44336','#00BCD4','#FF5722','#607D8B'].map(c => (
+                <Pressable
+                  key={c}
+                  style={[squadFilterStyles.colorDot, { backgroundColor: c }, squadModalColor === c && squadFilterStyles.colorDotSelected]}
+                  onPress={() => setSquadModalColor(c)}
+                />
+              ))}
+            </View>
+            <View style={deactivateModalStyles.btnRow}>
+              <Pressable style={deactivateModalStyles.cancelBtn} onPress={() => setShowSquadModal(false)}>
+                <Text style={deactivateModalStyles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable
+                style={[deactivateModalStyles.confirmBtn, { backgroundColor: squadModalColor }, creatingSquad && { opacity: 0.6 }]}
+                onPress={handleCreateSquad}
+              >
+                {creatingSquad
+                  ? <ActivityIndicator color={colors.textLight} size="small" />
+                  : <Text style={deactivateModalStyles.confirmBtnText}>Create Squad</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Assign Squad Modal */}
+      <Modal visible={showAssignModal} transparent animationType="fade" onRequestClose={() => setShowAssignModal(false)}>
+        <View style={deactivateModalStyles.overlay}>
+          <View style={deactivateModalStyles.card}>
+            <Text style={[deactivateModalStyles.title, { fontSize: 17 }]}>Move to Squad</Text>
+            <Text style={deactivateModalStyles.playerNameSub}>{assigningMember?.display_name || 'Player'}</Text>
+            <View style={{ gap: spacing.sm, marginTop: spacing.sm }}>
+              <Pressable
+                style={[squadFilterStyles.assignOption, !(assigningMember as any)?.squad_id && { borderColor: colors.textSecondary, backgroundColor: colors.textSecondary + '10' }]}
+                onPress={() => handleAssignSquad(null)}
+              >
+                <MaterialIcons name="people" size={16} color={colors.textSecondary} />
+                <Text style={[squadFilterStyles.assignOptionText, { color: colors.textSecondary }]}>No Squad (General)</Text>
+                {!(assigningMember as any)?.squad_id && <MaterialIcons name="check" size={15} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />}
+              </Pressable>
+              {squads.map(sq => (
+                <Pressable
+                  key={sq.id}
+                  style={[squadFilterStyles.assignOption, (assigningMember as any)?.squad_id === sq.id && { borderColor: sq.color, backgroundColor: sq.color + '12' }]}
+                  onPress={() => handleAssignSquad(sq.id)}
+                >
+                  <View style={[squadFilterStyles.dot, { backgroundColor: sq.color, width: 14, height: 14, borderRadius: 7 }]} />
+                  <Text style={[squadFilterStyles.assignOptionText, { color: sq.color }]}>{sq.name}</Text>
+                  {(assigningMember as any)?.squad_id === sq.id && <MaterialIcons name="check" size={15} color={sq.color} style={{ marginLeft: 'auto' }} />}
+                </Pressable>
+              ))}
+              {squads.length === 0 && (
+                <Pressable
+                  style={[squadFilterStyles.assignOption, { borderStyle: 'dashed', borderColor: colors.primary + '50' }]}
+                  onPress={() => { setShowAssignModal(false); setShowSquadModal(true); }}
+                >
+                  <MaterialIcons name="add" size={15} color={colors.primary} />
+                  <Text style={[squadFilterStyles.assignOptionText, { color: colors.primary }]}>Create a squad first</Text>
+                </Pressable>
+              )}
+            </View>
+            <Pressable style={[deactivateModalStyles.cancelBtn, { marginTop: spacing.md }]} onPress={() => { setShowAssignModal(false); setAssigningMember(null); }}>
+              <Text style={deactivateModalStyles.cancelBtnText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       {/* Deactivation Warning Modal */}
       <Modal visible={showDeactivateModal} animationType="fade" transparent onRequestClose={() => setShowDeactivateModal(false)}>
@@ -692,6 +865,36 @@ const modalStyles = StyleSheet.create({
   intensityBadgeText: { fontSize: 11, fontWeight: '800' },
   emptyPlayer: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
   emptyPlayerText: { ...typography.body, color: colors.textSecondary },
+});
+
+const squadFilterStyles = StyleSheet.create({
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: spacing.sm, paddingVertical: 5,
+    borderRadius: borderRadius.full, backgroundColor: colors.background,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  chipAll: { backgroundColor: colors.textSecondary, borderColor: colors.textSecondary },
+  chipText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  chipTextActive: { color: colors.textLight },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  squadBadge: { paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 },
+  squadBadgeText: { fontSize: 9, fontWeight: '800' },
+  colorRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginVertical: spacing.sm },
+  colorDot: { width: 30, height: 30, borderRadius: 15 },
+  colorDotSelected: { borderWidth: 3, borderColor: colors.text },
+  squadInput: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    fontSize: 15, color: colors.text, fontWeight: '600',
+  },
+  assignOption: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+  },
+  assignOptionText: { fontSize: 14, fontWeight: '600' },
 });
 
 const styles = StyleSheet.create({

@@ -7,7 +7,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
-import { academyService, AcademySession, AcademyMember } from '@/services/academyService';
+import { academyService, AcademySession, AcademyMember, AcademySquad } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 // ─── Training Plan Block ──────────────────────────────────────────────────────
@@ -950,10 +950,17 @@ export default function AcademyScheduleScreen() {
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [editingSession, setEditingSession] = useState<AcademySession | null>(null);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [squads, setSquads] = useState<AcademySquad[]>([]);
+  const [newSquadId, setNewSquadId] = useState<string | null>(null);
+  const [squadFilter, setSquadFilter] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data } = await academyService.getAcademySessions(academyId);
-    setSessions(data || []);
+    const [sessionsRes, squadsRes] = await Promise.all([
+      academyService.getAcademySessions(academyId),
+      academyService.getSquads(academyId),
+    ]);
+    setSessions(sessionsRes.data || []);
+    setSquads(squadsRes.data || []);
     setLoading(false);
   }, [academyId]);
 
@@ -968,7 +975,7 @@ export default function AcademyScheduleScreen() {
   const resetForm = () => {
     setNewTitle(''); setNewDate(todayStr()); setNewTime(now12());
     setNewLocation(''); setNewNotes('');
-    setPlanBlocks([]); setObjectives(['', '']);
+    setPlanBlocks([]); setObjectives(['', '']); setNewSquadId(null);
   };
 
   const openModal = () => {
@@ -987,6 +994,7 @@ export default function AcademyScheduleScreen() {
       academy_id: academyId, title: newTitle.trim(), session_date: newDate,
       session_time: newTime, location: newLocation.trim() || undefined,
       session_type: newType, notes: combinedNotes || undefined, created_by: user.id,
+      squad_id: newSquadId || null,
     });
     setCreating(false);
     if (error) { showAlert('Error', error); return; }
@@ -997,8 +1005,11 @@ export default function AcademyScheduleScreen() {
   };
 
   const today = todayStr();
-  const upcoming = sessions.filter(s => s.session_date >= today).sort((a, b) => a.session_date.localeCompare(b.session_date));
-  const past = sessions.filter(s => s.session_date < today).sort((a, b) => b.session_date.localeCompare(a.session_date));
+  const filteredSessions = squadFilter
+    ? sessions.filter(s => (s as any).squad_id === squadFilter || !(s as any).squad_id)
+    : sessions;
+  const upcoming = filteredSessions.filter(s => s.session_date >= today).sort((a, b) => a.session_date.localeCompare(b.session_date));
+  const past = filteredSessions.filter(s => s.session_date < today).sort((a, b) => b.session_date.localeCompare(a.session_date));
   const sessionColor = TYPE_COLORS[newType] || colors.primary;
 
   const handleEditSession = (s: AcademySession) => {
@@ -1034,6 +1045,30 @@ export default function AcademyScheduleScreen() {
           </Pressable>
         ) : <View style={{ width: 40 }} />}
       </View>
+
+      {/* Squad filter chips */}
+      {squads.length > 0 && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          style={{ maxHeight: 52, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}
+          contentContainerStyle={{ flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm }}>
+          <Pressable
+            style={[scheduleSquadStyles.chip, !squadFilter && scheduleSquadStyles.chipAll]}
+            onPress={() => setSquadFilter(null)}
+          >
+            <Text style={[scheduleSquadStyles.chipText, !squadFilter && scheduleSquadStyles.chipTextActive]}>All</Text>
+          </Pressable>
+          {squads.map(sq => (
+            <Pressable
+              key={sq.id}
+              style={[scheduleSquadStyles.chip, squadFilter === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]}
+              onPress={() => setSquadFilter(squadFilter === sq.id ? null : sq.id)}
+            >
+              <View style={[scheduleSquadStyles.dot, { backgroundColor: squadFilter === sq.id ? 'rgba(255,255,255,0.7)' : sq.color }]} />
+              <Text style={[scheduleSquadStyles.chipText, squadFilter === sq.id && scheduleSquadStyles.chipTextActive]}>{sq.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
@@ -1127,6 +1162,30 @@ export default function AcademyScheduleScreen() {
                   <View style={[modal.chip, { backgroundColor: colors.primary, borderColor: colors.primary, alignSelf: 'flex-start' }]}>
                     <Text style={modal.chipTextActive}>Training</Text>
                   </View>
+
+                  {/* Squad assignment */}
+                  {squads.length > 0 && (
+                    <>
+                      <Text style={modal.label}>Assign to Squad</Text>
+                      <View style={modal.chipRow}>
+                        <Pressable
+                          style={[modal.chip, !newSquadId && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                          onPress={() => setNewSquadId(null)}
+                        >
+                          <Text style={[modal.chipText, !newSquadId && modal.chipTextActive]}>All Squads</Text>
+                        </Pressable>
+                        {squads.map(sq => (
+                          <Pressable
+                            key={sq.id}
+                            style={[modal.chip, newSquadId === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]}
+                            onPress={() => setNewSquadId(newSquadId === sq.id ? null : sq.id)}
+                          >
+                            <Text style={[modal.chipText, newSquadId === sq.id && modal.chipTextActive]}>{sq.name}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </>
+                  )}
                 </View>
 
                 {/* ── Session Objectives — ABOVE Training Plan ── */}
@@ -1224,6 +1283,19 @@ const modal = StyleSheet.create({
   objNumText: { fontSize: 11, fontWeight: '900', color: colors.textLight },
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
   submitBtnText: { fontSize: 16, color: colors.textLight, fontWeight: '700' },
+});
+
+const scheduleSquadStyles = StyleSheet.create({
+  chip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: spacing.sm + 2, paddingVertical: 5,
+    borderRadius: borderRadius.full, backgroundColor: colors.background,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  chipAll: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  chipTextActive: { color: colors.textLight },
+  dot: { width: 7, height: 7, borderRadius: 3.5 },
 });
 
 // ─── Styles ───────────────────────────────────────────────────────────────────

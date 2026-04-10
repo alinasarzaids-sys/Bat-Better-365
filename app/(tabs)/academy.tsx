@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
-import { academyService, Academy, AcademyMember, AcademyTrainingLog } from '@/services/academyService';
+import { academyService, Academy, AcademyMember, AcademyTrainingLog, AcademySquad } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 const POSITIONS = ['Batsman', 'Bowler', 'All-Rounder', 'Wicket-Keeper', 'Fielder', 'Coach'];
@@ -80,6 +80,8 @@ export default function AcademyScreen() {
   const [joinDisplayName, setJoinDisplayName] = useState('');
   const [joinPosition, setJoinPosition] = useState('Batsman');
   const [joinJersey, setJoinJersey] = useState('');
+  const [joinSquadId, setJoinSquadId] = useState<string | null>(null);
+  const [joinSquads, setJoinSquads] = useState<AcademySquad[]>([]);
   const [joining, setJoining] = useState(false);
 
   const load = useCallback(async () => {
@@ -110,13 +112,37 @@ export default function AcademyScreen() {
     if (!joinCode.trim()) { showAlert('Error', 'Please enter a code'); return; }
     if (!joinDisplayName.trim()) { showAlert('Error', 'Please enter your name'); return; }
     setJoining(true);
-    const { data, error } = await academyService.joinAcademy(joinCode, user.id, joinDisplayName, joinPosition, joinJersey);
+    const { data, error } = await academyService.joinAcademy(
+      joinCode, user.id, joinDisplayName, joinPosition, joinJersey, undefined, joinSquadId || undefined
+    );
     setJoining(false);
     if (error) { showAlert('Error', error); return; }
     setShowJoinModal(false);
     setJoinCode(''); setJoinDisplayName(''); setJoinPosition('Batsman'); setJoinJersey('');
+    setJoinSquadId(null); setJoinSquads([]);
     await load();
     showAlert('Joined!', `You are now part of ${data!.academy.name} as ${data!.role === 'coach' ? 'Coach' : 'Player'}.`);
+  };
+
+  const handleCodeChange = async (code: string) => {
+    const upper = code.toUpperCase();
+    setJoinCode(upper);
+    if (upper.length === 6) {
+      const supabase = (await import('@/template')).getSupabaseClient();
+      const { data: byPlayer } = await supabase.from('academies').select('id').eq('player_code', upper).maybeSingle();
+      const { data: byCoach } = await supabase.from('academies').select('id').eq('coach_code', upper).maybeSingle();
+      const academy = byPlayer || byCoach;
+      if (academy) {
+        const { data: squads } = await academyService.getSquads(academy.id);
+        setJoinSquads(squads || []);
+      } else {
+        setJoinSquads([]);
+      }
+      setJoinSquadId(null);
+    } else {
+      setJoinSquads([]);
+      setJoinSquadId(null);
+    }
   };
 
   const onRefresh = async () => {
@@ -160,10 +186,11 @@ export default function AcademyScreen() {
           </View>
         </ScrollView>
         <JoinModal
-          visible={showJoinModal} code={joinCode} onCodeChange={setJoinCode}
+          visible={showJoinModal} code={joinCode} onCodeChange={handleCodeChange}
           displayName={joinDisplayName} onDisplayNameChange={setJoinDisplayName}
           position={joinPosition} onPositionChange={setJoinPosition}
           jersey={joinJersey} onJerseyChange={setJoinJersey}
+          squads={joinSquads} selectedSquadId={joinSquadId} onSquadChange={setJoinSquadId}
           loading={joining} onClose={() => setShowJoinModal(false)} onSubmit={handleJoin}
         />
       </SafeAreaView>
@@ -446,24 +473,25 @@ export default function AcademyScreen() {
       </ScrollView>
 
       <JoinModal
-        visible={showJoinModal} code={joinCode} onCodeChange={setJoinCode}
+        visible={showJoinModal} code={joinCode} onCodeChange={handleCodeChange}
         displayName={joinDisplayName} onDisplayNameChange={setJoinDisplayName}
         position={joinPosition} onPositionChange={setJoinPosition}
         jersey={joinJersey} onJerseyChange={setJoinJersey}
+        squads={joinSquads} selectedSquadId={joinSquadId} onSquadChange={setJoinSquadId}
         loading={joining} onClose={() => setShowJoinModal(false)} onSubmit={handleJoin}
       />
     </SafeAreaView>
   );
 }
 
-function JoinModal({ visible, code, onCodeChange, displayName, onDisplayNameChange, position, onPositionChange, jersey, onJerseyChange, loading, onClose, onSubmit }: any) {
+function JoinModal({ visible, code, onCodeChange, displayName, onDisplayNameChange, position, onPositionChange, jersey, onJerseyChange, squads, selectedSquadId, onSquadChange, loading, onClose, onSubmit }: any) {
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={modalStyles.overlay}>
         <View style={modalStyles.sheet}>
           <View style={modalStyles.handle} />
           <View style={modalStyles.header}>
-            <Text style={modalStyles.headerTitle}>Join Another Academy</Text>
+            <Text style={modalStyles.headerTitle}>Join Academy</Text>
             <Pressable onPress={onClose} style={modalStyles.closeBtn}>
               <MaterialIcons name="close" size={22} color={colors.text} />
             </Pressable>
@@ -473,6 +501,24 @@ function JoinModal({ visible, code, onCodeChange, displayName, onDisplayNameChan
             <TextInput style={modalStyles.input} value={code} onChangeText={onCodeChange}
               placeholder="Enter 6-character code" placeholderTextColor={colors.textSecondary}
               autoCapitalize="characters" maxLength={6} />
+
+            {squads && squads.length > 0 && (
+              <>
+                <Text style={modalStyles.label}>Which Squad Are You In? *</Text>
+                <View style={modalStyles.positionGrid}>
+                  {squads.map((s: any) => (
+                    <Pressable
+                      key={s.id}
+                      style={[modalStyles.chip, selectedSquadId === s.id && { backgroundColor: s.color || colors.primary, borderColor: s.color || colors.primary }]}
+                      onPress={() => onSquadChange(selectedSquadId === s.id ? null : s.id)}
+                    >
+                      <Text style={[modalStyles.chipText, selectedSquadId === s.id && modalStyles.chipTextActive]}>{s.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </>
+            )}
+
             <Text style={modalStyles.label}>Your Name</Text>
             <TextInput style={modalStyles.input} value={displayName} onChangeText={onDisplayNameChange}
               placeholder="e.g. Jamie Smith" placeholderTextColor={colors.textSecondary} />
