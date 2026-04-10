@@ -197,6 +197,19 @@ export const academyService = {
     };
   },
 
+  async updateAcademy(academyId: string, updates: { name?: string; description?: string }): Promise<{ data: Academy | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('academies')
+      .update(updates)
+      .eq('id', academyId)
+      .select()
+      .maybeSingle();
+    if (error) return { data: null, error: error.message };
+    if (!data) return { data: null, error: 'Academy not found or you do not have permission.' };
+    return { data, error: null };
+  },
+
   async leaveAcademy(membershipId: string): Promise<{ error: string | null }> {
     const supabase = getSupabaseClient();
     const { error } = await supabase.from('academy_members').delete().eq('id', membershipId);

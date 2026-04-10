@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  TextInput, Modal, ActivityIndicator, RefreshControl, Share, Clipboard,
+  TextInput, Modal, ActivityIndicator, RefreshControl, Share,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -9,11 +9,6 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
 import { academyService, Academy, AcademyMember, AcademyTrainingLog, AcademySquad } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
-
-const POSITION_ICONS: Record<string, string> = {
-  Batsman: 'sports-cricket', Bowler: 'sports-cricket', 'All-Rounder': 'sports-cricket',
-  'Wicket-Keeper': 'sports-handball', Fielder: 'sports-handball', Coach: 'school',
-};
 
 function getPositionColor(position: string): string {
   switch (position) {
@@ -67,19 +62,14 @@ function InviteModal({ visible, academy, onClose }: {
   onClose: () => void;
 }) {
   if (!academy) return null;
-  const { showAlert } = useAlert();
 
   const sharePlayerCode = () => Share.share({
-    message: `Join ${academy.name} on Bat Better 365 as a Player!\n\n` +
-      `Player Code: ${academy.player_code}\n\n` +
-      `Download Bat Better 365 and enter this code under Academy Portal.`,
+    message: `Join ${academy.name} on Bat Better 365 as a Player!\n\nPlayer Code: ${academy.player_code}\n\nDownload Bat Better 365 and enter this code under Academy Portal.`,
     title: `Player Code — ${academy.name}`,
   });
 
   const shareCoachCode = () => Share.share({
-    message: `Join ${academy.name} on Bat Better 365 as a Coach!\n\n` +
-      `Coach Code: ${academy.coach_code}\n\n` +
-      `Download Bat Better 365 and enter this code under Academy Portal.`,
+    message: `Join ${academy.name} on Bat Better 365 as a Coach!\n\nCoach Code: ${academy.coach_code}\n\nDownload Bat Better 365 and enter this code under Academy Portal.`,
     title: `Coach Code — ${academy.name}`,
   });
 
@@ -91,7 +81,6 @@ function InviteModal({ visible, academy, onClose }: {
           <Text style={inviteModalStyles.title}>Invite to {academy.name}</Text>
           <Text style={inviteModalStyles.subtitle}>Share the relevant code with your squad members</Text>
 
-          {/* Player Code */}
           <View style={[inviteModalStyles.codeBlock, { borderColor: colors.primary + '40' }]}>
             <View style={[inviteModalStyles.codeIconCircle, { backgroundColor: colors.primary + '15' }]}>
               <MaterialIcons name="sports-cricket" size={22} color={colors.primary} />
@@ -100,16 +89,12 @@ function InviteModal({ visible, academy, onClose }: {
               <Text style={inviteModalStyles.codeRoleLabel}>PLAYER CODE</Text>
               <Text style={[inviteModalStyles.codeValue, { color: colors.primary }]}>{academy.player_code}</Text>
             </View>
-            <Pressable
-              style={[inviteModalStyles.shareBtn, { backgroundColor: colors.primary }]}
-              onPress={sharePlayerCode}
-            >
+            <Pressable style={[inviteModalStyles.shareBtn, { backgroundColor: colors.primary }]} onPress={sharePlayerCode}>
               <MaterialIcons name="share" size={16} color={colors.textLight} />
               <Text style={inviteModalStyles.shareBtnText}>Share</Text>
             </Pressable>
           </View>
 
-          {/* Coach Code */}
           <View style={[inviteModalStyles.codeBlock, { borderColor: colors.warning + '40' }]}>
             <View style={[inviteModalStyles.codeIconCircle, { backgroundColor: colors.warning + '15' }]}>
               <MaterialIcons name="school" size={22} color={colors.warning} />
@@ -118,10 +103,7 @@ function InviteModal({ visible, academy, onClose }: {
               <Text style={inviteModalStyles.codeRoleLabel}>COACH CODE</Text>
               <Text style={[inviteModalStyles.codeValue, { color: colors.warning }]}>{academy.coach_code}</Text>
             </View>
-            <Pressable
-              style={[inviteModalStyles.shareBtn, { backgroundColor: colors.warning }]}
-              onPress={shareCoachCode}
-            >
+            <Pressable style={[inviteModalStyles.shareBtn, { backgroundColor: colors.warning }]} onPress={shareCoachCode}>
               <MaterialIcons name="share" size={16} color={colors.textLight} />
               <Text style={inviteModalStyles.shareBtnText}>Share</Text>
             </Pressable>
@@ -142,11 +124,7 @@ const inviteModalStyles = StyleSheet.create({
   handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginBottom: spacing.xs },
   title: { ...typography.h4, color: colors.text, fontWeight: '800', textAlign: 'center' },
   subtitle: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center', marginTop: -spacing.xs },
-  codeBlock: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    borderWidth: 1.5, borderRadius: borderRadius.lg,
-    padding: spacing.md, backgroundColor: colors.background,
-  },
+  codeBlock: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, borderWidth: 1.5, borderRadius: borderRadius.lg, padding: spacing.md, backgroundColor: colors.background },
   codeIconCircle: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
   codeRoleLabel: { fontSize: 9, color: colors.textSecondary, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase' },
   codeValue: { fontSize: 22, fontWeight: '900', letterSpacing: 4, marginTop: 2 },
@@ -154,6 +132,121 @@ const inviteModalStyles = StyleSheet.create({
   shareBtnText: { fontSize: 12, fontWeight: '700', color: colors.textLight },
   closeBtn: { backgroundColor: colors.background, borderRadius: borderRadius.md, paddingVertical: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs },
   closeBtnText: { ...typography.body, color: colors.text, fontWeight: '700' },
+});
+
+// ─── Edit Academy Modal ───────────────────────────────────────────────────────
+function EditAcademyModal({ visible, academy, onClose, onSaved }: {
+  visible: boolean;
+  academy: Academy | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const { showAlert } = useAlert();
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  React.useEffect(() => {
+    if (visible && academy) {
+      setName(academy.name);
+      setDescription(academy.description || '');
+    }
+  }, [visible, academy]);
+
+  const handleSave = async () => {
+    if (!academy) return;
+    if (!name.trim()) { showAlert('Error', 'Academy name cannot be empty.'); return; }
+    setSaving(true);
+    const { error } = await academyService.updateAcademy(academy.id, {
+      name: name.trim(),
+      description: description.trim() || undefined,
+    });
+    setSaving(false);
+    if (error) { showAlert('Error', error); return; }
+    onClose();
+    onSaved();
+    showAlert('Saved', 'Academy details updated successfully.');
+  };
+
+  if (!academy) return null;
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={editModalStyles.overlay}>
+        <View style={editModalStyles.sheet}>
+          <View style={editModalStyles.handle} />
+          <View style={editModalStyles.header}>
+            <Text style={editModalStyles.headerTitle}>Edit Academy</Text>
+            <Pressable onPress={onClose} style={editModalStyles.closeBtn}>
+              <MaterialIcons name="close" size={22} color={colors.text} />
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={editModalStyles.content} keyboardShouldPersistTaps="handled">
+            <Text style={editModalStyles.label}>Team / Academy Name</Text>
+            <TextInput
+              style={editModalStyles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g. Under 15"
+              placeholderTextColor={colors.textSecondary}
+              autoFocus
+            />
+            <Text style={editModalStyles.hint}>This is the name players see when they join using your code.</Text>
+
+            <Text style={[editModalStyles.label, { marginTop: spacing.md }]}>Organisation / Club Name (Optional)</Text>
+            <TextInput
+              style={[editModalStyles.input, { minHeight: 72, textAlignVertical: 'top' }]}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="e.g. Karachi Cricket Club"
+              placeholderTextColor={colors.textSecondary}
+              multiline
+            />
+            <Text style={editModalStyles.hint}>Your club or organisation name shown as a subtitle.</Text>
+
+            <Pressable
+              style={[editModalStyles.saveBtn, saving && { opacity: 0.6 }]}
+              onPress={handleSave}
+              disabled={saving}
+            >
+              {saving
+                ? <ActivityIndicator color={colors.textLight} />
+                : (
+                  <>
+                    <MaterialIcons name="save" size={18} color={colors.textLight} />
+                    <Text style={editModalStyles.saveBtnText}>Save Changes</Text>
+                  </>
+                )}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const editModalStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' },
+  handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  closeBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
+  content: { padding: spacing.lg, paddingBottom: 48, gap: spacing.xs },
+  label: { fontSize: 13, color: colors.text, fontWeight: '700', marginBottom: 6 },
+  hint: { fontSize: 11, color: colors.textSecondary, lineHeight: 16, marginTop: 4 },
+  input: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
+    fontSize: 15, color: colors.text, fontWeight: '600',
+  },
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.primary, paddingVertical: spacing.md + 2,
+    borderRadius: borderRadius.md, marginTop: spacing.lg,
+  },
+  saveBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700' },
 });
 
 // ─── Squad Overview Card ──────────────────────────────────────────────────────
@@ -185,9 +278,7 @@ function SquadOverviewCard({ members, logs, squad, squadFilter }: {
     <View style={[overviewStyles.card, { borderColor: accentColor + '30' }]}>
       <View style={overviewStyles.cardHeader}>
         <View style={[overviewStyles.dot, { backgroundColor: accentColor }]} />
-        <Text style={overviewStyles.cardTitle}>
-          {squad ? `${squad.name} Overview` : 'Academy Overview'}
-        </Text>
+        <Text style={overviewStyles.cardTitle}>{squad ? `${squad.name} Overview` : 'Academy Overview'}</Text>
         <Text style={overviewStyles.cardPeriod}>Last 7 days</Text>
       </View>
       <View style={overviewStyles.statsRow}>
@@ -211,10 +302,7 @@ function SquadOverviewCard({ members, logs, squad, squadFilter }: {
 }
 
 const overviewStyles = StyleSheet.create({
-  card: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    borderWidth: 1, padding: spacing.md, marginBottom: spacing.md,
-  },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, borderWidth: 1, padding: spacing.md, marginBottom: spacing.md },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
   dot: { width: 8, height: 8, borderRadius: 4 },
   cardTitle: { ...typography.bodySmall, color: colors.text, fontWeight: '700', flex: 1 },
@@ -242,11 +330,9 @@ export default function AcademyScreen() {
   const [squads, setSquads] = useState<AcademySquad[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
 
-  // Squad filter for coach view
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
-
-  // Invite modal
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [showEditAcademyModal, setShowEditAcademyModal] = useState(false);
 
   // Join modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -294,11 +380,8 @@ export default function AcademyScreen() {
 
   useFocusEffect(useCallback(() => {
     if (!currentMembership) return;
-    if (isCoach) {
-      loadCoachData(currentMembership.academy.id);
-    } else {
-      loadPlayerLogs(currentMembership.academy.id);
-    }
+    if (isCoach) loadCoachData(currentMembership.academy.id);
+    else loadPlayerLogs(currentMembership.academy.id);
   }, [currentMembership?.academy.id, isCoach]));
 
   const onRefresh = async () => {
@@ -353,17 +436,11 @@ export default function AcademyScreen() {
   };
 
   const resetJoinModal = () => {
-    setJoinStep('code');
-    setJoinCode('');
-    setJoinAcademyName('');
-    setJoinDisplayName('');
-    setJoinPosition('Batsman');
-    setJoinJersey('');
-    setJoinSquadId(null);
-    setJoinSquads([]);
+    setJoinStep('code'); setJoinCode(''); setJoinAcademyName('');
+    setJoinDisplayName(''); setJoinPosition('Batsman'); setJoinJersey('');
+    setJoinSquadId(null); setJoinSquads([]);
   };
 
-  // Derived squad for overview
   const currentSquad = squads.find(s => s.id === selectedSquadFilter) || null;
 
   if (loading) {
@@ -375,7 +452,6 @@ export default function AcademyScreen() {
     );
   }
 
-  // No memberships yet
   if (memberships.length === 0) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -394,15 +470,11 @@ export default function AcademyScreen() {
           </Pressable>
           <View style={styles.codeInfoCard}>
             <MaterialIcons name="info-outline" size={18} color={colors.textSecondary} />
-            <Text style={styles.codeInfoText}>
-              Your coach will give you a unique 6-character code. Enter it here to join instantly.
-            </Text>
+            <Text style={styles.codeInfoText}>Your coach will give you a unique 6-character code. Enter it here to join instantly.</Text>
           </View>
         </ScrollView>
-
         <JoinModal
-          visible={showJoinModal}
-          step={joinStep}
+          visible={showJoinModal} step={joinStep}
           code={joinCode} onCodeChange={c => setJoinCode(c.toUpperCase())}
           academyName={joinAcademyName}
           displayName={joinDisplayName} onDisplayNameChange={setJoinDisplayName}
@@ -410,8 +482,7 @@ export default function AcademyScreen() {
           jersey={joinJersey} onJerseyChange={setJoinJersey}
           squads={joinSquads} selectedSquadId={joinSquadId} onSquadChange={setJoinSquadId}
           verifyLoading={joinCodeLoading} joining={joining}
-          onVerify={handleVerifyCode}
-          onBack={() => setJoinStep('code')}
+          onVerify={handleVerifyCode} onBack={() => setJoinStep('code')}
           onClose={() => { setShowJoinModal(false); resetJoinModal(); }}
           onSubmit={handleJoin}
         />
@@ -434,7 +505,7 @@ export default function AcademyScreen() {
         </View>
       </View>
 
-      {/* ── Academy switcher (multi-academy) ── */}
+      {/* ── Academy switcher ── */}
       {memberships.length > 1 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.switcherScroll}
           contentContainerStyle={styles.switcherContent}>
@@ -452,29 +523,20 @@ export default function AcademyScreen() {
       {/* ── Coach Squad Filter Pill Row ── */}
       {isCoach && squads.length > 0 && (
         <View style={styles.squadFilterWrapper}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.squadFilterContent}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.squadFilterContent}>
             <Pressable
               style={[styles.squadPill, !selectedSquadFilter && styles.squadPillAll]}
               onPress={() => setSelectedSquadFilter(null)}
             >
-              <MaterialIcons
-                name="people"
-                size={12}
-                color={!selectedSquadFilter ? colors.textLight : colors.textSecondary}
-              />
-              <Text style={[styles.squadPillText, !selectedSquadFilter && styles.squadPillTextActive]}>
-                All Academy
-              </Text>
+              <MaterialIcons name="people" size={12} color={!selectedSquadFilter ? colors.textLight : colors.textSecondary} />
+              <Text style={[styles.squadPillText, !selectedSquadFilter && styles.squadPillTextActive]}>All Academy</Text>
             </Pressable>
             {squads.map(sq => {
               const isActive = selectedSquadFilter === sq.id;
               return (
-                <Pressable
-                  key={sq.id}
+                <Pressable key={sq.id}
                   style={[styles.squadPill, isActive && { backgroundColor: sq.color, borderColor: sq.color }]}
-                  onPress={() => setSelectedSquadFilter(isActive ? null : sq.id)}
-                >
+                  onPress={() => setSelectedSquadFilter(isActive ? null : sq.id)}>
                   <View style={[styles.squadPillDot, { backgroundColor: isActive ? 'rgba(255,255,255,0.7)' : sq.color }]} />
                   <Text style={[styles.squadPillText, isActive && styles.squadPillTextActive]}>{sq.name}</Text>
                 </Pressable>
@@ -488,16 +550,16 @@ export default function AcademyScreen() {
         showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
-        {/* ── Academy identity strip (compact) ── */}
+        {/* ── Academy identity strip ── */}
         <View style={styles.academyStrip}>
           <View style={[styles.academyStripIcon, { backgroundColor: (isCoach ? colors.warning : colors.primary) + '20' }]}>
             <MaterialIcons name={isCoach ? 'school' : 'sports-cricket'} size={20} color={isCoach ? colors.warning : colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.academyStripName} numberOfLines={1}>
-              {currentMembership!.academy.name}
-              {currentMembership!.academy.description ? '' : ''}
-            </Text>
+            <Text style={styles.academyStripName} numberOfLines={1}>{currentMembership!.academy.name}</Text>
+            {currentMembership!.academy.description ? (
+              <Text style={styles.academyStripDesc} numberOfLines={1}>{currentMembership!.academy.description}</Text>
+            ) : null}
             {!isCoach && currentMembership!.member.position ? (
               <Text style={[styles.academyStripSub, { color: getPositionColor(currentMembership!.member.position) }]}>
                 {currentMembership!.member.position}
@@ -505,6 +567,11 @@ export default function AcademyScreen() {
               </Text>
             ) : null}
           </View>
+          {isCoach && (
+            <Pressable style={styles.editAcademyBtn} onPress={() => setShowEditAcademyModal(true)} hitSlop={8}>
+              <MaterialIcons name="edit" size={15} color={colors.warning} />
+            </Pressable>
+          )}
           <View style={[styles.roleChip, { backgroundColor: (isCoach ? colors.warning : colors.primary) + '18' }]}>
             <Text style={[styles.roleChipText, { color: isCoach ? colors.warning : colors.primary }]}>
               {isCoach ? 'Coach' : 'Player'}
@@ -515,15 +582,8 @@ export default function AcademyScreen() {
         {/* ══ COACH VIEW ══ */}
         {isCoach && (
           <>
-            {/* Squad Overview Snapshot */}
-            <SquadOverviewCard
-              members={allMembers}
-              logs={allMemberLogs}
-              squad={currentSquad}
-              squadFilter={selectedSquadFilter}
-            />
+            <SquadOverviewCard members={allMembers} logs={allMemberLogs} squad={currentSquad} squadFilter={selectedSquadFilter} />
 
-            {/* Action Grid */}
             <View style={styles.actionsGrid}>
               <Pressable style={styles.actionCard} onPress={() => router.push({
                 pathname: '/academy-coach',
@@ -533,9 +593,7 @@ export default function AcademyScreen() {
                   <MaterialIcons name="people" size={28} color={colors.primary} />
                 </View>
                 <Text style={styles.actionTitle}>Squad View</Text>
-                <Text style={styles.actionSub}>
-                  {selectedSquadFilter ? `${currentSquad?.name || 'Squad'} roster` : 'All player logs'}
-                </Text>
+                <Text style={styles.actionSub}>{selectedSquadFilter ? `${currentSquad?.name || 'Squad'} roster` : 'All player logs'}</Text>
               </Pressable>
               <Pressable style={styles.actionCard} onPress={() => router.push({
                 pathname: '/academy-attendance',
@@ -549,11 +607,7 @@ export default function AcademyScreen() {
               </Pressable>
               <Pressable style={styles.actionCard} onPress={() => router.push({
                 pathname: '/academy-schedule',
-                params: {
-                  academyId: currentMembership!.academy.id,
-                  isCoach: 'true',
-                  ...(selectedSquadFilter ? { defaultSquad: selectedSquadFilter } : {}),
-                }
+                params: { academyId: currentMembership!.academy.id, isCoach: 'true', ...(selectedSquadFilter ? { defaultSquad: selectedSquadFilter } : {}) }
               } as any)}>
                 <View style={[styles.actionIcon, { backgroundColor: colors.warning + '20' }]}>
                   <MaterialIcons name="event-note" size={28} color={colors.warning} />
@@ -573,11 +627,7 @@ export default function AcademyScreen() {
               </Pressable>
             </View>
 
-            {/* Invite Players Button */}
-            <Pressable
-              style={styles.inviteBtn}
-              onPress={() => setShowInviteModal(true)}
-            >
+            <Pressable style={styles.inviteBtn} onPress={() => setShowInviteModal(true)}>
               <View style={styles.inviteBtnIconCircle}>
                 <MaterialIcons name="person-add" size={20} color={colors.primary} />
               </View>
@@ -588,11 +638,8 @@ export default function AcademyScreen() {
               <MaterialIcons name="chevron-right" size={20} color={colors.primary} />
             </Pressable>
 
-            {/* Manage Squads shortcut */}
-            <Pressable
-              style={[styles.inviteBtn, { marginTop: 0, borderColor: colors.border }]}
-              onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: currentMembership!.academy.id } } as any)}
-            >
+            <Pressable style={[styles.inviteBtn, { marginTop: 0, borderColor: colors.border }]}
+              onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: currentMembership!.academy.id } } as any)}>
               <View style={[styles.inviteBtnIconCircle, { backgroundColor: colors.mental + '15' }]}>
                 <MaterialIcons name="dashboard" size={20} color={colors.mental} />
               </View>
@@ -695,12 +742,8 @@ export default function AcademyScreen() {
                         </Text>
                       ) : null}
                     </View>
-                    <View style={[styles.intensityBadge, {
-                      backgroundColor: (log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success) + '20'
-                    }]}>
-                      <Text style={[styles.intensityBadgeText, {
-                        color: log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success
-                      }]}>{log.intensity}/10</Text>
+                    <View style={[styles.intensityBadge, { backgroundColor: (log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success) + '20' }]}>
+                      <Text style={[styles.intensityBadgeText, { color: log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success }]}>{log.intensity}/10</Text>
                     </View>
                   </View>
                 ))}
@@ -709,6 +752,14 @@ export default function AcademyScreen() {
           </>
         )}
       </ScrollView>
+
+      {/* ── Edit Academy Modal ── */}
+      <EditAcademyModal
+        visible={showEditAcademyModal}
+        academy={currentMembership?.academy || null}
+        onClose={() => setShowEditAcademyModal(false)}
+        onSaved={load}
+      />
 
       {/* ── Invite Modal ── */}
       <InviteModal
@@ -719,8 +770,7 @@ export default function AcademyScreen() {
 
       {/* ── Join Modal ── */}
       <JoinModal
-        visible={showJoinModal}
-        step={joinStep}
+        visible={showJoinModal} step={joinStep}
         code={joinCode} onCodeChange={c => setJoinCode(c.toUpperCase())}
         academyName={joinAcademyName}
         displayName={joinDisplayName} onDisplayNameChange={setJoinDisplayName}
@@ -728,8 +778,7 @@ export default function AcademyScreen() {
         jersey={joinJersey} onJerseyChange={setJoinJersey}
         squads={joinSquads} selectedSquadId={joinSquadId} onSquadChange={setJoinSquadId}
         verifyLoading={joinCodeLoading} joining={joining}
-        onVerify={handleVerifyCode}
-        onBack={() => setJoinStep('code')}
+        onVerify={handleVerifyCode} onBack={() => setJoinStep('code')}
         onClose={() => { setShowJoinModal(false); resetJoinModal(); }}
         onSubmit={handleJoin}
       />
@@ -750,7 +799,6 @@ function JoinModal({
         <View style={modalStyles.sheet}>
           <View style={modalStyles.handle} />
 
-          {/* Step 1: Enter Code */}
           {step === 'code' && (
             <>
               <View style={modalStyles.header}>
@@ -764,38 +812,28 @@ function JoinModal({
                   <MaterialIcons name="vpn-key" size={32} color={colors.primary} />
                 </View>
                 <Text style={modalStyles.stepTitle}>Enter Your Academy Code</Text>
-                <Text style={modalStyles.stepSubtitle}>
-                  Your coach will give you a 6-character code. Enter it below to get started.
-                </Text>
+                <Text style={modalStyles.stepSubtitle}>Your coach will give you a 6-character code. Enter it below to get started.</Text>
                 <TextInput
-                  style={[modalStyles.codeInput]}
-                  value={code}
-                  onChangeText={onCodeChange}
-                  placeholder="e.g. A1B2C3"
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="characters"
-                  maxLength={6}
-                  autoFocus
+                  style={modalStyles.codeInput}
+                  value={code} onChangeText={onCodeChange}
+                  placeholder="e.g. A1B2C3" placeholderTextColor={colors.textSecondary}
+                  autoCapitalize="characters" maxLength={6} autoFocus
                 />
                 <Pressable
                   style={[modalStyles.submitBtn, (verifyLoading || code.length < 6) && { opacity: 0.5 }]}
-                  onPress={onVerify}
-                  disabled={verifyLoading || code.length < 6}
+                  onPress={onVerify} disabled={verifyLoading || code.length < 6}
                 >
-                  {verifyLoading
-                    ? <ActivityIndicator color={colors.textLight} />
-                    : (
-                      <>
-                        <Text style={modalStyles.submitBtnText}>Verify Code</Text>
-                        <MaterialIcons name="arrow-forward" size={18} color={colors.textLight} />
-                      </>
-                    )}
+                  {verifyLoading ? <ActivityIndicator color={colors.textLight} /> : (
+                    <>
+                      <Text style={modalStyles.submitBtnText}>Verify Code</Text>
+                      <MaterialIcons name="arrow-forward" size={18} color={colors.textLight} />
+                    </>
+                  )}
                 </Pressable>
               </ScrollView>
             </>
           )}
 
-          {/* Step 2: Select Squad + Details */}
           {step === 'details' && (
             <>
               <View style={modalStyles.header}>
@@ -808,8 +846,6 @@ function JoinModal({
                 </Pressable>
               </View>
               <ScrollView contentContainerStyle={modalStyles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-
-                {/* Welcome banner */}
                 <View style={modalStyles.welcomeBanner}>
                   <MaterialIcons name="celebration" size={20} color={colors.primary} />
                   <Text style={modalStyles.welcomeText}>
@@ -817,7 +853,6 @@ function JoinModal({
                   </Text>
                 </View>
 
-                {/* Squad selector — shown prominently if squads exist */}
                 {squads && squads.length > 0 && (
                   <View style={modalStyles.squadSection}>
                     <Text style={modalStyles.squadSectionTitle}>Which squad are you in?</Text>
@@ -825,11 +860,9 @@ function JoinModal({
                       {squads.map((s: any) => {
                         const isSelected = selectedSquadId === s.id;
                         return (
-                          <Pressable
-                            key={s.id}
+                          <Pressable key={s.id}
                             style={[modalStyles.squadTile, isSelected && { backgroundColor: s.color, borderColor: s.color }]}
-                            onPress={() => onSquadChange(isSelected ? null : s.id)}
-                          >
+                            onPress={() => onSquadChange(isSelected ? null : s.id)}>
                             <View style={[modalStyles.squadTileDot, { backgroundColor: isSelected ? 'rgba(255,255,255,0.6)' : s.color }]} />
                             <Text style={[modalStyles.squadTileText, isSelected && { color: colors.textLight }]}>{s.name}</Text>
                             {isSelected && <MaterialIcons name="check-circle" size={14} color={colors.textLight} />}
@@ -883,8 +916,6 @@ const modalStyles = StyleSheet.create({
   headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
   closeBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
   content: { padding: spacing.lg, paddingBottom: 48, gap: spacing.xs },
-
-  // Step 1
   stepIconCircle: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center', alignSelf: 'center', marginBottom: spacing.md, marginTop: spacing.sm },
   stepTitle: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center' },
   stepSubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginTop: spacing.xs, marginBottom: spacing.lg },
@@ -895,13 +926,10 @@ const modalStyles = StyleSheet.create({
     fontSize: 28, fontWeight: '900', color: colors.text,
     letterSpacing: 10, textAlign: 'center', marginBottom: spacing.md,
   },
-
-  // Step 2
   welcomeBanner: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '25',
-    marginBottom: spacing.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '25', marginBottom: spacing.md,
   },
   welcomeText: { ...typography.body, color: colors.text, flex: 1 },
   squadSection: { marginBottom: spacing.md },
@@ -915,7 +943,6 @@ const modalStyles = StyleSheet.create({
   },
   squadTileDot: { width: 8, height: 8, borderRadius: 4 },
   squadTileText: { fontSize: 14, fontWeight: '700', color: colors.text },
-
   label: { fontSize: 13, color: colors.text, fontWeight: '600', marginBottom: 4, marginTop: spacing.sm },
   input: { backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.md, ...typography.body, color: colors.text },
   positionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginBottom: spacing.xs },
@@ -930,72 +957,43 @@ const modalStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-
   headerBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
   headerSub: { ...typography.caption, color: colors.textSecondary },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   joinMoreBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary + '12', borderRadius: 18, borderWidth: 1, borderColor: colors.primary + '30' },
-
   switcherScroll: { maxHeight: 48, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   switcherContent: { flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },
   switcherChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
   switcherChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   switcherText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
   switcherTextActive: { color: colors.textLight },
-
-  // Squad filter row
-  squadFilterWrapper: {
-    backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  squadFilterContent: {
-    flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, gap: spacing.sm, alignItems: 'center',
-  },
-  squadPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: spacing.sm + 2, paddingVertical: 6,
-    borderRadius: borderRadius.full, backgroundColor: colors.background,
-    borderWidth: 1.5, borderColor: colors.border,
-  },
+  squadFilterWrapper: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  squadFilterContent: { flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, gap: spacing.sm, alignItems: 'center' },
+  squadPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm + 2, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
   squadPillAll: { backgroundColor: colors.primary, borderColor: colors.primary },
   squadPillDot: { width: 7, height: 7, borderRadius: 3.5 },
   squadPillText: { fontSize: 12, color: colors.textSecondary, fontWeight: '700' },
   squadPillTextActive: { color: colors.textLight },
-
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 80, gap: spacing.sm },
-
-  // Academy identity strip (compact)
-  academyStrip: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
-  },
+  academyStrip: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   academyStripIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   academyStripName: { ...typography.body, color: colors.text, fontWeight: '700' },
+  academyStripDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
   academyStripSub: { fontSize: 12, fontWeight: '600', marginTop: 1 },
+  editAcademyBtn: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.warning + '15', justifyContent: 'center', alignItems: 'center', marginRight: 4 },
   roleChip: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full },
   roleChipText: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5 },
-
-  // Actions grid
   actionsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   actionCard: { flex: 1, minWidth: '45%', backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border },
   actionIcon: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
   actionTitle: { ...typography.bodySmall, color: colors.text, fontWeight: '700', textAlign: 'center' },
   actionSub: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
-
-  // Invite button
-  inviteBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    borderWidth: 1.5, borderColor: colors.primary + '40',
-    padding: spacing.md,
-  },
+  inviteBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, backgroundColor: colors.surface, borderRadius: borderRadius.lg, borderWidth: 1.5, borderColor: colors.primary + '40', padding: spacing.md },
   inviteBtnIconCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
   inviteBtnTitle: { ...typography.bodySmall, color: colors.text, fontWeight: '700' },
   inviteBtnSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
-
-  // Player cards
   card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
   cardTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
@@ -1010,8 +1008,6 @@ const styles = StyleSheet.create({
   logStats: { fontSize: 11, color: colors.primary, marginTop: 1, fontWeight: '600' },
   intensityBadge: { paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: borderRadius.sm },
   intensityBadgeText: { fontSize: 11, fontWeight: '800' },
-
-  // Empty state
   emptyContainer: { flexGrow: 1, alignItems: 'center', padding: spacing.xl, gap: spacing.md, paddingTop: 60 },
   emptyIconCircle: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.primary + '20', justifyContent: 'center', alignItems: 'center' },
   emptyTitle: { ...typography.h2, color: colors.text, fontWeight: '700', textAlign: 'center' },
