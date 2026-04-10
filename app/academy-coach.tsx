@@ -74,6 +74,8 @@ export default function AcademyCoachScreen() {
   const [aiLoading, setAiLoading] = useState(false);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [showInactive, setShowInactive] = useState(false);
+  const [showDeactivateModal, setShowDeactivateModal] = useState(false);
+  const [deactivateTarget, setDeactivateTarget] = useState<AcademyMember | null>(null);
 
   const load = useCallback(async () => {
     const [membersRes, logsRes] = await Promise.all([
@@ -94,26 +96,52 @@ export default function AcademyCoachScreen() {
   };
 
   const handleToggleActive = async (member: AcademyMember) => {
-    const action = member.is_active !== false ? 'Deactivate' : 'Reactivate';
     const name = member.display_name || 'this player';
-    const msg = member.is_active !== false
-      ? `Deactivating ${name} removes them from your active roster and they will not be billed next month. They can still log in but cannot log new sessions.`
-      : `Reactivating ${name} adds them back to your active roster and they will be billed again next month.`;
-    showAlert(`${action} Player?`, msg, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: action,
-        style: member.is_active !== false ? 'destructive' : 'default',
-        onPress: async () => {
-          setTogglingId(member.id);
-          const { error } = await academyService.setPlayerActive(member.id, member.is_active === false);
-          setTogglingId(null);
-          if (error) { showAlert('Error', error); return; }
-          await load();
-          showAlert(`${action}d`, `${name} has been ${action.toLowerCase()}d.`);
+    const isActive = member.is_active !== false;
+
+    if (isActive) {
+      setDeactivateTarget(member);
+      setShowDeactivateModal(true);
+    } else {
+      // Check 30-day reactivation lock
+      const lockUntil = academyService.cannotReactivateUntil(member);
+      if (lockUntil) {
+        const daysLeft = Math.ceil((lockUntil.getTime() - Date.now()) / 86400000);
+        showAlert(
+          'Reactivation Locked',
+          `${name} was deactivated less than 30 days ago. Reactivation unlocks in ${daysLeft} day${daysLeft !== 1 ? 's' : ''} (${lockUntil.toLocaleDateString()}).`,
+          [{ text: 'OK', style: 'cancel' }]
+        );
+        return;
+      }
+      showAlert('Reactivate Player?', `Adding ${name} back to your active roster. They will be billed again from next month.`, [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reactivate',
+          onPress: async () => {
+            setTogglingId(member.id);
+            const { error } = await academyService.setPlayerActive(member.id, true);
+            setTogglingId(null);
+            if (error) { showAlert('Error', error); return; }
+            await load();
+            showAlert('Reactivated', `${name} is back on the active roster and will be billed from next month.`);
+          },
         },
-      },
-    ]);
+      ]);
+    }
+  };
+
+  const confirmDeactivate = async () => {
+    if (!deactivateTarget) return;
+    const name = deactivateTarget.display_name || 'this player';
+    setShowDeactivateModal(false);
+    setTogglingId(deactivateTarget.id);
+    const { error } = await academyService.setPlayerActive(deactivateTarget.id, false);
+    setTogglingId(null);
+    setDeactivateTarget(null);
+    if (error) { showAlert('Error', error); return; }
+    await load();
+    showAlert('Player Deactivated', `${name} is removed from the active roster and excluded from future billing.`);
   };
 
   const handleViewPlayer = async (member: AcademyMember) => {
@@ -452,6 +480,64 @@ export default function AcademyCoachScreen() {
         )}
       </ScrollView>
 
+      {/* Deactivation Warning Modal */}
+      <Modal visible={showDeactivateModal} animationType="fade" transparent onRequestClose={() => setShowDeactivateModal(false)}>
+        <View style={deactivateModalStyles.overlay}>
+          <View style={deactivateModalStyles.card}>
+            <View style={deactivateModalStyles.iconRow}>
+              <View style={deactivateModalStyles.iconCircle}>
+                <MaterialIcons name="person-off" size={28} color={colors.error} />
+              </View>
+            </View>
+            <Text style={deactivateModalStyles.title}>Deactivate Player?</Text>
+            <Text style={deactivateModalStyles.playerNameSub}>{deactivateTarget?.display_name || 'This player'}</Text>
+
+            <View style={deactivateModalStyles.warningBlock}>
+              <View style={deactivateModalStyles.warningRow}>
+                <MaterialIcons name="history" size={15} color={colors.error} />
+                <Text style={deactivateModalStyles.warningTitle}>Data Access Lost</Text>
+              </View>
+              <Text style={deactivateModalStyles.warningBody}>
+                You will immediately lose access to this player{'"'}s training logs, journal entries, and AI Coach history.
+              </Text>
+            </View>
+
+            <View style={[deactivateModalStyles.warningBlock, { borderColor: colors.warning + '50', backgroundColor: colors.warning + '08' }]}>
+              <View style={deactivateModalStyles.warningRow}>
+                <MaterialIcons name="receipt" size={15} color={colors.warning} />
+                <Text style={[deactivateModalStyles.warningTitle, { color: colors.warning }]}>Billing Impact</Text>
+              </View>
+              <Text style={deactivateModalStyles.warningBody}>
+                If this player was active at any point this month, they remain on the current invoice. This is fair — you provided the service. They are removed from all future billing cycles.
+              </Text>
+            </View>
+
+            <View style={[deactivateModalStyles.warningBlock, { borderColor: colors.border, backgroundColor: colors.background }]}>
+              <View style={deactivateModalStyles.warningRow}>
+                <MaterialIcons name="lock-clock" size={15} color={colors.textSecondary} />
+                <Text style={[deactivateModalStyles.warningTitle, { color: colors.textSecondary }]}>30-Day Reactivation Lock</Text>
+              </View>
+              <Text style={deactivateModalStyles.warningBody}>
+                This player cannot be reactivated for 30 days once removed, preventing mid-month deactivation abuse.
+              </Text>
+            </View>
+
+            <View style={deactivateModalStyles.btnRow}>
+              <Pressable
+                style={deactivateModalStyles.cancelBtn}
+                onPress={() => { setShowDeactivateModal(false); setDeactivateTarget(null); }}
+              >
+                <Text style={deactivateModalStyles.cancelBtnText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={deactivateModalStyles.confirmBtn} onPress={confirmDeactivate}>
+                <MaterialIcons name="person-off" size={15} color={colors.textLight} />
+                <Text style={deactivateModalStyles.confirmBtnText}>Confirm</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
       {/* Player Detail Modal */}
       <Modal visible={showPlayerModal} animationType="slide" transparent onRequestClose={() => setShowPlayerModal(false)}>
         <View style={modalStyles.overlay}>
@@ -554,6 +640,24 @@ export default function AcademyCoachScreen() {
     </SafeAreaView>
   );
 }
+
+const deactivateModalStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg, width: '100%', gap: spacing.md },
+  iconRow: { alignItems: 'center' },
+  iconCircle: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.error + '15', justifyContent: 'center', alignItems: 'center' },
+  title: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center' },
+  playerNameSub: { ...typography.body, color: colors.textSecondary, textAlign: 'center', marginTop: -spacing.xs },
+  warningBlock: { borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.error + '40', backgroundColor: colors.error + '06', padding: spacing.md, gap: spacing.xs },
+  warningRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  warningTitle: { ...typography.bodySmall, color: colors.error, fontWeight: '800' },
+  warningBody: { fontSize: 12.5, color: colors.text, lineHeight: 18 },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  cancelBtn: { flex: 1, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
+  cancelBtnText: { ...typography.body, color: colors.text, fontWeight: '700' },
+  confirmBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.error },
+  confirmBtnText: { ...typography.bodySmall, color: colors.textLight, fontWeight: '800' },
+});
 
 const modalStyles = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },

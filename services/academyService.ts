@@ -292,11 +292,41 @@ export const academyService = {
   // ─── Player Deactivation ─────────────────────────────────────────────────────
   async setPlayerActive(memberId: string, isActive: boolean): Promise<{ error: string | null }> {
     const supabase = getSupabaseClient();
+    const updates: Record<string, any> = { is_active: isActive };
+    if (!isActive) {
+      updates.deactivated_at = new Date().toISOString();
+    } else {
+      updates.deactivated_at = null;
+    }
     const { error } = await supabase
       .from('academy_members')
-      .update({ is_active: isActive })
+      .update(updates)
       .eq('id', memberId);
     return { error: error?.message || null };
+  },
+
+  // Returns true if the player was deactivated less than 30 days ago
+  cannotReactivateUntil(member: AcademyMember): Date | null {
+    if (member.is_active !== false || !(member as any).deactivated_at) return null;
+    const deactivatedAt = new Date((member as any).deactivated_at as string);
+    const unlockDate = new Date(deactivatedAt);
+    unlockDate.setDate(unlockDate.getDate() + 30);
+    return unlockDate > new Date() ? unlockDate : null;
+  },
+
+  // Check if a player has a billing record for the current month (was active this month)
+  async hasCurrentMonthBilling(playerId: string, academyId: string): Promise<boolean> {
+    const supabase = getSupabaseClient();
+    const monthYear = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+    const { data } = await supabase
+      .from('player_billing_records')
+      .select('id')
+      .eq('player_id', playerId)
+      .eq('academy_id', academyId)
+      .eq('month_year', monthYear)
+      .eq('is_billable', true)
+      .maybeSingle();
+    return !!data;
   },
 
   async deleteLog(logId: string): Promise<{ error: string | null }> {

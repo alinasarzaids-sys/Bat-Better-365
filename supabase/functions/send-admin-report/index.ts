@@ -23,18 +23,32 @@ function buildHtml(stats: any, auditData: any): string {
   const totalRevenue = auditData.players * PRICE_PER_PLAYER;
 
   const perAcademyRows = (auditData.perAcademy || []).map((a: any, i: number) => {
-    const playerRows = (a.playerList || []).map((p: any) => `
-      <tr style="background:${p.isActive ? '#f8fffe' : '#fafafa'};">
+    const playerRows = (a.playerList || []).map((p: any) => {
+      const statusLabel = p.isBilledThisMonth
+        ? (p.isActive ? 'Active · Billed' : 'Deactivated · Billed This Month')
+        : 'Not Billed';
+      const statusBg = p.isBilledThisMonth
+        ? (p.isActive ? '#d4edda' : '#fde8a8')
+        : '#f0f0f0';
+      const statusColor = p.isBilledThisMonth
+        ? (p.isActive ? '#1a7a4a' : '#d97706')
+        : '#888';
+      const indicator = p.isBilledThisMonth
+        ? (p.isActive ? '🟢' : '🟡')
+        : '🔴';
+      return `
+      <tr style="background:${p.isBilledThisMonth ? '#f8fffe' : '#fafafa'};">
         <td style="padding:8px 14px 8px 30px; font-size:12px; color:#333; border-bottom:1px solid #f0f0f0;">
-          ${p.isActive ? '🟢' : '🔴'} ${p.name}
+          ${indicator} ${p.name}
         </td>
         <td style="padding:8px 14px; font-size:12px; color:#666; border-bottom:1px solid #f0f0f0;">${p.email}</td>
         <td style="padding:8px 14px; font-size:11px; text-align:center; border-bottom:1px solid #f0f0f0;">
-          <span style="background:${p.isActive ? '#d4edda' : '#fee2e2'}; color:${p.isActive ? '#1a7a4a' : '#dc2626'}; padding:2px 7px; border-radius:10px; font-weight:700;">${p.isActive ? 'Active' : 'Inactive'}</span>
+          <span style="background:${statusBg}; color:${statusColor}; padding:2px 7px; border-radius:10px; font-weight:700;">${statusLabel}</span>
         </td>
-        <td style="padding:8px 14px; font-size:12px; text-align:right; color:${p.isActive ? '#1a7a4a' : '#aaa'}; font-weight:800; border-bottom:1px solid #f0f0f0;">${p.isActive ? CURRENCY_SYMBOL + formatNumber(PRICE_PER_PLAYER) : '—'}</td>
+        <td style="padding:8px 14px; font-size:12px; text-align:right; color:${p.isBilledThisMonth ? '#1a7a4a' : '#aaa'}; font-weight:800; border-bottom:1px solid #f0f0f0;">${p.isBilledThisMonth ? CURRENCY_SYMBOL + formatNumber(PRICE_PER_PLAYER) : '—'}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
     const coachRows = (a.coachList || []).map((c: any) => `
       <tr style="background:#fffbf0;">
         <td style="padding:8px 14px 8px 30px; font-size:12px; color:#333; border-bottom:1px solid #f0f0f0;">🏅 ${c.name} <em style="color:#d97706; font-size:11px;">(Coach)</em></td>
@@ -64,16 +78,9 @@ function buildHtml(stats: any, auditData: any): string {
   <div style="max-width:680px; margin:32px auto; background:#fff; border-radius:16px; overflow:hidden; box-shadow:0 4px 24px rgba(0,0,0,0.10);">
 
     <!-- Header -->
-    <div style="background:linear-gradient(135deg,#1a7a4a 0%,#2d9d6a 100%); padding:32px 36px; display:flex; justify-content:space-between; align-items:center;">
-      <div>
-        <div style="font-size:26px; font-weight:900; color:#fff; letter-spacing:-0.5px;">🏏 Bat Better 365</div>
-        <div style="font-size:13px; color:rgba(255,255,255,0.75); margin-top:4px;">Admin Report — Confidential</div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:11px; text-transform:uppercase; letter-spacing:1px; color:rgba(255,255,255,0.7);">Generated On</div>
-        <div style="font-size:15px; font-weight:700; color:#fff; margin-top:2px;">${getDateLabel()}</div>
-        <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">Period: ${getMonthLabel()}</div>
-      </div>
+    <div style="background:linear-gradient(135deg,#1a7a4a 0%,#2d9d6a 100%); padding:32px 36px;">
+      <div style="font-size:26px; font-weight:900; color:#fff; letter-spacing:-0.5px;">🏏 Bat Better 365</div>
+      <div style="font-size:13px; color:rgba(255,255,255,0.75); margin-top:4px;">Admin Report — Confidential &nbsp;·&nbsp; ${getDateLabel()} &nbsp;·&nbsp; Period: ${getMonthLabel()}</div>
     </div>
 
     <div style="padding:32px 36px;">
@@ -127,14 +134,14 @@ function buildHtml(stats: any, auditData: any): string {
           <div style="font-size:48px; font-weight:900; color:#fff; margin:8px 0; letter-spacing:-1px;">${CURRENCY_SYMBOL}${formatNumber(totalRevenue)}</div>
           <div style="font-size:14px; color:rgba(255,255,255,0.8);">${CURRENCY} per month</div>
           <div style="margin-top:14px; padding-top:14px; border-top:1px solid rgba(255,255,255,0.3); font-size:13px; color:rgba(255,255,255,0.85);">
-            ${auditData.players} Active Players × ${CURRENCY_SYMBOL}${formatNumber(PRICE_PER_PLAYER)} ${CURRENCY}/player
+            ${auditData.players} Billed Players × ${CURRENCY_SYMBOL}${formatNumber(PRICE_PER_PLAYER)} ${CURRENCY}/player
           </div>
         </div>
         <div style="background:#fffbf0; border-left:4px solid #d97706; border-radius:0 8px 8px 0; padding:14px 18px;">
           <p style="font-size:12.5px; color:#444; line-height:1.6; margin:0;">
-            <strong>🔒 Device-Locked · Active-Only Billing:</strong>
-            Each player device is locked (1 phone = 1 player account). Only <strong>Active</strong> players count toward revenue.
-            ${stats.inactive_players > 0 ? `<br/><strong>${stats.inactive_players} deactivated player(s)</strong> are excluded from billing this month.` : ''}
+            <strong>🔒 Activity-Window Billing:</strong>
+            A player is billed for a month as soon as they log any session during that month — even if deactivated later.
+            🟢 Active &amp; billed &nbsp;·&nbsp; 🟡 Deactivated but billed this month (used the app) &nbsp;·&nbsp; 🔴 Not billed (no activity recorded)
           </p>
         </div>
       </div>
@@ -146,11 +153,11 @@ function buildHtml(stats: any, auditData: any): string {
           <tr>
             <td style="background:#f8fffe; border:1px solid #d4edda; border-radius:10px; padding:16px; text-align:center;">
               <div style="font-size:28px; font-weight:900; color:#1a7a4a; line-height:1;">${auditData.academies}</div>
-              <div style="font-size:11px; color:#888; margin-top:5px; font-weight:600; text-transform:uppercase;">Active Academies</div>
+              <div style="font-size:11px; color:#888; margin-top:5px; font-weight:600; text-transform:uppercase;">Academies</div>
             </td>
             <td style="background:#f8fffe; border:1px solid #d4edda; border-radius:10px; padding:16px; text-align:center;">
               <div style="font-size:28px; font-weight:900; color:#1a7a4a; line-height:1;">${auditData.players}</div>
-              <div style="font-size:11px; color:#888; margin-top:5px; font-weight:600; text-transform:uppercase;">Billed Players</div>
+              <div style="font-size:11px; color:#888; margin-top:5px; font-weight:600; text-transform:uppercase;">Billed This Month</div>
             </td>
             <td style="background:#fffbf0; border:1px solid #fde8a8; border-radius:10px; padding:16px; text-align:center;">
               <div style="font-size:28px; font-weight:900; color:#d97706; line-height:1;">${auditData.coaches}</div>
@@ -179,10 +186,11 @@ function buildHtml(stats: any, auditData: any): string {
         <h2 style="font-size:15px; font-weight:800; color:#1a7a4a; text-transform:uppercase; letter-spacing:0.5px; margin:0 0 16px 0; padding-bottom:8px; border-bottom:1px solid #e5e5e5;">📋 Billing Notes</h2>
         <div style="background:#f0f7ff; border-left:4px solid #1a56db; border-radius:0 8px 8px 0; padding:14px 18px;">
           <p style="font-size:12.5px; color:#444; line-height:1.8; margin:0;">
-            <strong>Rate:</strong> ${CURRENCY_SYMBOL}${formatNumber(PRICE_PER_PLAYER)} ${CURRENCY} per active player per month.<br/>
-            <strong>Billing:</strong> Only players with <strong>Active</strong> status are included in revenue calculations.<br/>
-            <strong>Device Lock:</strong> Each player code is tied to one physical device to prevent sharing.<br/>
-            <strong>Adjustments:</strong> Coaches can deactivate players who have left; they are removed from billing immediately.
+            <strong>Rate:</strong> ${CURRENCY_SYMBOL}${formatNumber(PRICE_PER_PLAYER)} ${CURRENCY} per billed player per month.<br/>
+            <strong>Billing Rule:</strong> A player is billed the moment they log any session in a given month, regardless of later deactivation.<br/>
+            <strong>30-Day Lock:</strong> Deactivated players cannot be reactivated for 30 days, preventing mid-month deactivation abuse.<br/>
+            <strong>Device Lock:</strong> Each player code is tied to one physical device (1 phone = 1 billable slot).<br/>
+            <strong>Adjustments:</strong> Coaches who have not yet had any players log sessions this month will show $0.
           </p>
         </div>
       </div>
@@ -190,9 +198,8 @@ function buildHtml(stats: any, auditData: any): string {
     </div>
 
     <!-- Footer -->
-    <div style="background:#f9f9f9; padding:20px 36px; border-top:1px solid #eee; display:flex; justify-content:space-between;">
-      <span style="font-size:12px; color:#aaa;"><strong style="color:#1a7a4a;">Bat Better 365</strong> — Admin Report · Confidential</span>
-      <span style="font-size:12px; color:#aaa;">Generated: ${getDateLabel()}</span>
+    <div style="background:#f9f9f9; padding:20px 36px; border-top:1px solid #eee;">
+      <span style="font-size:12px; color:#aaa;"><strong style="color:#1a7a4a;">Bat Better 365</strong> — Admin Report · Confidential · Generated: ${getDateLabel()}</span>
     </div>
 
   </div>
@@ -208,7 +215,6 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    // Validate secret token to prevent unauthorized access
     const url = new URL(req.url);
     const secret = url.searchParams.get('secret') || (await req.json().catch(() => ({}))).secret;
     if (secret !== REPORT_SECRET) {
@@ -218,26 +224,35 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Use service role to bypass RLS
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // Fetch stats via function
     const { data: stats, error: statsError } = await supabase.rpc('get_app_stats');
     if (statsError) throw new Error(`Stats error: ${statsError.message}`);
 
-    // Fetch per-academy breakdown
     const { data: academies, error: aErr } = await supabase.from('academies').select('id, name');
     if (aErr) throw new Error(`Academies error: ${aErr.message}`);
 
     const { data: members, error: mErr } = await supabase
       .from('academy_members')
-      .select('academy_id, role, is_active, display_name, user_id');
+      .select('academy_id, role, is_active, display_name, user_id, deactivated_at');
     if (mErr) throw new Error(`Members error: ${mErr.message}`);
 
-    // Fetch user profiles for email + name
+    // Billing records for current month — billed regardless of deactivation status
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const { data: billingRecords, error: brErr } = await supabase
+      .from('player_billing_records')
+      .select('player_id, academy_id, month_year, is_billable')
+      .eq('month_year', currentMonth)
+      .eq('is_billable', true);
+    if (brErr) throw new Error(`Billing records error: ${brErr.message}`);
+
+    const billedSet = new Set(
+      (billingRecords || []).map((r: any) => `${r.player_id}:${r.academy_id}`)
+    );
+
     const { data: profiles, error: pErr } = await supabase
       .from('user_profiles')
       .select('id, email, full_name, username');
@@ -248,16 +263,16 @@ Deno.serve(async (req: Request) => {
 
     const perAcademy = (academies || []).map((a: any) => {
       const am = (members || []).filter((m: any) => m.academy_id === a.id);
-      const activePlayers = am.filter((m: any) => m.role === 'player' && m.is_active !== false).map((m: any) => ({
-        name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
-        email: profileMap[m.user_id]?.email || '—',
-        isActive: m.is_active !== false,
-      }));
-      const allPlayers = am.filter((m: any) => m.role === 'player').map((m: any) => ({
-        name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
-        email: profileMap[m.user_id]?.email || '—',
-        isActive: m.is_active !== false,
-      }));
+      const billedPlayers = am.filter((m: any) => m.role === 'player' && billedSet.has(`${m.user_id}:${a.id}`));
+      const allPlayers = am.filter((m: any) => m.role === 'player').map((m: any) => {
+        const isBilledThisMonth = billedSet.has(`${m.user_id}:${a.id}`);
+        return {
+          name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
+          email: profileMap[m.user_id]?.email || '—',
+          isActive: m.is_active !== false,
+          isBilledThisMonth,
+        };
+      });
       const coachList = am.filter((m: any) => m.role === 'coach').map((m: any) => ({
         name: m.display_name || profileMap[m.user_id]?.full_name || profileMap[m.user_id]?.username || 'Unknown',
         email: profileMap[m.user_id]?.email || '—',
@@ -265,14 +280,14 @@ Deno.serve(async (req: Request) => {
       return {
         id: a.id,
         name: a.name,
-        players: activePlayers.length,
+        players: billedPlayers.length,
         coaches: am.filter((m: any) => m.role === 'coach' && m.is_active !== false).length,
         playerList: allPlayers,
         coachList,
       };
     });
 
-    const totalPlayers = (members || []).filter((m: any) => m.role === 'player' && m.is_active !== false).length;
+    const totalPlayers = (billingRecords || []).length;
     const totalCoaches = (members || []).filter((m: any) => m.role === 'coach' && m.is_active !== false).length;
 
     const auditData = {
@@ -285,7 +300,6 @@ Deno.serve(async (req: Request) => {
     const totalRevenue = totalPlayers * PRICE_PER_PLAYER;
     const html = buildHtml(stats, auditData);
 
-    // Send via Resend
     const resendKey = Deno.env.get('RESEND_API_KEY');
     if (!resendKey) throw new Error('RESEND_API_KEY not configured');
 
@@ -304,10 +318,7 @@ Deno.serve(async (req: Request) => {
     });
 
     const emailData = await emailRes.json();
-
-    if (!emailRes.ok) {
-      throw new Error(`Resend error: ${JSON.stringify(emailData)}`);
-    }
+    if (!emailRes.ok) throw new Error(`Resend error: ${JSON.stringify(emailData)}`);
 
     console.log(`Admin report sent to ${ADMIN_EMAIL}`, emailData);
 
@@ -316,7 +327,7 @@ Deno.serve(async (req: Request) => {
       message: `Report sent to ${ADMIN_EMAIL}`,
       stats: {
         total_users: stats.total_users,
-        active_players: totalPlayers,
+        billed_players_this_month: totalPlayers,
         total_revenue_pkr: totalRevenue,
         academies: auditData.academies,
       },
