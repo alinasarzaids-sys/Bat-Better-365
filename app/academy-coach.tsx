@@ -483,90 +483,309 @@ export default function AcademyCoachScreen() {
           </>
         )}
 
-        {activeTab === 'analytics' && (
-          <>
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Team Overview (Last 30 Days)</Text>
-              <View style={styles.analyticsGrid}>
-                <View style={styles.analyticsItem}>
-                  <MaterialIcons name="event" size={22} color={colors.primary} />
-                  <Text style={styles.analyticsVal}>{totalSessions}</Text>
-                  <Text style={styles.analyticsLabel}>Total Logs</Text>
-                </View>
-                <View style={styles.analyticsItem}>
-                  <MaterialIcons name="timer" size={22} color={colors.mental} />
-                  <Text style={styles.analyticsVal}>{Math.round(totalMinutes / 60)}h</Text>
-                  <Text style={styles.analyticsLabel}>Training Time</Text>
-                </View>
-                <View style={styles.analyticsItem}>
-                  <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
-                  <Text style={styles.analyticsVal}>{totalBallsFaced}</Text>
-                  <Text style={styles.analyticsLabel}>Balls Faced</Text>
-                </View>
-                <View style={styles.analyticsItem}>
-                  <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
-                  <Text style={styles.analyticsVal}>{totalBallsBowled}</Text>
-                  <Text style={styles.analyticsLabel}>Balls Bowled</Text>
+        {activeTab === 'analytics' && (() => {
+          // ── Aggregate cricket stats across all active players ──
+          const totalRuns = allLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
+          const totalWickets = allLogs.reduce((a, l) => a + (l.wickets || 0), 0);
+          const totalCatches = allLogs.reduce((a, l) => a + (l.catches || 0), 0);
+          const totalRunOuts = allLogs.reduce((a, l) => a + (l.run_outs || 0), 0);
+          const totalStumpings = allLogs.reduce((a, l) => a + (l.stumpings || 0), 0);
+          const teamShotRate = totalBallsFaced > 0
+            ? ((totalRuns / totalBallsFaced) * 100).toFixed(1) : '0';
+          const teamWktRate = totalBallsBowled > 0
+            ? (totalBallsBowled / Math.max(totalWickets, 1)).toFixed(1) : '—';
+
+          // Per-player batting stats
+          const battingStats = allActivePlayers.map(m => {
+            const logs = allLogs.filter(l => l.user_id === m.user_id);
+            const faced = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+            const runs = logs.reduce((a, l) => a + (l.runs_scored || 0), 0);
+            return { member: m, faced, runs, shotRate: faced > 0 ? (runs / faced) * 100 : 0 };
+          }).filter(s => s.faced > 0).sort((a, b) => b.faced - a.faced);
+
+          // Per-player bowling stats
+          const bowlingStats = allActivePlayers.map(m => {
+            const logs = allLogs.filter(l => l.user_id === m.user_id);
+            const bowled = logs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
+            const wickets = logs.reduce((a, l) => a + (l.wickets || 0), 0);
+            return { member: m, bowled, wickets };
+          }).filter(s => s.bowled > 0).sort((a, b) => b.bowled - a.bowled);
+
+          // Per-player fielding stats
+          const fieldingStats = allActivePlayers.map(m => {
+            const logs = allLogs.filter(l => l.user_id === m.user_id);
+            const catches = logs.reduce((a, l) => a + (l.catches || 0), 0);
+            const runOuts = logs.reduce((a, l) => a + (l.run_outs || 0), 0);
+            const stumpings = logs.reduce((a, l) => a + (l.stumpings || 0), 0);
+            const total = catches + runOuts + stumpings;
+            return { member: m, catches, runOuts, stumpings, total };
+          }).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
+
+          const maxBatFaced = Math.max(...battingStats.map(s => s.faced), 1);
+          const maxBowled = Math.max(...bowlingStats.map(s => s.bowled), 1);
+          const maxFielding = Math.max(...fieldingStats.map(s => s.total), 1);
+          const maxSessions = Math.max(...sessionCounts.map(s => s.count), 1);
+
+          return (
+            <>
+              {/* ── Team Overview ── */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Team Overview (Last 30 Days)</Text>
+                <View style={styles.analyticsGrid}>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="event" size={22} color={colors.primary} />
+                    <Text style={styles.analyticsVal}>{totalSessions}</Text>
+                    <Text style={styles.analyticsLabel}>Total Logs</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="timer" size={22} color={colors.mental} />
+                    <Text style={styles.analyticsVal}>{Math.round(totalMinutes / 60)}h</Text>
+                    <Text style={styles.analyticsLabel}>Training Time</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
+                    <Text style={styles.analyticsVal}>{totalBallsFaced}</Text>
+                    <Text style={styles.analyticsLabel}>Balls Faced</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
+                    <Text style={styles.analyticsVal}>{totalBallsBowled}</Text>
+                    <Text style={styles.analyticsLabel}>Balls Bowled</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="star" size={22} color={colors.warning} />
+                    <Text style={styles.analyticsVal}>{totalRuns}</Text>
+                    <Text style={styles.analyticsLabel}>Runs Scored</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="military-tech" size={22} color={colors.error} />
+                    <Text style={styles.analyticsVal}>{totalWickets}</Text>
+                    <Text style={styles.analyticsLabel}>Wickets</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="pan-tool" size={22} color={colors.success} />
+                    <Text style={styles.analyticsVal}>{totalCatches + totalRunOuts + totalStumpings}</Text>
+                    <Text style={styles.analyticsLabel}>Fielding Actions</Text>
+                  </View>
+                  <View style={styles.analyticsItem}>
+                    <MaterialIcons name="speed" size={22} color={colors.tactical} />
+                    <Text style={styles.analyticsVal}>{teamShotRate}%</Text>
+                    <Text style={styles.analyticsLabel}>Team Shot Rate</Text>
+                  </View>
                 </View>
               </View>
-            </View>
 
-            {/* Training load per player (bar chart) */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Training Volume by Player</Text>
-              <Text style={styles.cardSub}>Sessions in last 30 days (active players)</Text>
-              {sessionCounts.map(({ member, count }) => {
-                const name = member.display_name || member.user_profiles?.username || 'Player';
-                const maxCount = Math.max(...sessionCounts.map(s => s.count), 1);
-                return (
-                  <View key={member.id} style={styles.barRow}>
-                    <Text style={styles.barLabel} numberOfLines={1}>{name}</Text>
-                    <View style={styles.barTrack}>
-                      <View style={[styles.barFill, { width: `${(count / maxCount) * 100}%`, backgroundColor: getPositionColor(member.position) }]} />
+              {/* ── Training Volume ── */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Training Volume by Player</Text>
+                <Text style={styles.cardSub}>Sessions logged in last 30 days</Text>
+                {sessionCounts.map(({ member, count }) => {
+                  const name = member.display_name || member.user_profiles?.username || 'Player';
+                  return (
+                    <View key={member.id} style={styles.barRow}>
+                      <Text style={styles.barLabel} numberOfLines={1}>{name}</Text>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { width: `${(count / maxSessions) * 100}%`, backgroundColor: getPositionColor(member.position) }]} />
+                      </View>
+                      <Text style={[styles.barVal, { color: getPositionColor(member.position) }]}>{count}</Text>
                     </View>
-                    <Text style={[styles.barVal, { color: getPositionColor(member.position) }]}>{count}</Text>
-                  </View>
-                );
-              })}
-            </View>
+                  );
+                })}
+                {sessionCounts.length === 0 && <Text style={styles.emptyChartText}>No sessions logged yet</Text>}
+              </View>
 
-            {/* Avg intensity per player */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Average Training Intensity</Text>
-              <Text style={styles.cardSub}>Self-reported, scale 1–10</Text>
-              {sessionCounts.filter(s => s.count > 0).map(({ member, avgIntensity: ai }) => {
-                const name = member.display_name || member.user_profiles?.username || 'Player';
-                return (
-                  <View key={member.id} style={styles.barRow}>
-                    <Text style={styles.barLabel} numberOfLines={1}>{name}</Text>
-                    <View style={styles.barTrack}>
-                      <View style={[styles.barFill, { width: `${(ai / 10) * 100}%`, backgroundColor: getIntensityColor(Math.round(ai)) }]} />
-                    </View>
-                    <Text style={[styles.barVal, { color: getIntensityColor(Math.round(ai)) }]}>{ai.toFixed(1)}</Text>
+              {/* ── Batting: Balls Faced vs Runs Scored ── */}
+              <View style={styles.card}>
+                <View style={analyticsStyles.sectionHeader}>
+                  <View style={[analyticsStyles.pillIcon, { backgroundColor: colors.technical + '20' }]}>
+                    <MaterialIcons name="sports-cricket" size={16} color={colors.technical} />
                   </View>
-                );
-              })}
-            </View>
+                  <View>
+                    <Text style={styles.cardTitle}>Batting Performance</Text>
+                    <Text style={styles.cardSub}>Balls faced · runs scored · shot rate</Text>
+                  </View>
+                </View>
+                <View style={analyticsStyles.legendRow}>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.technical + '40' }]} />
+                    <Text style={analyticsStyles.legendText}>Balls Faced</Text>
+                  </View>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.technical }]} />
+                    <Text style={analyticsStyles.legendText}>Runs Scored</Text>
+                  </View>
+                </View>
+                {battingStats.map(({ member, faced, runs, shotRate }) => {
+                  const name = member.display_name || member.user_profiles?.username || 'Player';
+                  const runsWidth = faced > 0 ? Math.min((runs / faced) * 100, 100) : 0;
+                  return (
+                    <View key={member.id} style={analyticsStyles.cricketBarRow}>
+                      <View style={analyticsStyles.cricketBarHeader}>
+                        <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
+                        <Text style={[analyticsStyles.cricketBarRate, { color: colors.technical }]}>
+                          {shotRate.toFixed(0)}% rate
+                        </Text>
+                      </View>
+                      <View style={analyticsStyles.stackedTrack}>
+                        {/* Full bar = balls faced */}
+                        <View style={[analyticsStyles.stackedBase, {
+                          width: `${(faced / maxBatFaced) * 100}%`,
+                          backgroundColor: colors.technical + '30',
+                        }]}>
+                          {/* Inner fill = runs (success) */}
+                          <View style={[analyticsStyles.stackedFill, {
+                            width: `${runsWidth}%`,
+                            backgroundColor: colors.technical,
+                          }]} />
+                        </View>
+                      </View>
+                      <View style={analyticsStyles.cricketBarMeta}>
+                        <Text style={analyticsStyles.metaText}>{faced} faced</Text>
+                        <Text style={[analyticsStyles.metaText, { color: colors.technical, fontWeight: '700' }]}>{runs} runs</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+                {battingStats.length === 0 && <Text style={styles.emptyChartText}>No batting data logged yet</Text>}
+              </View>
 
-            {/* Session type breakdown */}
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>Session Types</Text>
-              {(() => {
-                const types: Record<string, number> = {};
-                allLogs.forEach(l => { types[l.session_type] = (types[l.session_type] || 0) + 1; });
-                return Object.entries(types).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                  <View key={type} style={styles.barRow}>
-                    <Text style={styles.barLabel} numberOfLines={1}>{type}</Text>
-                    <View style={styles.barTrack}>
-                      <View style={[styles.barFill, { width: `${(count / totalSessions) * 100}%`, backgroundColor: colors.primary }]} />
-                    </View>
-                    <Text style={[styles.barVal, { color: colors.primary }]}>{count}</Text>
+              {/* ── Bowling: Balls Bowled vs Wickets ── */}
+              <View style={styles.card}>
+                <View style={analyticsStyles.sectionHeader}>
+                  <View style={[analyticsStyles.pillIcon, { backgroundColor: colors.physical + '20' }]}>
+                    <MaterialIcons name="sports-cricket" size={16} color={colors.physical} />
                   </View>
-                ));
-              })()}
-            </View>
-          </>
-        )}
+                  <View>
+                    <Text style={styles.cardTitle}>Bowling Performance</Text>
+                    <Text style={styles.cardSub}>Balls bowled · wickets taken · strike rate</Text>
+                  </View>
+                </View>
+                <View style={analyticsStyles.legendRow}>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.physical + '40' }]} />
+                    <Text style={analyticsStyles.legendText}>Balls Bowled</Text>
+                  </View>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.error }]} />
+                    <Text style={analyticsStyles.legendText}>Wickets</Text>
+                  </View>
+                </View>
+                {bowlingStats.map(({ member, bowled, wickets }) => {
+                  const name = member.display_name || member.user_profiles?.username || 'Player';
+                  const strikeRate = wickets > 0 ? (bowled / wickets).toFixed(1) : null;
+                  // wicket bar = proportion of balls that took wickets (capped visually at 20%)
+                  const wicketVisual = bowled > 0 ? Math.min((wickets / bowled) * 500, 100) : 0;
+                  return (
+                    <View key={member.id} style={analyticsStyles.cricketBarRow}>
+                      <View style={analyticsStyles.cricketBarHeader}>
+                        <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
+                        <Text style={[analyticsStyles.cricketBarRate, { color: colors.physical }]}>
+                          {strikeRate ? `SR ${strikeRate}` : `${wickets} wkt${wickets !== 1 ? 's' : ''}`}
+                        </Text>
+                      </View>
+                      <View style={analyticsStyles.stackedTrack}>
+                        <View style={[analyticsStyles.stackedBase, {
+                          width: `${(bowled / maxBowled) * 100}%`,
+                          backgroundColor: colors.physical + '30',
+                        }]}>
+                          <View style={[analyticsStyles.stackedFill, {
+                            width: `${wicketVisual}%`,
+                            backgroundColor: colors.error,
+                          }]} />
+                        </View>
+                      </View>
+                      <View style={analyticsStyles.cricketBarMeta}>
+                        <Text style={analyticsStyles.metaText}>{bowled} bowled</Text>
+                        <Text style={[analyticsStyles.metaText, { color: colors.error, fontWeight: '700' }]}>{wickets} wkts</Text>
+                      </View>
+                    </View>
+                  );
+                })}
+                {bowlingStats.length === 0 && <Text style={styles.emptyChartText}>No bowling data logged yet</Text>}
+              </View>
+
+              {/* ── Fielding: Catches / Run Outs / Stumpings ── */}
+              <View style={styles.card}>
+                <View style={analyticsStyles.sectionHeader}>
+                  <View style={[analyticsStyles.pillIcon, { backgroundColor: colors.success + '20' }]}>
+                    <MaterialIcons name="pan-tool" size={16} color={colors.success} />
+                  </View>
+                  <View>
+                    <Text style={styles.cardTitle}>Fielding Performance</Text>
+                    <Text style={styles.cardSub}>Catches · run outs · stumpings</Text>
+                  </View>
+                </View>
+                <View style={analyticsStyles.legendRow}>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.success }]} />
+                    <Text style={analyticsStyles.legendText}>Catches</Text>
+                  </View>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.warning }]} />
+                    <Text style={analyticsStyles.legendText}>Run Outs</Text>
+                  </View>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.mental }]} />
+                    <Text style={analyticsStyles.legendText}>Stumpings</Text>
+                  </View>
+                </View>
+                {fieldingStats.map(({ member, catches, runOuts, stumpings, total }) => {
+                  const name = member.display_name || member.user_profiles?.username || 'Player';
+                  const catchW = total > 0 ? (catches / total) * 100 : 0;
+                  const roW = total > 0 ? (runOuts / total) * 100 : 0;
+                  const stW = total > 0 ? (stumpings / total) * 100 : 0;
+                  return (
+                    <View key={member.id} style={analyticsStyles.cricketBarRow}>
+                      <View style={analyticsStyles.cricketBarHeader}>
+                        <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
+                        <Text style={[analyticsStyles.cricketBarRate, { color: colors.success }]}>
+                          {total} action{total !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      {/* Stacked proportional bar */}
+                      <View style={[analyticsStyles.stackedTrack, { overflow: 'hidden' }]}>
+                        <View style={[analyticsStyles.stackedBase, {
+                          width: `${(total / maxFielding) * 100}%`,
+                          backgroundColor: colors.border,
+                          flexDirection: 'row',
+                        }]}>
+                          <View style={{ width: `${catchW}%`, height: '100%', backgroundColor: colors.success }} />
+                          <View style={{ width: `${roW}%`, height: '100%', backgroundColor: colors.warning }} />
+                          <View style={{ width: `${stW}%`, height: '100%', backgroundColor: colors.mental }} />
+                        </View>
+                      </View>
+                      <View style={analyticsStyles.cricketBarMeta}>
+                        {catches > 0 ? <Text style={[analyticsStyles.metaText, { color: colors.success, fontWeight: '700' }]}>{catches}c</Text> : null}
+                        {runOuts > 0 ? <Text style={[analyticsStyles.metaText, { color: colors.warning, fontWeight: '700' }]}>{runOuts}ro</Text> : null}
+                        {stumpings > 0 ? <Text style={[analyticsStyles.metaText, { color: colors.mental, fontWeight: '700' }]}>{stumpings}st</Text> : null}
+                      </View>
+                    </View>
+                  );
+                })}
+                {fieldingStats.length === 0 && <Text style={styles.emptyChartText}>No fielding data logged yet</Text>}
+              </View>
+
+              {/* ── Avg Intensity ── */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Average Training Intensity</Text>
+                <Text style={styles.cardSub}>Self-reported, scale 1–10</Text>
+                {sessionCounts.filter(s => s.count > 0).map(({ member, avgIntensity: ai }) => {
+                  const name = member.display_name || member.user_profiles?.username || 'Player';
+                  return (
+                    <View key={member.id} style={styles.barRow}>
+                      <Text style={styles.barLabel} numberOfLines={1}>{name}</Text>
+                      <View style={styles.barTrack}>
+                        <View style={[styles.barFill, { width: `${(ai / 10) * 100}%`, backgroundColor: getIntensityColor(Math.round(ai)) }]} />
+                      </View>
+                      <Text style={[styles.barVal, { color: getIntensityColor(Math.round(ai)) }]}>{ai.toFixed(1)}</Text>
+                    </View>
+                  );
+                })}
+                {sessionCounts.filter(s => s.count > 0).length === 0 && <Text style={styles.emptyChartText}>No data yet</Text>}
+              </View>
+            </>
+          );
+        })()}
       </ScrollView>
 
       {/* Squad Create Modal */}
@@ -970,4 +1189,23 @@ const styles = StyleSheet.create({
   barTrack: { flex: 1, height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: 'hidden' },
   barFill: { height: 8, borderRadius: 4, minWidth: 4 },
   barVal: { width: 28, fontSize: 12, fontWeight: '700', textAlign: 'right' },
+  emptyChartText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingVertical: spacing.md, fontStyle: 'italic' },
+});
+
+const analyticsStyles = StyleSheet.create({
+  sectionHeader: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.xs },
+  pillIcon: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center', marginTop: 1 },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginBottom: spacing.md },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendDot: { width: 10, height: 10, borderRadius: 5 },
+  legendText: { fontSize: 11, color: colors.textSecondary, fontWeight: '500' },
+  cricketBarRow: { marginBottom: spacing.md },
+  cricketBarHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 5 },
+  cricketBarName: { fontSize: 13, color: colors.text, fontWeight: '600', flex: 1 },
+  cricketBarRate: { fontSize: 12, fontWeight: '700', marginLeft: spacing.sm },
+  stackedTrack: { height: 14, backgroundColor: colors.border, borderRadius: 7, overflow: 'hidden' },
+  stackedBase: { height: '100%', borderRadius: 7, overflow: 'hidden', flexDirection: 'row' },
+  stackedFill: { height: '100%' },
+  cricketBarMeta: { flexDirection: 'row', justifyContent: 'flex-end', gap: spacing.sm, marginTop: 3 },
+  metaText: { fontSize: 11, color: colors.textSecondary },
 });
