@@ -544,18 +544,24 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
-                    <Text style={styles.analyticsVal}>{totalBallsFaced}</Text>
-                    <Text style={styles.analyticsLabel}>Balls Faced</Text>
+                    <Text style={styles.analyticsVal}>
+                      {totalBallsFaced}/{allLogs.reduce((a, l) => a + (l.runs_scored || 0), 0)}
+                    </Text>
+                    <Text style={styles.analyticsLabel}>Faced / Hit</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
-                    <Text style={styles.analyticsVal}>{totalBallsBowled}</Text>
-                    <Text style={styles.analyticsLabel}>Balls Bowled</Text>
+                    <Text style={styles.analyticsVal}>
+                      {totalBallsBowled}/{allLogs.reduce((a, l) => a + (l.wickets || 0), 0)}
+                    </Text>
+                    <Text style={styles.analyticsLabel}>Bowled / Wkts</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="pan-tool" size={22} color={colors.success} />
-                    <Text style={styles.analyticsVal}>{totalCatches}</Text>
-                    <Text style={styles.analyticsLabel}>Catches Taken</Text>
+                    <Text style={styles.analyticsVal}>
+                      {allLogs.reduce((a, l) => a + (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0), 0)}/{totalCatches}
+                    </Text>
+                    <Text style={styles.analyticsLabel}>Chances / Caught</Text>
                   </View>
                 </View>
               </View>
@@ -587,7 +593,7 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Batting Performance</Text>
-                    <Text style={styles.cardSub}>Balls faced · runs scored · shot rate</Text>
+                    <Text style={styles.cardSub}>Balls faced / successfully hit · shot rate</Text>
                   </View>
                 </View>
                 <View style={analyticsStyles.legendRow}>
@@ -597,7 +603,7 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View style={analyticsStyles.legendItem}>
                     <View style={[analyticsStyles.legendDot, { backgroundColor: colors.technical }]} />
-                    <Text style={analyticsStyles.legendText}>Runs Scored</Text>
+                    <Text style={analyticsStyles.legendText}>Successfully Hit (Runs)</Text>
                   </View>
                 </View>
                 {battingStats.map(({ member, faced, runs, shotRate }) => {
@@ -626,7 +632,7 @@ export default function AcademyCoachScreen() {
                       </View>
                       <View style={analyticsStyles.cricketBarMeta}>
                         <Text style={analyticsStyles.metaText}>{faced} faced</Text>
-                        <Text style={[analyticsStyles.metaText, { color: colors.technical, fontWeight: '700' }]}>{runs} runs</Text>
+                        <Text style={[analyticsStyles.metaText, { color: colors.technical, fontWeight: '700' }]}>{runs} hit</Text>
                       </View>
                     </View>
                   );
@@ -642,7 +648,7 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Bowling Performance</Text>
-                    <Text style={styles.cardSub}>Balls bowled · wickets taken · strike rate</Text>
+                    <Text style={styles.cardSub}>Balls bowled / successful wickets · strike rate</Text>
                   </View>
                 </View>
                 <View style={analyticsStyles.legendRow}>
@@ -652,7 +658,7 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View style={analyticsStyles.legendItem}>
                     <View style={[analyticsStyles.legendDot, { backgroundColor: colors.error }]} />
-                    <Text style={analyticsStyles.legendText}>Wickets</Text>
+                    <Text style={analyticsStyles.legendText}>Successful (Wickets)</Text>
                   </View>
                 </View>
                 {bowlingStats.map(({ member, bowled, wickets }) => {
@@ -681,7 +687,7 @@ export default function AcademyCoachScreen() {
                       </View>
                       <View style={analyticsStyles.cricketBarMeta}>
                         <Text style={analyticsStyles.metaText}>{bowled} bowled</Text>
-                        <Text style={[analyticsStyles.metaText, { color: colors.error, fontWeight: '700' }]}>{wickets} wkts</Text>
+                        <Text style={[analyticsStyles.metaText, { color: colors.error, fontWeight: '700' }]}>{wickets} wicket{wickets !== 1 ? 's' : ''}</Text>
                       </View>
                     </View>
                   );
@@ -697,13 +703,13 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Fielding Performance</Text>
-                    <Text style={styles.cardSub}>Catches · run outs · stumpings</Text>
+                    <Text style={styles.cardSub}>Fielding chances / catches taken · run outs · stumpings</Text>
                   </View>
                 </View>
                 <View style={analyticsStyles.legendRow}>
                   <View style={analyticsStyles.legendItem}>
                     <View style={[analyticsStyles.legendDot, { backgroundColor: colors.success }]} />
-                    <Text style={analyticsStyles.legendText}>Catches</Text>
+                    <Text style={analyticsStyles.legendText}>Catches (Taken)</Text>
                   </View>
                   <View style={analyticsStyles.legendItem}>
                     <View style={[analyticsStyles.legendDot, { backgroundColor: colors.warning }]} />
@@ -724,7 +730,7 @@ export default function AcademyCoachScreen() {
                       <View style={analyticsStyles.cricketBarHeader}>
                         <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
                         <Text style={[analyticsStyles.cricketBarRate, { color: colors.success }]}>
-                          {total} action{total !== 1 ? 's' : ''}
+                          {total} chances · {catches} taken
                         </Text>
                       </View>
                       {/* Stacked proportional bar */}
