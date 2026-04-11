@@ -649,6 +649,18 @@ export default function AcademyScreen() {
               </View>
               <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
             </Pressable>
+
+            <Pressable style={[styles.inviteBtn, { marginTop: 0, borderColor: colors.border }]}
+              onPress={() => router.push({ pathname: '/academy-history', params: { academyId: currentMembership!.academy.id, isCoach: 'true' } } as any)}>
+              <View style={[styles.inviteBtnIconCircle, { backgroundColor: colors.technical + '15' }]}>
+                <MaterialIcons name="history" size={20} color={colors.technical} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inviteBtnTitle}>Training History</Text>
+                <Text style={styles.inviteBtnSub}>All logged academy sessions</Text>
+              </View>
+              <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
+            </Pressable>
           </>
         )}
 

@@ -553,24 +553,9 @@ export default function AcademyCoachScreen() {
                     <Text style={styles.analyticsLabel}>Balls Bowled</Text>
                   </View>
                   <View style={styles.analyticsItem}>
-                    <MaterialIcons name="star" size={22} color={colors.warning} />
-                    <Text style={styles.analyticsVal}>{totalRuns}</Text>
-                    <Text style={styles.analyticsLabel}>Runs Scored</Text>
-                  </View>
-                  <View style={styles.analyticsItem}>
-                    <MaterialIcons name="military-tech" size={22} color={colors.error} />
-                    <Text style={styles.analyticsVal}>{totalWickets}</Text>
-                    <Text style={styles.analyticsLabel}>Wickets</Text>
-                  </View>
-                  <View style={styles.analyticsItem}>
                     <MaterialIcons name="pan-tool" size={22} color={colors.success} />
-                    <Text style={styles.analyticsVal}>{totalCatches + totalRunOuts + totalStumpings}</Text>
-                    <Text style={styles.analyticsLabel}>Fielding Actions</Text>
-                  </View>
-                  <View style={styles.analyticsItem}>
-                    <MaterialIcons name="speed" size={22} color={colors.tactical} />
-                    <Text style={styles.analyticsVal}>{teamShotRate}%</Text>
-                    <Text style={styles.analyticsLabel}>Team Shot Rate</Text>
+                    <Text style={styles.analyticsVal}>{totalCatches}</Text>
+                    <Text style={styles.analyticsLabel}>Catches Taken</Text>
                   </View>
                 </View>
               </View>

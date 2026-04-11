@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, RefreshControl,
@@ -15,23 +16,31 @@ function getIntensityColor(intensity: number): string {
   return colors.error;
 }
 
+type LogWithProfile = AcademyTrainingLog & { user_profiles?: { username?: string; email: string } };
+
 export default function AcademyHistoryScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { user } = useAuth();
 
   const academyId = params.academyId as string;
-  const [logs, setLogs] = useState<AcademyTrainingLog[]>([]);
+  const isCoach = params.isCoach === 'true';
+  const [logs, setLogs] = useState<LogWithProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
-    const { data } = await academyService.getMyLogs(user.id, academyId, 365);
-    setLogs(data || []);
+    if (isCoach) {
+      const { data } = await academyService.getAcademyLogs(academyId, 365);
+      setLogs((data || []) as LogWithProfile[]);
+    } else {
+      const { data } = await academyService.getMyLogs(user.id, academyId, 365);
+      setLogs(data || []);
+    }
     setLoading(false);
-  }, [user, academyId]);
+  }, [user, academyId, isCoach]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
@@ -69,7 +78,7 @@ export default function AcademyHistoryScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}>
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Training History</Text>
+        <Text style={styles.headerTitle}>{isCoach ? 'Academy Training Logs' : 'Training History'}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -79,12 +88,12 @@ export default function AcademyHistoryScreen() {
           <View style={styles.emptyState}>
             <MaterialIcons name="history" size={64} color={colors.border} />
             <Text style={styles.emptyTitle}>No history yet</Text>
-            <Text style={styles.emptySubtitle}>Start logging your training sessions</Text>
+            <Text style={styles.emptySubtitle}>{isCoach ? 'No training sessions logged by any player yet' : 'Start logging your training sessions'}</Text>
           </View>
         ) : (
           <>
-            <Text style={styles.sectionLabel}>{logs.length} sessions — swipe or tap delete to remove</Text>
-            {logs.map(log => (
+            <Text style={styles.sectionLabel}>{logs.length} sessions{isCoach ? ' across all players' : ' — tap delete to remove'}</Text>
+            {logs.map(log => ( // Added return statement here
               <View key={log.id} style={styles.logCard}>
                 <View style={[styles.intensityStripe, { backgroundColor: getIntensityColor(log.intensity) }]} />
                 <View style={styles.logContent}>
@@ -98,12 +107,14 @@ export default function AcademyHistoryScreen() {
                         {log.intensity}/10
                       </Text>
                     </View>
-                    {deletingId === log.id ? (
-                      <ActivityIndicator size="small" color={colors.error} style={{ marginLeft: spacing.sm }} />
-                    ) : (
-                      <Pressable style={styles.deleteBtn} onPress={() => handleDelete(log.id)} hitSlop={8}>
-                        <MaterialIcons name="delete-outline" size={18} color={colors.error} />
-                      </Pressable>
+                    {!isCoach && (
+                      deletingId === log.id ? (
+                        <ActivityIndicator size="small" color={colors.error} style={{ marginLeft: spacing.sm }} />
+                      ) : (
+                        <Pressable style={styles.deleteBtn} onPress={() => handleDelete(log.id)} hitSlop={8}>
+                          <MaterialIcons name="delete-outline" size={18} color={colors.error} />
+                        </Pressable>
+                      )
                     )}
                   </View>
                   <View style={styles.logStats}>
