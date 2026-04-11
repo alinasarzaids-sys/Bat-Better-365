@@ -263,6 +263,21 @@ export default function LoginScreen() {
                   )}
                 </Pressable>
 
+                {/* Demo shortcut */}
+                <Pressable
+                  style={styles.demoBtn}
+                  onPress={async () => {
+                    setEmail('james.mitchell@demo.com');
+                    setPassword('demo1234');
+                    const { error } = await signInWithPassword('james.mitchell@demo.com', 'demo1234');
+                    if (error) showAlert('Demo Login', 'Set the demo account password first in Supabase Dashboard, or use your own credentials.');
+                    else router.replace('/');
+                  }}
+                >
+                  <MaterialIcons name="sports-cricket" size={15} color={colors.success} />
+                  <Text style={styles.demoBtnText}>Demo: Riverside Cricket Academy (Coach)</Text>
+                </Pressable>
+
                 <Pressable onPress={() => setMode(mode === 'login' ? 'signup' : 'login')} style={styles.switchModeButton}>
                   <Text style={styles.linkText}>
                     {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
@@ -327,4 +342,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md, padding: spacing.md, gap: spacing.sm, marginBottom: spacing.lg,
   },
   googleButtonText: { ...typography.body, color: colors.text, fontWeight: '600' },
+  demoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.success + '12', borderWidth: 1, borderColor: colors.success + '35',
+    borderRadius: borderRadius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  demoBtnText: { fontSize: 12, color: colors.success, fontWeight: '700' },
 });
