@@ -160,12 +160,10 @@ export default function AcademyAnalyticsScreen() {
   const totalMin = logs.reduce((a, l) => a + l.duration_minutes, 0);
   const avgInt = n > 0 ? avg(logs.map(l => l.intensity)) : 0;
   const totalBallsFaced = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
-  const totalRuns = logs.reduce((a, l) => a + (l.runs_scored || 0), 0);
+  const totalBallsHit = logs.reduce((a, l) => a + (l.runs_scored || 0), 0); // using runs_scored as proxy for "successfully hit"
   const totalBallsBowled = logs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
-  const totalWickets = logs.reduce((a, l) => a + (l.wickets || 0), 0);
   const totalCatches = logs.reduce((a, l) => a + (l.catches || 0), 0);
-  const strikeRate = totalBallsFaced > 0 ? Math.round((totalRuns / totalBallsFaced) * 100) : null;
-  const economy = totalBallsBowled > 0 ? (logs.reduce((a, l) => a + (l.runs_conceded || 0), 0) / (totalBallsBowled / 6)).toFixed(2) : null;
+  const totalFieldingChances = logs.reduce((a, l) => a + (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0), 0);
 
   // Weekly data — last 12 weeks
   const weeklyData = (() => {
@@ -294,13 +292,9 @@ export default function AcademyAnalyticsScreen() {
                   <StatCard icon="event" iconColor={colors.primary} val={n} label="Sessions" />
                   <StatCard icon="timer" iconColor={colors.mental} val={`${Math.round(totalMin / 60)}h ${totalMin % 60}m`} label="Total Time" />
                   <StatCard icon="flash-on" iconColor={ic(Math.round(avgInt))} val={avgInt.toFixed(1)} label="Avg Intensity" />
-                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={totalBallsFaced} label="Balls Faced" />}
-                  {totalRuns > 0 && <StatCard icon="trending-up" iconColor={colors.success} val={totalRuns} label="Runs Scored" />}
-                  {strikeRate ? <StatCard icon="speed" iconColor={colors.primary} val={strikeRate} label="Strike Rate" /> : null}
-                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={`${Math.floor(totalBallsBowled / 6)}.${totalBallsBowled % 6}`} label="Overs Bowled" />}
-                  {totalWickets > 0 && <StatCard icon="star" iconColor={colors.warning} val={totalWickets} label="Wickets" />}
-                  {economy ? <StatCard icon="show-chart" iconColor={colors.physical} val={economy} label="Economy" /> : null}
-                  {totalCatches > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={totalCatches} label="Catches" />}
+                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${totalBallsFaced}/${totalBallsHit}`} label={`Faced / Hit`} />}
+                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={totalBallsBowled} label="Balls Bowled" />}
+                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${totalFieldingChances}/${totalCatches}`} label="Chances / Caught" />}
                 </View>
 
                 {/* Intensity distribution */}
@@ -351,11 +345,9 @@ export default function AcademyAnalyticsScreen() {
                         <Text style={styles.recentMeta}>{log.log_date} · {log.duration_minutes}min</Text>
                         {(log.balls_faced || log.balls_bowled || log.catches) ? (
                           <Text style={styles.recentStats}>
-                            {log.balls_faced ? `${log.balls_faced} balls faced` : ''}
-                            {log.runs_scored !== undefined && log.runs_scored > 0 ? ` · ${log.runs_scored} runs` : ''}
-                            {log.balls_bowled ? `${log.balls_bowled} bowled` : ''}
-                            {log.wickets ? ` · ${log.wickets}wkt` : ''}
-                            {log.catches ? `${log.catches} catches` : ''}
+                            {log.balls_faced ? `${log.balls_faced} faced / ${log.runs_scored || 0} hit` : ''}
+                            {log.balls_bowled ? `${log.balls_faced ? ' · ' : ''}${log.balls_bowled} bowled` : ''}
+                            {log.catches ? `${(log.balls_faced || log.balls_bowled) ? ' · ' : ''}${log.catches} catches` : ''}
                           </Text>
                         ) : null}
                       </View>
@@ -456,15 +448,9 @@ export default function AcademyAnalyticsScreen() {
                         <Text style={styles.bigStatLabel}>Balls Faced</Text>
                       </View>
                       <View style={styles.bigStat}>
-                        <Text style={[styles.bigStatVal, { color: colors.success }]}>{totalRuns}</Text>
-                        <Text style={styles.bigStatLabel}>Runs Scored</Text>
+                        <Text style={[styles.bigStatVal, { color: colors.success }]}>{totalBallsHit}</Text>
+                        <Text style={styles.bigStatLabel}>Successfully Hit</Text>
                       </View>
-                      {strikeRate ? (
-                        <View style={styles.bigStat}>
-                          <Text style={[styles.bigStatVal, { color: colors.primary }]}>{strikeRate}</Text>
-                          <Text style={styles.bigStatLabel}>Strike Rate</Text>
-                        </View>
-                      ) : null}
                     </View>
 
                     {/* Per-session batting trend */}
@@ -483,7 +469,7 @@ export default function AcademyAnalyticsScreen() {
                     )}
                     {logs.some(l => l.runs_scored) && (
                       <>
-                        <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Runs Per Session</Text>
+                        <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Successfully Hit Per Session</Text>
                         <BarChart
                           data={logs.filter(l => (l.runs_scored || 0) >= 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.runs_scored || 0 }))}
                           maxVal={Math.max(...logs.map(l => l.runs_scored || 0), 1)}
@@ -506,26 +492,16 @@ export default function AcademyAnalyticsScreen() {
                     </View>
                     <View style={styles.bigStatRow}>
                       <View style={styles.bigStat}>
-                        <Text style={[styles.bigStatVal, { color: colors.physical }]}>{`${Math.floor(totalBallsBowled / 6)}.${totalBallsBowled % 6}`}</Text>
-                        <Text style={styles.bigStatLabel}>Overs Bowled</Text>
+                        <Text style={[styles.bigStatVal, { color: colors.physical }]}>{totalBallsBowled}</Text>
+                        <Text style={styles.bigStatLabel}>Balls Bowled</Text>
                       </View>
-                      <View style={styles.bigStat}>
-                        <Text style={[styles.bigStatVal, { color: colors.warning }]}>{totalWickets}</Text>
-                        <Text style={styles.bigStatLabel}>Wickets</Text>
-                      </View>
-                      {economy ? (
-                        <View style={styles.bigStat}>
-                          <Text style={[styles.bigStatVal, { color: parseFloat(economy) < 6 ? colors.success : parseFloat(economy) < 9 ? colors.warning : colors.error }]}>{economy}</Text>
-                          <Text style={styles.bigStatLabel}>Economy</Text>
-                        </View>
-                      ) : null}
                     </View>
                     {logs.some(l => l.balls_bowled) && (
                       <>
-                        <Text style={styles.trendSubTitle}>Overs Per Session</Text>
+                        <Text style={styles.trendSubTitle}>Balls Bowled Per Session</Text>
                         <BarChart
-                          data={logs.filter(l => l.balls_bowled).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: parseFloat(`${Math.floor((l.balls_bowled || 0) / 6)}.${(l.balls_bowled || 0) % 6}`) }))}
-                          maxVal={Math.max(...logs.map(l => Math.floor((l.balls_bowled || 0) / 6)), 1)}
+                          data={logs.filter(l => l.balls_bowled).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.balls_bowled || 0 }))}
+                          maxVal={Math.max(...logs.map(l => l.balls_bowled || 0), 1)}
                           barColor={colors.physical}
                           labelKey="label"
                           valueKey="val"
@@ -537,31 +513,27 @@ export default function AcademyAnalyticsScreen() {
                 )}
 
                 {/* Fielding stats */}
-                {totalCatches > 0 && (
+                {totalFieldingChances > 0 && (
                   <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.tactical }]}>
                     <View style={styles.cardTitleRow}>
                       <MaterialIcons name="sports-handball" size={18} color={colors.tactical} />
-                      <Text style={[styles.cardTitle, { color: colors.tactical }]}>Fielding & Keeping</Text>
+                      <Text style={[styles.cardTitle, { color: colors.tactical }]}>Catching</Text>
                     </View>
                     <View style={styles.bigStatRow}>
                       <View style={styles.bigStat}>
+                        <Text style={[styles.bigStatVal, { color: colors.textSecondary }]}>{totalFieldingChances}</Text>
+                        <Text style={styles.bigStatLabel}>Chances</Text>
+                      </View>
+                      <View style={styles.bigStat}>
                         <Text style={[styles.bigStatVal, { color: colors.tactical }]}>{totalCatches}</Text>
-                        <Text style={styles.bigStatLabel}>Catches</Text>
-                      </View>
-                      <View style={styles.bigStat}>
-                        <Text style={[styles.bigStatVal, { color: colors.warning }]}>{logs.reduce((a, l) => a + (l.run_outs || 0), 0)}</Text>
-                        <Text style={styles.bigStatLabel}>Run Outs</Text>
-                      </View>
-                      <View style={styles.bigStat}>
-                        <Text style={[styles.bigStatVal, { color: colors.mental }]}>{logs.reduce((a, l) => a + (l.stumpings || 0), 0)}</Text>
-                        <Text style={styles.bigStatLabel}>Stumpings</Text>
+                        <Text style={styles.bigStatLabel}>Catches Taken</Text>
                       </View>
                     </View>
                   </View>
                 )}
 
                 {/* If no skill data logged */}
-                {totalBallsFaced === 0 && totalBallsBowled === 0 && totalCatches === 0 && (
+                {totalBallsFaced === 0 && totalBallsBowled === 0 && totalFieldingChances === 0 && (
                   <View style={styles.emptySkills}>
                     <MaterialIcons name="sports-cricket" size={48} color={colors.border} />
                     <Text style={styles.emptySkillsText}>No stats logged yet</Text>

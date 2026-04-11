@@ -551,10 +551,8 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
-                    <Text style={styles.analyticsVal}>
-                      {totalBallsBowled}/{allLogs.reduce((a, l) => a + (l.wickets || 0), 0)}
-                    </Text>
-                    <Text style={styles.analyticsLabel}>Bowled / Wkts</Text>
+                    <Text style={styles.analyticsVal}>{totalBallsBowled}</Text>
+                    <Text style={styles.analyticsLabel}>Balls Bowled</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="pan-tool" size={22} color={colors.success} />
