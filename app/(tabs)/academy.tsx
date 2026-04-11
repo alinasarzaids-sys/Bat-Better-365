@@ -426,6 +426,7 @@ export default function AcademyScreen() {
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [showEditAcademyModal, setShowEditAcademyModal] = useState(false);
+  const [previewAsPlayer, setPreviewAsPlayer] = useState(false);
 
   // Join modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -451,7 +452,7 @@ export default function AcademyScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const currentMembership = memberships[selectedIdx] || null;
-  const isCoach = currentMembership?.member.role === 'coach';
+  const isCoach = currentMembership?.member.role === 'coach' && !previewAsPlayer;
 
   const loadCoachData = useCallback(async (academyId: string) => {
     const [logsRes, membersRes, squadsRes] = await Promise.all([
@@ -637,6 +638,22 @@ export default function AcademyScreen() {
           {memberships.length > 1 && <Text style={styles.headerSub}>{memberships.length} academies</Text>}
         </View>
         <View style={styles.headerActions}>
+          {currentMembership?.member.role === 'coach' && (
+            <Pressable
+              style={[styles.previewToggleBtn, previewAsPlayer && styles.previewToggleBtnActive]}
+              onPress={() => setPreviewAsPlayer(p => !p)}
+              hitSlop={8}
+            >
+              <MaterialIcons
+                name={previewAsPlayer ? 'manage-accounts' : 'person'}
+                size={16}
+                color={previewAsPlayer ? colors.textLight : colors.textSecondary}
+              />
+              <Text style={[styles.previewToggleText, previewAsPlayer && styles.previewToggleTextActive]}>
+                {previewAsPlayer ? 'Player View' : 'Coach View'}
+              </Text>
+            </Pressable>
+          )}
           <Pressable style={styles.joinMoreBtn} onPress={() => setShowJoinModal(true)} hitSlop={8}>
             <MaterialIcons name="vpn-key" size={18} color={colors.primary} />
           </Pressable>
@@ -1125,6 +1142,10 @@ const styles = StyleSheet.create({
   headerSub: { ...typography.caption, color: colors.textSecondary },
   headerActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   joinMoreBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.primary + '12', borderRadius: 18, borderWidth: 1, borderColor: colors.primary + '30' },
+  previewToggleBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
+  previewToggleBtnActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  previewToggleText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  previewToggleTextActive: { color: colors.textLight },
   switcherScroll: { maxHeight: 48, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   switcherContent: { flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm },
   switcherChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
