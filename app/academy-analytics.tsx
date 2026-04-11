@@ -281,7 +281,7 @@ export default function AcademyAnalyticsScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.playerName}>{memberInfo?.display_name || 'Player'}</Text>
-                    <Text style={styles.playerPos}>{memberInfo?.position || 'Batsman'} · Last 90 days</Text>
+                    <Text style={styles.playerPos}>{(memberInfo?.position && memberInfo.position !== 'Coach') ? memberInfo.position : 'Player'} · Last 90 days</Text>
                   </View>
                   <View style={styles.streakBadge}>
                     <Text style={styles.streakNum}>{streak}</Text>
