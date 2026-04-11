@@ -519,11 +519,11 @@ export default function AcademyCoachScreen() {
             const stumpings = logs.reduce((a, l) => a + (l.stumpings || 0), 0);
             const total = catches + runOuts + stumpings;
             return { member: m, catches, runOuts, stumpings, total };
-          }).filter(s => s.total > 0).sort((a, b) => b.total - a.total);
+          }).filter(s => s.catches > 0).sort((a, b) => b.catches - a.catches);
 
           const maxBatFaced = Math.max(...battingStats.map(s => s.faced), 1);
           const maxBowled = Math.max(...bowlingStats.map(s => s.bowled), 1);
-          const maxFielding = Math.max(...fieldingStats.map(s => s.total), 1);
+          const maxFielding = Math.max(...fieldingStats.map(s => s.catches), 1);
           const maxSessions = Math.max(...sessionCounts.map(s => s.count), 1);
 
           return (
@@ -648,46 +648,24 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Bowling Performance</Text>
-                    <Text style={styles.cardSub}>Balls bowled / successful wickets · strike rate</Text>
+                    <Text style={styles.cardSub}>Balls bowled per player</Text>
                   </View>
                 </View>
-                <View style={analyticsStyles.legendRow}>
-                  <View style={analyticsStyles.legendItem}>
-                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.physical + '40' }]} />
-                    <Text style={analyticsStyles.legendText}>Balls Bowled</Text>
-                  </View>
-                  <View style={analyticsStyles.legendItem}>
-                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.error }]} />
-                    <Text style={analyticsStyles.legendText}>Successful (Wickets)</Text>
-                  </View>
-                </View>
-                {bowlingStats.map(({ member, bowled, wickets }) => {
+                {bowlingStats.map(({ member, bowled }) => {
                   const name = member.display_name || member.user_profiles?.username || 'Player';
-                  const strikeRate = wickets > 0 ? (bowled / wickets).toFixed(1) : null;
-                  // wicket bar = proportion of balls that took wickets (capped visually at 20%)
-                  const wicketVisual = bowled > 0 ? Math.min((wickets / bowled) * 500, 100) : 0;
                   return (
                     <View key={member.id} style={analyticsStyles.cricketBarRow}>
                       <View style={analyticsStyles.cricketBarHeader}>
                         <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
                         <Text style={[analyticsStyles.cricketBarRate, { color: colors.physical }]}>
-                          {strikeRate ? `SR ${strikeRate}` : `${wickets} wkt${wickets !== 1 ? 's' : ''}`}
+                          {bowled} balls
                         </Text>
                       </View>
                       <View style={analyticsStyles.stackedTrack}>
                         <View style={[analyticsStyles.stackedBase, {
                           width: `${(bowled / maxBowled) * 100}%`,
-                          backgroundColor: colors.physical + '30',
-                        }]}>
-                          <View style={[analyticsStyles.stackedFill, {
-                            width: `${wicketVisual}%`,
-                            backgroundColor: colors.error,
-                          }]} />
-                        </View>
-                      </View>
-                      <View style={analyticsStyles.cricketBarMeta}>
-                        <Text style={analyticsStyles.metaText}>{bowled} bowled</Text>
-                        <Text style={[analyticsStyles.metaText, { color: colors.error, fontWeight: '700' }]}>{wickets} wicket{wickets !== 1 ? 's' : ''}</Text>
+                          backgroundColor: colors.physical,
+                        }]} />
                       </View>
                     </View>
                   );
@@ -702,53 +680,25 @@ export default function AcademyCoachScreen() {
                     <MaterialIcons name="pan-tool" size={16} color={colors.success} />
                   </View>
                   <View>
-                    <Text style={styles.cardTitle}>Fielding Performance</Text>
-                    <Text style={styles.cardSub}>Fielding chances / catches taken · run outs · stumpings</Text>
+                    <Text style={styles.cardTitle}>Catches Taken</Text>
+                    <Text style={styles.cardSub}>Successful catches per player</Text>
                   </View>
                 </View>
-                <View style={analyticsStyles.legendRow}>
-                  <View style={analyticsStyles.legendItem}>
-                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.success }]} />
-                    <Text style={analyticsStyles.legendText}>Catches (Taken)</Text>
-                  </View>
-                  <View style={analyticsStyles.legendItem}>
-                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.warning }]} />
-                    <Text style={analyticsStyles.legendText}>Run Outs</Text>
-                  </View>
-                  <View style={analyticsStyles.legendItem}>
-                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.mental }]} />
-                    <Text style={analyticsStyles.legendText}>Stumpings</Text>
-                  </View>
-                </View>
-                {fieldingStats.map(({ member, catches, runOuts, stumpings, total }) => {
+                {fieldingStats.map(({ member, catches }) => {
                   const name = member.display_name || member.user_profiles?.username || 'Player';
-                  const catchW = total > 0 ? (catches / total) * 100 : 0;
-                  const roW = total > 0 ? (runOuts / total) * 100 : 0;
-                  const stW = total > 0 ? (stumpings / total) * 100 : 0;
                   return (
                     <View key={member.id} style={analyticsStyles.cricketBarRow}>
                       <View style={analyticsStyles.cricketBarHeader}>
                         <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
                         <Text style={[analyticsStyles.cricketBarRate, { color: colors.success }]}>
-                          {total} chances · {catches} taken
+                          {catches} catches
                         </Text>
                       </View>
-                      {/* Stacked proportional bar */}
-                      <View style={[analyticsStyles.stackedTrack, { overflow: 'hidden' }]}>
+                      <View style={analyticsStyles.stackedTrack}>
                         <View style={[analyticsStyles.stackedBase, {
-                          width: `${(total / maxFielding) * 100}%`,
-                          backgroundColor: colors.border,
-                          flexDirection: 'row',
-                        }]}>
-                          <View style={{ width: `${catchW}%`, height: '100%', backgroundColor: colors.success }} />
-                          <View style={{ width: `${roW}%`, height: '100%', backgroundColor: colors.warning }} />
-                          <View style={{ width: `${stW}%`, height: '100%', backgroundColor: colors.mental }} />
-                        </View>
-                      </View>
-                      <View style={analyticsStyles.cricketBarMeta}>
-                        {catches > 0 ? <Text style={[analyticsStyles.metaText, { color: colors.success, fontWeight: '700' }]}>{catches}c</Text> : null}
-                        {runOuts > 0 ? <Text style={[analyticsStyles.metaText, { color: colors.warning, fontWeight: '700' }]}>{runOuts}ro</Text> : null}
-                        {stumpings > 0 ? <Text style={[analyticsStyles.metaText, { color: colors.mental, fontWeight: '700' }]}>{stumpings}st</Text> : null}
+                          width: `${(catches / maxFielding) * 100}%`,
+                          backgroundColor: colors.success,
+                        }]} />
                       </View>
                     </View>
                   );
