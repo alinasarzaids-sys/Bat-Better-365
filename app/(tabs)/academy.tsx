@@ -500,12 +500,37 @@ export default function AcademyScreen() {
     const { data: byPlayer } = await supabase.from('academies').select('id, name').eq('player_code', upper).maybeSingle();
     const { data: byCoach } = await supabase.from('academies').select('id, name').eq('coach_code', upper).maybeSingle();
     const academy = byPlayer || byCoach;
-    setJoinCodeLoading(false);
 
     if (!academy) {
+      setJoinCodeLoading(false);
       showAlert('Code Not Found', 'This code does not match any academy. Please check and try again.');
       return;
     }
+
+    // Check if user is already a member of this academy
+    if (user) {
+      const supabaseClient = (await import('@/template')).getSupabaseClient();
+      const { data: existingMember } = await supabaseClient
+        .from('academy_members')
+        .select('id, role')
+        .eq('academy_id', academy.id)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingMember) {
+        setJoinCodeLoading(false);
+        setShowJoinModal(false);
+        resetJoinModal();
+        showAlert(
+          'Already Joined',
+          `You are already a member of ${academy.name}. Pull down to refresh your Academy tab if it is not showing.`
+        );
+        load();
+        return;
+      }
+    }
+
+    setJoinCodeLoading(false);
 
     setJoinAcademyName(academy.name);
     const { data: sq } = await academyService.getSquads(academy.id);
