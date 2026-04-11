@@ -314,6 +314,99 @@ const overviewStyles = StyleSheet.create({
   statLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', marginTop: 2 },
 });
 
+// ─── Join Confirmation Modal ──────────────────────────────────────────────────
+function JoinConfirmModal({ visible, squadName, squadColor, position, displayName, academyName, joining, onConfirm, onCancel }: {
+  visible: boolean;
+  squadName: string | null;
+  squadColor: string;
+  position: string;
+  displayName: string;
+  academyName: string;
+  joining: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={confirmStyles.overlay}>
+        <View style={confirmStyles.card}>
+          <View style={[confirmStyles.iconCircle, { backgroundColor: colors.primary + '18' }]}>
+            <MaterialIcons name="help-outline" size={30} color={colors.primary} />
+          </View>
+          <Text style={confirmStyles.title}>Confirm Your Squad</Text>
+
+          <View style={confirmStyles.detailsBox}>
+            <View style={confirmStyles.detailRow}>
+              <MaterialIcons name="person" size={16} color={colors.textSecondary} />
+              <Text style={confirmStyles.detailLabel}>Name</Text>
+              <Text style={confirmStyles.detailValue}>{displayName}</Text>
+            </View>
+            {squadName ? (
+              <View style={confirmStyles.detailRow}>
+                <View style={[confirmStyles.squadDot, { backgroundColor: squadColor }]} />
+                <Text style={confirmStyles.detailLabel}>Squad</Text>
+                <Text style={[confirmStyles.detailValue, { color: squadColor, fontWeight: '800' }]}>{squadName}</Text>
+              </View>
+            ) : null}
+            <View style={confirmStyles.detailRow}>
+              <MaterialIcons name="sports-cricket" size={16} color={colors.textSecondary} />
+              <Text style={confirmStyles.detailLabel}>Position</Text>
+              <Text style={confirmStyles.detailValue}>{position}</Text>
+            </View>
+            <View style={[confirmStyles.detailRow, { borderBottomWidth: 0 }]}>
+              <MaterialIcons name="shield" size={16} color={colors.textSecondary} />
+              <Text style={confirmStyles.detailLabel}>Academy</Text>
+              <Text style={confirmStyles.detailValue} numberOfLines={1}>{academyName}</Text>
+            </View>
+          </View>
+
+          <Text style={confirmStyles.hint}>
+            Is this correct? Your coach can reassign your squad at any time from their dashboard.
+          </Text>
+
+          <View style={confirmStyles.btnRow}>
+            <Pressable style={confirmStyles.cancelBtn} onPress={onCancel} disabled={joining}>
+              <Text style={confirmStyles.cancelBtnText}>No, Change</Text>
+            </Pressable>
+            <Pressable
+              style={[confirmStyles.confirmBtn, joining && { opacity: 0.6 }]}
+              onPress={onConfirm}
+              disabled={joining}
+            >
+              {joining
+                ? <ActivityIndicator color={colors.textLight} size="small" />
+                : (
+                  <>
+                    <MaterialIcons name="check" size={18} color={colors.textLight} />
+                    <Text style={confirmStyles.confirmBtnText}>Yes, Join</Text>
+                  </>
+                )}
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const confirmStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg, width: '100%', gap: spacing.md, alignItems: 'center' },
+  iconCircle: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
+  title: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center' },
+  detailsBox: { width: '100%', backgroundColor: colors.background, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  detailRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, borderBottomWidth: 1, borderBottomColor: colors.border },
+  squadDot: { width: 14, height: 14, borderRadius: 7 },
+  detailLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', width: 64 },
+  detailValue: { fontSize: 14, color: colors.text, fontWeight: '700', flex: 1 },
+  hint: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', lineHeight: 17 },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, width: '100%' },
+  cancelBtn: { flex: 1, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
+  cancelBtnText: { ...typography.body, color: colors.text, fontWeight: '700' },
+  confirmBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.primary },
+  confirmBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700' },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AcademyScreen() {
   const { user } = useAuth();
@@ -336,6 +429,7 @@ export default function AcademyScreen() {
 
   // Join modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showJoinConfirm, setShowJoinConfirm] = useState(false);
   const [joinStep, setJoinStep] = useState<'code' | 'details'>('code');
   const [joinCode, setJoinCode] = useState('');
   const [joinAcademyName, setJoinAcademyName] = useState('');
@@ -420,9 +514,16 @@ export default function AcademyScreen() {
     setJoinStep('details');
   };
 
+  // Step 1: validate locally, then show confirmation modal
+  const handleConfirmJoin = () => {
+    if (!joinDisplayName.trim()) { showAlert('Error', 'Please enter your name'); return; }
+    setShowJoinConfirm(true);
+  };
+
+  // Step 2: actually join after confirmation
   const handleJoin = async () => {
     if (!user) return;
-    if (!joinDisplayName.trim()) { showAlert('Error', 'Please enter your name'); return; }
+    setShowJoinConfirm(false);
     setJoining(true);
     const { data, error } = await academyService.joinAcademy(
       joinCode, user.id, joinDisplayName, joinPosition, joinJersey, undefined, joinSquadId || undefined
@@ -439,6 +540,7 @@ export default function AcademyScreen() {
     setJoinStep('code'); setJoinCode(''); setJoinAcademyName('');
     setJoinDisplayName(''); setJoinPosition('Batsman'); setJoinJersey('');
     setJoinSquadId(null); setJoinSquads([]);
+    setShowJoinConfirm(false);
   };
 
   const currentSquad = squads.find(s => s.id === selectedSquadFilter) || null;
@@ -484,7 +586,18 @@ export default function AcademyScreen() {
           verifyLoading={joinCodeLoading} joining={joining}
           onVerify={handleVerifyCode} onBack={() => setJoinStep('code')}
           onClose={() => { setShowJoinModal(false); resetJoinModal(); }}
-          onSubmit={handleJoin}
+          onSubmit={handleConfirmJoin}
+        />
+        <JoinConfirmModal
+          visible={showJoinConfirm}
+          squadName={joinSquads.find(s => s.id === joinSquadId)?.name || null}
+          squadColor={joinSquads.find(s => s.id === joinSquadId)?.color || colors.primary}
+          position={joinPosition}
+          displayName={joinDisplayName}
+          academyName={joinAcademyName}
+          joining={joining}
+          onConfirm={handleJoin}
+          onCancel={() => setShowJoinConfirm(false)}
         />
       </SafeAreaView>
     );
@@ -792,7 +905,20 @@ export default function AcademyScreen() {
         verifyLoading={joinCodeLoading} joining={joining}
         onVerify={handleVerifyCode} onBack={() => setJoinStep('code')}
         onClose={() => { setShowJoinModal(false); resetJoinModal(); }}
-        onSubmit={handleJoin}
+        onSubmit={handleConfirmJoin}
+      />
+
+      {/* ── Join Confirmation Modal ── */}
+      <JoinConfirmModal
+        visible={showJoinConfirm}
+        squadName={joinSquads.find(s => s.id === joinSquadId)?.name || null}
+        squadColor={joinSquads.find(s => s.id === joinSquadId)?.color || colors.primary}
+        position={joinPosition}
+        displayName={joinDisplayName}
+        academyName={joinAcademyName}
+        joining={joining}
+        onConfirm={handleJoin}
+        onCancel={() => setShowJoinConfirm(false)}
       />
     </SafeAreaView>
   );
@@ -891,7 +1017,7 @@ function JoinModal({
 
                 <Text style={modalStyles.label}>Position</Text>
                 <View style={modalStyles.positionGrid}>
-                  {(['Batsman', 'Bowler', 'All-Rounder', 'Wicket-Keeper', 'Fielder', 'Coach']).map((p: string) => (
+                  {(['Batsman', 'Bowler', 'All-Rounder', 'Wicket-Keeper']).map((p: string) => (
                     <Pressable key={p} style={[modalStyles.chip, position === p && modalStyles.chipActive]} onPress={() => onPositionChange(p)}>
                       <Text style={[modalStyles.chipText, position === p && modalStyles.chipTextActive]}>{p}</Text>
                     </Pressable>
