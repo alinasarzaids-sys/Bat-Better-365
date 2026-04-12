@@ -1,41 +1,53 @@
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator,
-  Modal, TextInput, RefreshControl, KeyboardAvoidingView, Platform, TouchableOpacity,
+  Modal, TextInput, RefreshControl, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { useAuth, useAlert } from '@/template';
-import { academyService, AcademySession, AcademyMember, AcademySquad } from '@/services/academyService';
+import { useAuth, useAlert, getSupabaseClient } from '@/template';
+import { academyService, AcademySession, AcademySquad } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-// ─── Training Plan Block ──────────────────────────────────────────────────────
+// ─── Types ────────────────────────────────────────────────────────────────────
 interface PlanBlock {
   id: string;
-  startTime: string;    // "07:15"
-  endTime: string;      // "07:45"
-  activities: string[]; // ["Batting", "Bowling"] — multi-select
-  notes: string;        // notes + drills go here
+  startTime: string;
+  endTime: string;
+  activities: string[];
+  notes: string;
+}
+
+// A combined session entry — either an academy session or a personal one
+interface ScheduleEntry {
+  id: string;
+  source: 'academy' | 'personal';
+  title: string;
+  date: string;       // YYYY-MM-DD
+  time: string;       // HH:MM (24h)
+  location?: string;
+  sessionType: string;
+  notes?: string;
+  squadId?: string | null;
+  createdBy?: string;
+  // raw objects for editing
+  rawAcademy?: AcademySession;
+  rawPersonalId?: string;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+function todayStr() { return new Date().toISOString().split('T')[0]; }
 function now12() {
   const d = new Date();
   return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
 }
-
-function todayStr() {
-  return new Date().toISOString().split('T')[0];
-}
-
 function formatDateReadable(dateStr: string) {
   try {
     const [y, m, d] = dateStr.split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   } catch { return dateStr; }
 }
-
 function formatTime12(time: string) {
   try {
     const [h, m] = time.split(':').map(Number);
@@ -44,7 +56,6 @@ function formatTime12(time: string) {
     return `${h12}:${m.toString().padStart(2, '0')} ${period}`;
   } catch { return time; }
 }
-
 function parsePlanBlocks(notes?: string): PlanBlock[] {
   if (!notes) return [];
   try {
@@ -52,16 +63,12 @@ function parsePlanBlocks(notes?: string): PlanBlock[] {
     if (start === -1) return [];
     const json = notes.slice(start + 12);
     const blocks = JSON.parse(json);
-    // Backward compat: convert old single `activity` string to array
     return blocks.map((b: any) => ({
       ...b,
-      activities: Array.isArray(b.activities)
-        ? b.activities
-        : b.activity ? [b.activity] : [],
+      activities: Array.isArray(b.activities) ? b.activities : b.activity ? [b.activity] : [],
     }));
   } catch { return []; }
 }
-
 function parseObjectives(notes?: string): string[] {
   if (!notes) return [];
   try {
@@ -72,18 +79,15 @@ function parseObjectives(notes?: string): string[] {
     return JSON.parse(slice.trim().split('\n')[0]);
   } catch { return []; }
 }
-
 function parseCoachNotes(notes?: string): string {
   if (!notes) return '';
-  const markers = ['OBJECTIVES:', 'PLAN_BLOCKS:'];
   let result = notes;
-  for (const m of markers) {
+  for (const m of ['OBJECTIVES:', 'PLAN_BLOCKS:']) {
     const idx = result.indexOf(m);
     if (idx !== -1) result = result.slice(0, idx);
   }
   return result.trim();
 }
-
 function buildNotes(coachNotes: string, objectives: string[], planBlocks: PlanBlock[]): string {
   let out = '';
   if (coachNotes.trim()) out += coachNotes.trim() + '\n';
@@ -92,19 +96,26 @@ function buildNotes(coachNotes: string, objectives: string[], planBlocks: PlanBl
   return out;
 }
 
-// ─── Activity Pill Options ────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 const ACTIVITIES = ['Batting', 'Bowling', 'Fielding', 'Keeping', 'Fitness', 'Warm-up', 'Cool-down', 'Team Talk', 'Match Sim'];
-const SESSION_TYPES = ['Training'];
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-const TYPE_COLORS: Record<string, string> = {
-  Training: colors.primary, Match: colors.error, Fitness: colors.physical,
-  Fielding: colors.tactical, Batting: colors.technical, Bowling: colors.physical,
+const SESSION_TYPE_COLORS: Record<string, string> = {
+  Training: colors.primary, Fielding: colors.tactical, Batting: colors.technical,
+  Bowling: colors.physical, Fitness: colors.physical, Match: colors.error,
+};
+function typeColor(t: string) { return SESSION_TYPE_COLORS[t] || colors.primary; }
+
+// Source badge colors
+const SOURCE_COLORS = {
+  academy: { bg: colors.primary + '18', text: colors.primary, border: colors.primary + '40' },
+  personal: { bg: colors.success + '18', text: colors.success, border: colors.success + '40' },
 };
 
-// ─── Shared picker sheet styles ──────────────────────────────────────────────
+// ─── Shared picker sheet styles ───────────────────────────────────────────────
 const tp = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
-  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 340, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 16 },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 340 },
   pickerLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', marginBottom: spacing.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
   display: { fontSize: 32, fontWeight: '900', color: colors.primary, textAlign: 'center', marginBottom: spacing.lg, letterSpacing: 1 },
   columns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: spacing.lg },
@@ -124,77 +135,34 @@ const tp = StyleSheet.create({
   confirmText: { fontSize: 15, fontWeight: '700', color: colors.textLight },
 });
 
-// ─── Time Picker Component ───────────────────────────────────────────────────
+// ─── Time Picker ──────────────────────────────────────────────────────────────
 function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
-  visible: boolean;
-  value: string;
-  onConfirm: (v: string) => void;
-  onClose: () => void;
-  label?: string;
+  visible: boolean; value: string; onConfirm: (v: string) => void; onClose: () => void; label?: string;
 }) {
-  const parseTime = (t: string) => {
-    const [h, m] = (t || '00:00').split(':').map(Number);
-    return { h: isNaN(h) ? 0 : h, m: isNaN(m) ? 0 : m };
-  };
-
   const [hour, setHour] = useState(0);
   const [minute, setMinute] = useState(0);
-
   React.useEffect(() => {
     if (visible) {
-      const { h, m } = parseTime(value);
-      setHour(h);
-      setMinute(m);
+      const [h, m] = (value || '00:00').split(':').map(Number);
+      setHour(isNaN(h) ? 0 : h); setMinute(isNaN(m) ? 0 : m);
     }
   }, [visible, value]);
-
-  const isPM = hour >= 12;
-  const h12 = hour % 12 || 12;
+  const isPM = hour >= 12; const h12 = hour % 12 || 12;
   const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
-
-  const incHour = () => setHour(h => (h + 1) % 24);
-  const decHour = () => setHour(h => (h - 1 + 24) % 24);
-  const incMin = () => setMinute(m => (m + 1) % 60);
-  const decMin = () => setMinute(m => (m - 1 + 60) % 60);
-  const setAM = () => { if (hour >= 12) setHour(h => h - 12); };
-  const setPM = () => { if (hour < 12) setHour(h => h + 12); };
-
-  // Manual text editing
   const [hourText, setHourText] = React.useState(String(h12).padStart(2, '0'));
   const [minText, setMinText] = React.useState(String(minute).padStart(2, '0'));
   React.useEffect(() => { setHourText(String(h12).padStart(2, '0')); }, [hour]);
   React.useEffect(() => { setMinText(String(minute).padStart(2, '0')); }, [minute]);
-
-  const commitHourText = (txt: string) => {
-    const n = parseInt(txt, 10);
-    if (!isNaN(n) && n >= 1 && n <= 12) {
-      setHour(isPM ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n));
-    } else {
-      setHourText(String(h12).padStart(2, '0'));
-    }
-  };
-  const commitMinText = (txt: string) => {
-    const n = parseInt(txt, 10);
-    if (!isNaN(n) && n >= 0 && n <= 59) setMinute(n);
-    else setMinText(String(minute).padStart(2, '0'));
-  };
-
+  const commitH = (t: string) => { const n = parseInt(t, 10); if (!isNaN(n) && n >= 1 && n <= 12) setHour(isPM ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n)); else setHourText(String(h12).padStart(2, '0')); };
+  const commitM = (t: string) => { const n = parseInt(t, 10); if (!isNaN(n) && n >= 0 && n <= 59) setMinute(n); else setMinText(String(minute).padStart(2, '0')); };
   const handleConfirm = () => {
-    // Commit any in-progress typed values before confirming
-    let finalHour = hour;
-    let finalMinute = minute;
-    const typedH = parseInt(hourText, 10);
-    const typedM = parseInt(minText, 10);
-    if (!isNaN(typedH) && typedH >= 1 && typedH <= 12) {
-      finalHour = isPM ? (typedH === 12 ? 12 : typedH + 12) : (typedH === 12 ? 0 : typedH);
-    }
-    if (!isNaN(typedM) && typedM >= 0 && typedM <= 59) {
-      finalMinute = typedM;
-    }
-    onConfirm(`${String(finalHour).padStart(2, '0')}:${String(finalMinute).padStart(2, '0')}`);
+    let fh = hour; let fm = minute;
+    const th = parseInt(hourText, 10); const tm = parseInt(minText, 10);
+    if (!isNaN(th) && th >= 1 && th <= 12) fh = isPM ? (th === 12 ? 12 : th + 12) : (th === 12 ? 0 : th);
+    if (!isNaN(tm) && tm >= 0 && tm <= 59) fm = tm;
+    onConfirm(`${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`);
     onClose();
   };
-
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={tp.overlay} onPress={onClose}>
@@ -202,76 +170,32 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
           {label ? <Text style={tp.pickerLabel}>{label}</Text> : null}
           <Text style={tp.display}>{formatted}</Text>
           <View style={tp.columns}>
-            {/* Hour */}
             <View style={tp.col}>
               <Text style={tp.colLabel}>Hour</Text>
-              <Pressable style={tp.arrowBtn} onPress={incHour} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
-              </Pressable>
-              <TextInput
-                style={[tp.colValue, tp.colInput]}
-                value={hourText}
-                onChangeText={setHourText}
-                onBlur={() => commitHourText(hourText)}
-                onSubmitEditing={() => commitHourText(hourText)}
-                keyboardType="number-pad"
-                maxLength={2}
-                selectTextOnFocus
-              />
-              <Pressable style={tp.arrowBtn} onPress={decHour} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
-              </Pressable>
+              <Pressable style={tp.arrowBtn} onPress={() => setHour(h => (h + 1) % 24)} hitSlop={8}><MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} /></Pressable>
+              <TextInput style={[tp.colValue, tp.colInput]} value={hourText} onChangeText={setHourText} onBlur={() => commitH(hourText)} keyboardType="number-pad" maxLength={2} selectTextOnFocus />
+              <Pressable style={tp.arrowBtn} onPress={() => setHour(h => (h - 1 + 24) % 24)} hitSlop={8}><MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} /></Pressable>
             </View>
             <Text style={tp.colon}>:</Text>
-            {/* Minute */}
             <View style={tp.col}>
               <Text style={tp.colLabel}>Min</Text>
-              <Pressable style={tp.arrowBtn} onPress={incMin} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
-              </Pressable>
-              <TextInput
-                style={[tp.colValue, tp.colInput]}
-                value={minText}
-                onChangeText={setMinText}
-                onBlur={() => commitMinText(minText)}
-                onSubmitEditing={() => commitMinText(minText)}
-                keyboardType="number-pad"
-                maxLength={2}
-                selectTextOnFocus
-              />
-              <Pressable style={tp.arrowBtn} onPress={decMin} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
-              </Pressable>
+              <Pressable style={tp.arrowBtn} onPress={() => setMinute(m => (m + 1) % 60)} hitSlop={8}><MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} /></Pressable>
+              <TextInput style={[tp.colValue, tp.colInput]} value={minText} onChangeText={setMinText} onBlur={() => commitM(minText)} keyboardType="number-pad" maxLength={2} selectTextOnFocus />
+              <Pressable style={tp.arrowBtn} onPress={() => setMinute(m => (m - 1 + 60) % 60)} hitSlop={8}><MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} /></Pressable>
             </View>
-            {/* AM / PM — two separate buttons */}
             <View style={tp.ampmCol}>
               <Text style={tp.colLabel}>&nbsp;</Text>
-              <Pressable
-                style={[tp.ampmBtn, !isPM
-                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                  : { backgroundColor: 'transparent', borderColor: colors.border }]}
-                onPress={setAM}
-              >
+              <Pressable style={[tp.ampmBtn, !isPM ? { backgroundColor: colors.primary, borderColor: colors.primary } : { backgroundColor: 'transparent', borderColor: colors.border }]} onPress={() => { if (hour >= 12) setHour(h => h - 12); }}>
                 <Text style={[tp.ampmText, { color: !isPM ? colors.textLight : colors.textSecondary }]}>AM</Text>
               </Pressable>
-              <Pressable
-                style={[tp.ampmBtn, isPM
-                  ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                  : { backgroundColor: 'transparent', borderColor: colors.border }]}
-                onPress={setPM}
-              >
+              <Pressable style={[tp.ampmBtn, isPM ? { backgroundColor: colors.primary, borderColor: colors.primary } : { backgroundColor: 'transparent', borderColor: colors.border }]} onPress={() => { if (hour < 12) setHour(h => h + 12); }}>
                 <Text style={[tp.ampmText, { color: isPM ? colors.textLight : colors.textSecondary }]}>PM</Text>
               </Pressable>
             </View>
           </View>
           <View style={tp.btnRow}>
-            <Pressable style={tp.cancelBtn} onPress={onClose}>
-              <Text style={tp.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable style={tp.confirmBtn} onPress={handleConfirm}>
-              <MaterialIcons name="check" size={18} color={colors.textLight} />
-              <Text style={tp.confirmText}>Set Time</Text>
-            </Pressable>
+            <Pressable style={tp.cancelBtn} onPress={onClose}><Text style={tp.cancelText}>Cancel</Text></Pressable>
+            <Pressable style={tp.confirmBtn} onPress={handleConfirm}><MaterialIcons name="check" size={18} color={colors.textLight} /><Text style={tp.confirmText}>Set Time</Text></Pressable>
           </View>
         </Pressable>
       </Pressable>
@@ -279,78 +203,29 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   );
 }
 
-// ─── Date Picker Component ────────────────────────────────────────────────────
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-
+// ─── Date Picker ──────────────────────────────────────────────────────────────
 function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
-  visible: boolean;
-  value: string; // 'YYYY-MM-DD'
-  onConfirm: (v: string) => void;
-  onClose: () => void;
-  label?: string;
+  visible: boolean; value: string; onConfirm: (v: string) => void; onClose: () => void; label?: string;
 }) {
-  const parseDate = (s: string) => {
-    const parts = (s || '').split('-').map(Number);
-    const y = parts[0] || new Date().getFullYear();
-    const mo = parts[1] || new Date().getMonth() + 1;
-    const d = parts[2] || new Date().getDate();
-    return { y, mo, d };
-  };
-
   const [year, setYear] = useState(new Date().getFullYear());
   const [month, setMonth] = useState(new Date().getMonth() + 1);
   const [day, setDay] = useState(new Date().getDate());
-
   React.useEffect(() => {
     if (visible) {
-      const { y, mo, d } = parseDate(value);
-      setYear(y); setMonth(mo); setDay(d);
+      const parts = (value || '').split('-').map(Number);
+      setYear(parts[0] || new Date().getFullYear()); setMonth(parts[1] || new Date().getMonth() + 1); setDay(parts[2] || new Date().getDate());
     }
   }, [visible, value]);
-
   const daysInMonth = new Date(year, month, 0).getDate();
   const clampedDay = Math.min(day, daysInMonth);
-
-  const incDay = () => setDay(d => d >= daysInMonth ? 1 : d + 1);
-  const decDay = () => setDay(d => d <= 1 ? daysInMonth : d - 1);
-  const incMonth = () => { const nm = month >= 12 ? 1 : month + 1; setMonth(nm); };
-  const decMonth = () => { const pm = month <= 1 ? 12 : month - 1; setMonth(pm); };
-  const incYear = () => setYear(y => y + 1);
-  const decYear = () => setYear(y => Math.max(2020, y - 1));
-
-  const formatted = `${String(clampedDay).padStart(2,'0')} ${MONTHS[month-1]} ${year}`;
-
-  // Manual text state for each column
-  const [dayText, setDayText] = React.useState(String(clampedDay).padStart(2,'0'));
-  const [monthText, setMonthText] = React.useState(String(month).padStart(2,'0'));
+  const [dayText, setDayText] = React.useState(String(clampedDay).padStart(2, '0'));
+  const [monthText, setMonthText] = React.useState(String(month).padStart(2, '0'));
   const [yearText, setYearText] = React.useState(String(year));
-  React.useEffect(() => { setDayText(String(clampedDay).padStart(2,'0')); }, [day, month, year]);
-  React.useEffect(() => { setMonthText(String(month).padStart(2,'0')); }, [month]);
+  React.useEffect(() => { setDayText(String(clampedDay).padStart(2, '0')); }, [day, month, year]);
+  React.useEffect(() => { setMonthText(String(month).padStart(2, '0')); }, [month]);
   React.useEffect(() => { setYearText(String(year)); }, [year]);
-
-  const commitDay = (txt: string) => {
-    const n = parseInt(txt, 10);
-    if (!isNaN(n) && n >= 1 && n <= daysInMonth) setDay(n);
-    else setDayText(String(clampedDay).padStart(2,'0'));
-  };
-  const commitMonth = (txt: string) => {
-    const n = parseInt(txt, 10);
-    if (!isNaN(n) && n >= 1 && n <= 12) setMonth(n);
-    else setMonthText(String(month).padStart(2,'0'));
-  };
-  const commitYear = (txt: string) => {
-    const n = parseInt(txt, 10);
-    if (!isNaN(n) && n >= 2020 && n <= 2099) setYear(n);
-    else setYearText(String(year));
-  };
-
-  const handleConfirm = () => {
-    const mm = String(month).padStart(2,'0');
-    const dd = String(clampedDay).padStart(2,'0');
-    onConfirm(`${year}-${mm}-${dd}`);
-    onClose();
-  };
-
+  const formatted = `${String(clampedDay).padStart(2, '0')} ${MONTHS[month - 1]} ${year}`;
+  const handleConfirm = () => { onConfirm(`${year}-${String(month).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`); onClose(); };
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={tp.overlay} onPress={onClose}>
@@ -358,78 +233,31 @@ function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
           {label ? <Text style={tp.pickerLabel}>{label}</Text> : null}
           <Text style={tp.display}>{formatted}</Text>
           <View style={tp.columns}>
-            {/* Day */}
             <View style={tp.col}>
               <Text style={tp.colLabel}>Day</Text>
-              <Pressable style={tp.arrowBtn} onPress={incDay} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
-              </Pressable>
-              <TextInput
-                style={[tp.colValue, tp.colInput]}
-                value={dayText}
-                onChangeText={setDayText}
-                onBlur={() => commitDay(dayText)}
-                onSubmitEditing={() => commitDay(dayText)}
-                keyboardType="number-pad"
-                maxLength={2}
-                selectTextOnFocus
-              />
-              <Pressable style={tp.arrowBtn} onPress={decDay} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
-              </Pressable>
+              <Pressable style={tp.arrowBtn} onPress={() => setDay(d => d >= daysInMonth ? 1 : d + 1)} hitSlop={8}><MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} /></Pressable>
+              <TextInput style={[tp.colValue, tp.colInput]} value={dayText} onChangeText={setDayText} onBlur={() => { const n = parseInt(dayText, 10); if (!isNaN(n) && n >= 1 && n <= daysInMonth) setDay(n); else setDayText(String(clampedDay).padStart(2, '0')); }} keyboardType="number-pad" maxLength={2} selectTextOnFocus />
+              <Pressable style={tp.arrowBtn} onPress={() => setDay(d => d <= 1 ? daysInMonth : d - 1)} hitSlop={8}><MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} /></Pressable>
             </View>
-            {/* Month */}
             <View style={[tp.col, { minWidth: 52 }]}>
               <Text style={tp.colLabel}>Month (1-12)</Text>
-              <Pressable style={tp.arrowBtn} onPress={incMonth} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
-              </Pressable>
+              <Pressable style={tp.arrowBtn} onPress={() => setMonth(m => m >= 12 ? 1 : m + 1)} hitSlop={8}><MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} /></Pressable>
               <View style={{ alignItems: 'center' }}>
-                <TextInput
-                  style={[tp.colValue, tp.colInput, { fontSize: 26 }]}
-                  value={monthText}
-                  onChangeText={setMonthText}
-                  onBlur={() => commitMonth(monthText)}
-                  onSubmitEditing={() => commitMonth(monthText)}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  selectTextOnFocus
-                />
-                <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2 }}>{MONTHS[(parseInt(monthText,10)||month)-1] || ''}</Text>
+                <TextInput style={[tp.colValue, tp.colInput, { fontSize: 26 }]} value={monthText} onChangeText={setMonthText} onBlur={() => { const n = parseInt(monthText, 10); if (!isNaN(n) && n >= 1 && n <= 12) setMonth(n); else setMonthText(String(month).padStart(2, '0')); }} keyboardType="number-pad" maxLength={2} selectTextOnFocus />
+                <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2 }}>{MONTHS[(parseInt(monthText, 10) || month) - 1] || ''}</Text>
               </View>
-              <Pressable style={tp.arrowBtn} onPress={decMonth} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
-              </Pressable>
+              <Pressable style={tp.arrowBtn} onPress={() => setMonth(m => m <= 1 ? 12 : m - 1)} hitSlop={8}><MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} /></Pressable>
             </View>
-            {/* Year */}
             <View style={[tp.col, { minWidth: 72 }]}>
               <Text style={tp.colLabel}>Year</Text>
-              <Pressable style={tp.arrowBtn} onPress={incYear} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
-              </Pressable>
-              <TextInput
-                style={[tp.colValue, tp.colInput, { fontSize: 24 }]}
-                value={yearText}
-                onChangeText={setYearText}
-                onBlur={() => commitYear(yearText)}
-                onSubmitEditing={() => commitYear(yearText)}
-                keyboardType="number-pad"
-                maxLength={4}
-                selectTextOnFocus
-              />
-              <Pressable style={tp.arrowBtn} onPress={decYear} hitSlop={8}>
-                <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
-              </Pressable>
+              <Pressable style={tp.arrowBtn} onPress={() => setYear(y => y + 1)} hitSlop={8}><MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} /></Pressable>
+              <TextInput style={[tp.colValue, tp.colInput, { fontSize: 24 }]} value={yearText} onChangeText={setYearText} onBlur={() => { const n = parseInt(yearText, 10); if (!isNaN(n) && n >= 2020 && n <= 2099) setYear(n); else setYearText(String(year)); }} keyboardType="number-pad" maxLength={4} selectTextOnFocus />
+              <Pressable style={tp.arrowBtn} onPress={() => setYear(y => Math.max(2020, y - 1))} hitSlop={8}><MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} /></Pressable>
             </View>
           </View>
           <View style={tp.btnRow}>
-            <Pressable style={tp.cancelBtn} onPress={onClose}>
-              <Text style={tp.cancelText}>Cancel</Text>
-            </Pressable>
-            <Pressable style={tp.confirmBtn} onPress={handleConfirm}>
-              <MaterialIcons name="check" size={18} color={colors.textLight} />
-              <Text style={tp.confirmText}>Set Date</Text>
-            </Pressable>
+            <Pressable style={tp.cancelBtn} onPress={onClose}><Text style={tp.cancelText}>Cancel</Text></Pressable>
+            <Pressable style={tp.confirmBtn} onPress={handleConfirm}><MaterialIcons name="check" size={18} color={colors.textLight} /><Text style={tp.confirmText}>Set Date</Text></Pressable>
           </View>
         </Pressable>
       </Pressable>
@@ -437,149 +265,67 @@ function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
   );
 }
 
-// ─── DateField — tappable display that opens the date picker ─────────────────
 function DateField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
   const [open, setOpen] = useState(false);
-  const display = (() => {
-    try {
-      const [y, m, d] = value.split('-').map(Number);
-      return new Date(y, m-1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-    } catch { return value; }
-  })();
+  const display = (() => { try { const [y, m, d] = value.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return value; } })();
   return (
     <>
       {label ? <Text style={modal.label}>{label}</Text> : null}
-      <Pressable
-        style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-        onPress={() => setOpen(true)}
-      >
+      <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setOpen(true)}>
         <MaterialIcons name="calendar-today" size={16} color={colors.primary} />
         <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{display}</Text>
       </Pressable>
-      <DatePickerModal
-        visible={open}
-        value={value}
-        onConfirm={onChange}
-        onClose={() => setOpen(false)}
-        label={label}
-      />
+      <DatePickerModal visible={open} value={value} onConfirm={onChange} onClose={() => setOpen(false)} label={label} />
     </>
   );
 }
 
-// ─── TimeField — tappable display that opens the picker ───────────────────────
 function TimeField({ value, onChange, label }: { value: string; onChange: (v: string) => void; label?: string }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       {label ? <Text style={pb.timeLabel}>{label}</Text> : null}
-      <Pressable
-        style={[pb.timeInput, { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' }]}
-        onPress={() => setOpen(true)}
-      >
+      <Pressable style={[pb.timeInput, { flexDirection: 'row', alignItems: 'center', gap: 4, justifyContent: 'center' }]} onPress={() => setOpen(true)}>
         <MaterialIcons name="access-time" size={14} color={colors.primary} />
         <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(value)}</Text>
       </Pressable>
-      <TimePickerModal
-        visible={open}
-        value={value}
-        onConfirm={onChange}
-        onClose={() => setOpen(false)}
-        label={label}
-      />
+      <TimePickerModal visible={open} value={value} onConfirm={onChange} onClose={() => setOpen(false)} label={label} />
     </>
   );
 }
 
-// ─── Plan Block Builder ───────────────────────────────────────────────────────
-function PlanBlockEditor({ blocks, onChange, sessionColor }: {
-  blocks: PlanBlock[];
-  onChange: (b: PlanBlock[]) => void;
-  sessionColor: string;
-}) {
+// ─── Plan Block Editor ────────────────────────────────────────────────────────
+function PlanBlockEditor({ blocks, onChange, sessionColor }: { blocks: PlanBlock[]; onChange: (b: PlanBlock[]) => void; sessionColor: string }) {
   const addBlock = () => {
     const last = blocks[blocks.length - 1];
     const startT = last ? last.endTime : now12();
     const [h, m] = startT.split(':').map(Number);
-    const endDate = new Date(2000, 0, 1, h, m + 30);
-    const endT = `${endDate.getHours().toString().padStart(2, '0')}:${endDate.getMinutes().toString().padStart(2, '0')}`;
+    const end = new Date(2000, 0, 1, h, m + 30);
+    const endT = `${end.getHours().toString().padStart(2, '0')}:${end.getMinutes().toString().padStart(2, '0')}`;
     onChange([...blocks, { id: Date.now().toString(), startTime: startT, endTime: endT, activities: ['Batting'], notes: '' }]);
   };
-
-  const updateField = (id: string, field: 'startTime' | 'endTime' | 'notes', value: string) =>
-    onChange(blocks.map(b => b.id === id ? { ...b, [field]: value } : b));
-
-  // Multi-select toggle for activities
-  const toggleActivity = (id: string, activity: string) =>
-    onChange(blocks.map(b => {
-      if (b.id !== id) return b;
-      const has = b.activities.includes(activity);
-      const next = has
-        ? b.activities.filter(a => a !== activity)
-        : [...b.activities, activity];
-      return { ...b, activities: next.length ? next : [activity] };
-    }));
-
-  const remove = (id: string) => onChange(blocks.filter(b => b.id !== id));
-
+  const updateField = (id: string, field: keyof PlanBlock, value: any) => onChange(blocks.map(b => b.id === id ? { ...b, [field]: value } : b));
+  const toggleActivity = (id: string, activity: string) => onChange(blocks.map(b => { if (b.id !== id) return b; const has = b.activities.includes(activity); const next = has ? b.activities.filter(a => a !== activity) : [...b.activities, activity]; return { ...b, activities: next.length ? next : [activity] }; }));
   return (
     <View style={pb.wrapper}>
       {blocks.map((block, idx) => (
         <View key={block.id} style={[pb.block, { borderLeftColor: sessionColor }]}>
           <View style={pb.blockHeader}>
             <Text style={[pb.blockNum, { color: sessionColor }]}>Block {idx + 1}</Text>
-            <Pressable onPress={() => remove(block.id)} hitSlop={6}>
-              <MaterialIcons name="remove-circle-outline" size={20} color={colors.error} />
-            </Pressable>
+            <Pressable onPress={() => onChange(blocks.filter(b => b.id !== block.id))} hitSlop={6}><MaterialIcons name="remove-circle-outline" size={20} color={colors.error} /></Pressable>
           </View>
-
-          {/* Time row — tappable time picker */}
           <View style={pb.timeRow}>
-            <View style={pb.timeField}>
-              <TimeField
-                label="Start"
-                value={block.startTime}
-                onChange={v => updateField(block.id, 'startTime', v)}
-              />
-            </View>
+            <View style={pb.timeField}><TimeField label="Start" value={block.startTime} onChange={v => updateField(block.id, 'startTime', v)} /></View>
             <MaterialIcons name="arrow-forward" size={16} color={colors.textSecondary} style={{ marginTop: 20 }} />
-            <View style={pb.timeField}>
-              <TimeField
-                label="End"
-                value={block.endTime}
-                onChange={v => updateField(block.id, 'endTime', v)}
-              />
-            </View>
+            <View style={pb.timeField}><TimeField label="End" value={block.endTime} onChange={v => updateField(block.id, 'endTime', v)} /></View>
           </View>
-
-          {/* Activities — multi-select */}
-          <Text style={[pb.timeLabel, { marginTop: 6, marginBottom: 4 }]}>Activities (tap to select multiple)</Text>
+          <Text style={[pb.timeLabel, { marginTop: 6, marginBottom: 4 }]}>Activities</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={{ flexDirection: 'row', gap: 5 }}>
-              {ACTIVITIES.map(a => {
-                const selected = block.activities.includes(a);
-                return (
-                  <Pressable
-                    key={a}
-                    style={[pb.activityChip, selected && { backgroundColor: sessionColor, borderColor: sessionColor }]}
-                    onPress={() => toggleActivity(block.id, a)}
-                  >
-                    <Text style={[pb.activityChipText, selected && { color: colors.textLight }]}>{a}</Text>
-                  </Pressable>
-                );
-              })}
+              {ACTIVITIES.map(a => { const sel = block.activities.includes(a); return <Pressable key={a} style={[pb.activityChip, sel && { backgroundColor: sessionColor, borderColor: sessionColor }]} onPress={() => toggleActivity(block.id, a)}><Text style={[pb.activityChipText, sel && { color: colors.textLight }]}>{a}</Text></Pressable>; })}
             </View>
           </ScrollView>
-
-          {/* Block notes — drills go here */}
-          <TextInput
-            style={pb.blockNotes}
-            value={block.notes}
-            onChangeText={v => updateField(block.id, 'notes', v)}
-            placeholder="Notes & drills e.g. Short-arm jab drill, focus on drive shots"
-            placeholderTextColor={colors.textSecondary}
-            multiline
-          />
+          <TextInput style={pb.blockNotes} value={block.notes} onChangeText={v => updateField(block.id, 'notes', v)} placeholder="Notes & drills…" placeholderTextColor={colors.textSecondary} multiline />
         </View>
       ))}
       <Pressable style={[pb.addBlockBtn, { borderColor: sessionColor }]} onPress={addBlock}>
@@ -606,67 +352,114 @@ const pb = StyleSheet.create({
   addBlockText: { fontSize: 13, fontWeight: '700' },
 });
 
-// ─── Session Card (with full plan details for players) ────────────────────────
-function SessionCard({ s, isCoach, academyId, today, router, onEdit }: {
-  s: AcademySession; isCoach: boolean; academyId: string; today: string; router: any; onEdit: (s: AcademySession) => void;
+// ─── Session Card ─────────────────────────────────────────────────────────────
+function SessionCard({
+  entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal,
+}: {
+  entry: ScheduleEntry;
+  isCoach: boolean;
+  academyId: string;
+  userId: string;
+  today: string;
+  router: any;
+  onEditAcademy: (s: AcademySession) => void;
+  onEditPersonal: (entry: ScheduleEntry) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const color = TYPE_COLORS[s.session_type] || colors.primary;
-  const isToday = s.session_date === today;
-  const isPast = s.session_date < today;
+  const color = typeColor(entry.sessionType);
+  const isToday = entry.date === today;
+  const isPast = entry.date < today;
+  const isAcademy = entry.source === 'academy';
+  const isPersonal = entry.source === 'personal';
 
-  const planBlocks = parsePlanBlocks(s.notes);
-  const objectives = parseObjectives(s.notes);
-  const coachNotes = parseCoachNotes(s.notes);
+  // Players can only edit personal sessions they created
+  const canEdit = isCoach
+    ? isAcademy
+    : (isPersonal && entry.createdBy === userId);
+
+  const planBlocks = parsePlanBlocks(entry.notes);
+  const objectives = parseObjectives(entry.notes);
+  const coachNotes = parseCoachNotes(entry.notes);
   const hasPlan = planBlocks.length > 0 || objectives.length > 0 || !!coachNotes;
 
-  const getActivitiesLabel = (b: PlanBlock) =>
-    (b.activities && b.activities.length > 0 ? b.activities : ['Training']).join(' + ');
+  const sourceC = SOURCE_COLORS[entry.source];
+  const stripeColor = isPersonal ? colors.success : color;
 
   return (
     <Pressable
-      style={[styles.sessionCard, isToday && styles.sessionCardToday]}
+      style={[
+        styles.sessionCard,
+        isToday && styles.sessionCardToday,
+        isPast && styles.sessionCardPast,
+      ]}
       onPress={() => setExpanded(e => !e)}
+      activeOpacity={0.85}
     >
-      <View style={[styles.sessionStripe, { backgroundColor: color }]} />
+      {/* Left stripe */}
+      <View style={[styles.sessionStripe, { backgroundColor: isPast ? colors.border : stripeColor }]} />
+
       <View style={styles.sessionContent}>
+        {/* Top row: title + type badge */}
         <View style={styles.sessionTop}>
           <View style={{ flex: 1 }}>
             <View style={styles.sessionTitleRow}>
-              <Text style={styles.sessionTitle}>{s.title}</Text>
-              {isToday && <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>}
+              <Text style={[styles.sessionTitle, isPast && { color: colors.textSecondary }]}>{entry.title}</Text>
+              {isToday && (
+                <View style={styles.todayBadge}>
+                  <Text style={styles.todayBadgeText}>TODAY</Text>
+                </View>
+              )}
+              {isPast && (
+                <View style={styles.doneBadge}>
+                  <MaterialIcons name="check-circle" size={12} color={colors.success} />
+                  <Text style={styles.doneBadgeText}>Done</Text>
+                </View>
+              )}
             </View>
             <Text style={styles.sessionMeta}>
-              {formatDateReadable(s.session_date)} · {formatTime12(s.session_time)}
-              {s.location ? ` · ${s.location}` : ''}
+              {formatDateReadable(entry.date)} · {formatTime12(entry.time)}
+              {entry.location ? ` · ${entry.location}` : ''}
             </Text>
           </View>
           <View style={{ alignItems: 'flex-end', gap: 4 }}>
-            <View style={[styles.typeBadge, { backgroundColor: color + '20' }]}>
-              <Text style={[styles.typeBadgeText, { color }]}>{s.session_type}</Text>
+            <View style={[styles.typeBadge, { backgroundColor: isPast ? colors.border : color + '20' }]}>
+              <Text style={[styles.typeBadgeText, { color: isPast ? colors.textSecondary : color }]}>{entry.sessionType}</Text>
             </View>
             <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={18} color={colors.textSecondary} />
           </View>
         </View>
 
-        {/* Collapsed preview — activity chips */}
+        {/* Source badge row */}
+        <View style={styles.sourceBadgeRow}>
+          <View style={[styles.sourceBadge, { backgroundColor: sourceC.bg, borderColor: sourceC.border }]}>
+            <MaterialIcons
+              name={isAcademy ? 'shield' : 'person'}
+              size={10}
+              color={sourceC.text}
+            />
+            <Text style={[styles.sourceBadgeText, { color: sourceC.text }]}>
+              {isAcademy ? 'Academy Session' : 'Personal Session'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Collapsed preview chips */}
         {!expanded && planBlocks.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.xs }}>
             <View style={{ flexDirection: 'row', gap: 5 }}>
               {planBlocks.map(b => (
                 <View key={b.id} style={[styles.blockPreviewChip, { backgroundColor: color + '15', borderColor: color + '40' }]}>
                   <Text style={[styles.blockPreviewTime, { color }]}>{formatTime12(b.startTime)}</Text>
-                  <Text style={[styles.blockPreviewActivity, { color }]}>{getActivitiesLabel(b)}</Text>
+                  <Text style={[styles.blockPreviewActivity, { color }]}>{(b.activities?.length ? b.activities : ['Training']).join(' + ')}</Text>
                 </View>
               ))}
             </View>
           </ScrollView>
         )}
 
-        {/* Expanded view — full training plan */}
+        {/* Expanded details */}
         {expanded && hasPlan && (
           <View style={styles.planContainer}>
-            {/* Objectives first */}
             {objectives.length > 0 && (
               <View style={styles.planSection}>
                 <View style={styles.planSectionHeader}>
@@ -675,16 +468,12 @@ function SessionCard({ s, isCoach, academyId, today, router, onEdit }: {
                 </View>
                 {objectives.map((o, i) => (
                   <View key={i} style={styles.objRow}>
-                    <View style={[styles.objNum, { backgroundColor: colors.warning }]}>
-                      <Text style={styles.objNumText}>{i + 1}</Text>
-                    </View>
+                    <View style={[styles.objNum, { backgroundColor: colors.warning }]}><Text style={styles.objNumText}>{i + 1}</Text></View>
                     <Text style={styles.objText}>{o}</Text>
                   </View>
                 ))}
               </View>
             )}
-
-            {/* Training Plan Blocks */}
             {planBlocks.length > 0 && (
               <View style={styles.planSection}>
                 <View style={styles.planSectionHeader}>
@@ -699,15 +488,13 @@ function SessionCard({ s, isCoach, academyId, today, router, onEdit }: {
                       <Text style={[styles.planBlockTime, { color }]}>{formatTime12(b.endTime)}</Text>
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.planBlockActivity}>{getActivitiesLabel(b)}</Text>
+                      <Text style={styles.planBlockActivity}>{(b.activities?.length ? b.activities : ['Training']).join(' + ')}</Text>
                       {b.notes ? <Text style={styles.planBlockNotes}>{b.notes}</Text> : null}
                     </View>
                   </View>
                 ))}
               </View>
             )}
-
-            {/* Coach Notes */}
             {coachNotes ? (
               <View style={styles.planSection}>
                 <View style={styles.planSectionHeader}>
@@ -720,48 +507,40 @@ function SessionCard({ s, isCoach, academyId, today, router, onEdit }: {
           </View>
         )}
 
-        {!expanded && !hasPlan && s.notes && (
-          <Text style={styles.sessionNotes} numberOfLines={2}>{parseCoachNotes(s.notes)}</Text>
-        )}
-
-        {isCoach && (
-          <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
-            {!isPast && (
-              <Pressable style={styles.markAttendanceBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
-                <MaterialIcons name="fact-check" size={14} color={colors.primary} />
-                <Text style={styles.markAttendanceText}>Mark Attendance</Text>
-              </Pressable>
-            )}
-            <Pressable
-              style={[styles.markAttendanceBtn, { backgroundColor: colors.warning + '15' }]}
-              onPress={() => onEdit(s)}
-            >
-              <MaterialIcons name="edit" size={14} color={colors.warning} />
-              <Text style={[styles.markAttendanceText, { color: colors.warning }]}>Edit Session</Text>
+        {/* Action buttons */}
+        <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: expanded ? spacing.sm : 0 }}>
+          {/* Coaches: attendance + edit for academy sessions */}
+          {isCoach && isAcademy && !isPast && (
+            <Pressable style={styles.actionBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
+              <MaterialIcons name="fact-check" size={13} color={colors.primary} />
+              <Text style={styles.actionBtnText}>Attendance</Text>
             </Pressable>
-          </View>
-        )}
-        {!isCoach && expanded && (
-          <Pressable
-            style={[styles.markAttendanceBtn, { backgroundColor: colors.primary + '10' }]}
-            onPress={() => onEdit(s)}
-          >
-            <MaterialIcons name="edit" size={14} color={colors.primary} />
-            <Text style={styles.markAttendanceText}>Suggest Edit</Text>
-          </Pressable>
-        )}
+          )}
+          {canEdit && (
+            <Pressable
+              style={[styles.actionBtn, { backgroundColor: colors.warning + '15' }]}
+              onPress={() => { if (isCoach && isAcademy && entry.rawAcademy) onEditAcademy(entry.rawAcademy); else onEditPersonal(entry); }}
+            >
+              <MaterialIcons name="edit" size={13} color={colors.warning} />
+              <Text style={[styles.actionBtnText, { color: colors.warning }]}>Edit</Text>
+            </Pressable>
+          )}
+          {/* Players viewing academy sessions: read-only hint */}
+          {!isCoach && isAcademy && expanded && (
+            <View style={[styles.actionBtn, { backgroundColor: colors.border + '60' }]}>
+              <MaterialIcons name="lock-outline" size={13} color={colors.textSecondary} />
+              <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Coach-managed session</Text>
+            </View>
+          )}
+        </View>
       </View>
     </Pressable>
   );
 }
 
-// ─── Edit Session Modal ──────────────────────────────────────────────────────
-function EditSessionModal({ visible, session, onClose, onSaved, sessionColor }: {
-  visible: boolean;
-  session: AcademySession | null;
-  onClose: () => void;
-  onSaved: () => void;
-  sessionColor: string;
+// ─── Edit Academy Session Modal (coaches only) ────────────────────────────────
+function EditAcademySessionModal({ visible, session, onClose, onSaved }: {
+  visible: boolean; session: AcademySession | null; onClose: () => void; onSaved: () => void;
 }) {
   const { showAlert } = useAlert();
   const [title, setTitle] = useState('');
@@ -773,15 +552,12 @@ function EditSessionModal({ visible, session, onClose, onSaved, sessionColor }: 
   const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
   const [saving, setSaving] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const sessionColor = colors.primary;
 
-  // Pre-fill when session changes
   React.useEffect(() => {
     if (session && visible) {
-      setTitle(session.title);
-      setDate(session.session_date);
-      setTime(session.session_time);
-      setLocation(session.location || '');
-      setNotes(parseCoachNotes(session.notes));
+      setTitle(session.title); setDate(session.session_date); setTime(session.session_time);
+      setLocation(session.location || ''); setNotes(parseCoachNotes(session.notes));
       const objs = parseObjectives(session.notes);
       setObjectives(objs.length ? objs : ['', '']);
       setPlanBlocks(parsePlanBlocks(session.notes));
@@ -792,23 +568,18 @@ function EditSessionModal({ visible, session, onClose, onSaved, sessionColor }: 
     if (!session) return;
     if (!title.trim()) { showAlert('Error', 'Session title is required'); return; }
     setSaving(true);
-    const combinedNotes = buildNotes(notes, objectives, planBlocks);
     const { error } = await academyService.updateSession(session.id, {
-      title: title.trim(),
-      session_date: date,
-      session_time: time,
+      title: title.trim(), session_date: date, session_time: time,
       location: location.trim() || undefined,
-      notes: combinedNotes || undefined,
+      notes: buildNotes(notes, objectives, planBlocks) || undefined,
     });
     setSaving(false);
     if (error) { showAlert('Error', error); return; }
-    onClose();
-    onSaved();
+    onClose(); onSaved();
     showAlert('Saved', 'Session updated successfully.');
   };
 
   if (!session) return null;
-
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={modal.overlay}>
@@ -816,104 +587,143 @@ function EditSessionModal({ visible, session, onClose, onSaved, sessionColor }: 
           <View style={modal.handle} />
           <View style={modal.header}>
             <Text style={modal.headerTitle}>Edit Session</Text>
-            <Pressable onPress={onClose} style={modal.closeBtn}>
-              <MaterialIcons name="close" size={22} color={colors.text} />
-            </Pressable>
+            <Pressable onPress={onClose} style={modal.closeBtn}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
           </View>
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-
-              {/* Session Details */}
               <View style={modal.sectionBlock}>
-                <View style={modal.sectionHeader}>
-                  <MaterialIcons name="event" size={16} color={colors.primary} />
-                  <Text style={modal.sectionTitle}>Session Details</Text>
-                </View>
-                <Text style={modal.label}>Session Title *</Text>
+                <View style={modal.sectionHeader}><MaterialIcons name="event" size={16} color={sessionColor} /><Text style={modal.sectionTitle}>Session Details</Text></View>
+                <Text style={modal.label}>Title *</Text>
                 <TextInput style={modal.input} value={title} onChangeText={setTitle} placeholder="e.g. Tuesday Nets" placeholderTextColor={colors.textSecondary} />
                 <DateField label="Date" value={date} onChange={setDate} />
-                <Text style={modal.label}>Session Time</Text>
-                <Pressable
-                  style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-                  onPress={() => setShowTimePicker(true)}
-                >
-                  <MaterialIcons name="access-time" size={16} color={colors.primary} />
+                <Text style={modal.label}>Time</Text>
+                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowTimePicker(true)}>
+                  <MaterialIcons name="access-time" size={16} color={sessionColor} />
                   <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(time)}</Text>
                 </Pressable>
-                <TimePickerModal
-                  visible={showTimePicker}
-                  value={time}
-                  onConfirm={setTime}
-                  onClose={() => setShowTimePicker(false)}
-                  label="Session Start Time"
-                />
+                <TimePickerModal visible={showTimePicker} value={time} onConfirm={setTime} onClose={() => setShowTimePicker(false)} label="Session Time" />
                 <Text style={modal.label}>Location (Optional)</Text>
                 <TextInput style={modal.input} value={location} onChangeText={setLocation} placeholder="e.g. Main Oval" placeholderTextColor={colors.textSecondary} />
               </View>
-
-              {/* Session Objectives */}
               <View style={modal.sectionBlock}>
-                <View style={modal.sectionHeader}>
-                  <MaterialIcons name="flag" size={16} color={colors.warning} />
-                  <Text style={[modal.sectionTitle, { color: colors.warning }]}>Session Objectives</Text>
-                </View>
+                <View style={modal.sectionHeader}><MaterialIcons name="flag" size={16} color={colors.warning} /><Text style={[modal.sectionTitle, { color: colors.warning }]}>Objectives</Text></View>
                 {objectives.map((obj, i) => (
                   <View key={i} style={modal.objRow}>
-                    <View style={[modal.objNum, { backgroundColor: colors.warning }]}>
-                      <Text style={modal.objNumText}>{i + 1}</Text>
-                    </View>
-                    <TextInput
-                      style={[modal.input, { flex: 1 }]}
-                      value={obj}
-                      onChangeText={v => { const arr = [...objectives]; arr[i] = v; setObjectives(arr); }}
-                      placeholder={`Objective ${i + 1}…`}
-                      placeholderTextColor={colors.textSecondary}
-                    />
-                    {i === objectives.length - 1 && (
-                      <Pressable onPress={() => setObjectives(o => [...o, ''])} hitSlop={6}>
-                        <MaterialIcons name="add-circle" size={22} color={colors.warning} />
-                      </Pressable>
-                    )}
+                    <View style={[modal.objNum, { backgroundColor: colors.warning }]}><Text style={modal.objNumText}>{i + 1}</Text></View>
+                    <TextInput style={[modal.input, { flex: 1 }]} value={obj} onChangeText={v => { const arr = [...objectives]; arr[i] = v; setObjectives(arr); }} placeholder={`Objective ${i + 1}…`} placeholderTextColor={colors.textSecondary} />
+                    {i === objectives.length - 1 && <Pressable onPress={() => setObjectives(o => [...o, ''])} hitSlop={6}><MaterialIcons name="add-circle" size={22} color={colors.warning} /></Pressable>}
                   </View>
                 ))}
               </View>
-
-              {/* Training Plan Blocks */}
               <View style={modal.sectionBlock}>
-                <View style={modal.sectionHeader}>
-                  <MaterialIcons name="schedule" size={16} color={sessionColor} />
-                  <Text style={[modal.sectionTitle, { color: sessionColor }]}>Training Plan</Text>
-                  <Text style={modal.sectionHint}>Visible to players · add drills in block notes</Text>
-                </View>
+                <View style={modal.sectionHeader}><MaterialIcons name="schedule" size={16} color={sessionColor} /><Text style={modal.sectionTitle}>Training Plan</Text></View>
                 <PlanBlockEditor blocks={planBlocks} onChange={setPlanBlocks} sessionColor={sessionColor} />
               </View>
-
-              {/* Coach Notes */}
               <View style={modal.sectionBlock}>
-                <View style={modal.sectionHeader}>
-                  <MaterialIcons name="notes" size={16} color={colors.textSecondary} />
-                  <Text style={modal.sectionTitle}>Coach Notes (Optional)</Text>
-                </View>
-                <TextInput
-                  style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  multiline
-                  placeholder="Anything else players should know…"
-                  placeholderTextColor={colors.textSecondary}
-                />
+                <View style={modal.sectionHeader}><MaterialIcons name="notes" size={16} color={colors.textSecondary} /><Text style={modal.sectionTitle}>Coach Notes</Text></View>
+                <TextInput style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} multiline placeholder="Anything players should know…" placeholderTextColor={colors.textSecondary} />
               </View>
+              <Pressable style={[modal.submitBtn, { backgroundColor: sessionColor, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]} onPress={handleSave}>
+                {saving ? <ActivityIndicator color={colors.textLight} /> : <><MaterialIcons name="save" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>Save Changes</Text></>}
+              </Pressable>
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
 
-              <Pressable
-                style={[modal.submitBtn, { backgroundColor: sessionColor, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]}
-                onPress={handleSave}
-              >
-                {saving ? <ActivityIndicator color={colors.textLight} /> : (
-                  <>
-                    <MaterialIcons name="save" size={18} color={colors.textLight} />
-                    <Text style={modal.submitBtnText}>Save Changes</Text>
-                  </>
-                )}
+// ─── Personal Session Modal (create / edit) ───────────────────────────────────
+function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, onSaved }: {
+  visible: boolean; editEntry: ScheduleEntry | null; userId: string; academyId: string; onClose: () => void; onSaved: () => void;
+}) {
+  const { showAlert } = useAlert();
+  const [title, setTitle] = useState('');
+  const [date, setDate] = useState(todayStr());
+  const [time, setTime] = useState(now12());
+  const [location, setLocation] = useState('');
+  const [notes, setNotes] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  React.useEffect(() => {
+    if (visible) {
+      if (editEntry) {
+        setTitle(editEntry.title); setDate(editEntry.date); setTime(editEntry.time);
+        setLocation(editEntry.location || ''); setNotes(editEntry.notes || '');
+      } else {
+        setTitle(''); setDate(todayStr()); setTime(now12()); setLocation(''); setNotes('');
+      }
+    }
+  }, [visible, editEntry]);
+
+  const handleSave = async () => {
+    if (!title.trim()) { showAlert('Error', 'Please enter a title'); return; }
+    setSaving(true);
+    const supabase = getSupabaseClient();
+    if (editEntry?.rawPersonalId) {
+      // Update existing personal session
+      const { error } = await supabase.from('sessions').update({
+        title: title.trim(), scheduled_date: `${date}T${time}:00`,
+        notes: notes || null,
+      }).eq('id', editEntry.rawPersonalId).eq('user_id', userId);
+      setSaving(false);
+      if (error) { showAlert('Error', error.message); return; }
+    } else {
+      // Create new personal session linked to this academy context (just a personal session)
+      const { error } = await supabase.from('sessions').insert({
+        user_id: userId,
+        title: title.trim(),
+        scheduled_date: `${date}T${time}:00`,
+        session_type: 'Training',
+        status: 'planned',
+        notes: notes || null,
+      });
+      setSaving(false);
+      if (error) { showAlert('Error', error.message); return; }
+    }
+    onClose(); onSaved();
+    showAlert('Saved', editEntry ? 'Personal session updated.' : 'Personal session added to your schedule.');
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={modal.overlay}>
+        <View style={modal.sheet}>
+          <View style={modal.handle} />
+          <View style={modal.header}>
+            <Text style={modal.headerTitle}>{editEntry ? 'Edit Personal Session' : 'Add Personal Session'}</Text>
+            <Pressable onPress={onClose} style={modal.closeBtn}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
+          </View>
+          <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
+              {/* Info banner */}
+              <View style={[modal.sectionBlock, { backgroundColor: colors.success + '10', borderColor: colors.success + '30' }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <MaterialIcons name="person" size={16} color={colors.success} />
+                  <Text style={{ fontSize: 12, color: colors.success, fontWeight: '700' }}>Personal Session</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
+                  This session is only visible to you. Academy sessions are created by your coach.
+                </Text>
+              </View>
+              <View style={modal.sectionBlock}>
+                <View style={modal.sectionHeader}><MaterialIcons name="event" size={16} color={colors.success} /><Text style={modal.sectionTitle}>Session Details</Text></View>
+                <Text style={modal.label}>Title *</Text>
+                <TextInput style={modal.input} value={title} onChangeText={setTitle} placeholder="e.g. Solo batting practice" placeholderTextColor={colors.textSecondary} />
+                <DateField label="Date" value={date} onChange={setDate} />
+                <Text style={modal.label}>Time</Text>
+                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowTimePicker(true)}>
+                  <MaterialIcons name="access-time" size={16} color={colors.success} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(time)}</Text>
+                </Pressable>
+                <TimePickerModal visible={showTimePicker} value={time} onConfirm={setTime} onClose={() => setShowTimePicker(false)} label="Session Time" />
+                <Text style={modal.label}>Notes (Optional)</Text>
+                <TextInput style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} multiline placeholder="What do you plan to work on?" placeholderTextColor={colors.textSecondary} />
+              </View>
+              <Pressable style={[modal.submitBtn, { backgroundColor: colors.success, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]} onPress={handleSave}>
+                {saving ? <ActivityIndicator color={colors.textLight} /> : <><MaterialIcons name="save" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>{editEntry ? 'Save Changes' : 'Add to Schedule'}</Text></>}
               </Pressable>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -929,103 +739,138 @@ export default function AcademyScheduleScreen() {
   const params = useLocalSearchParams();
   const { user } = useAuth();
   const { showAlert } = useAlert();
-  const insets = useSafeAreaInsets();
 
   const academyId = params.academyId as string;
   const isCoach = params.isCoach === 'true';
 
-  const [sessions, setSessions] = useState<AcademySession[]>([]);
+  const [entries, setEntries] = useState<ScheduleEntry[]>([]);
+  const [squads, setSquads] = useState<AcademySquad[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [squadFilter, setSquadFilter] = useState<string | null>(null);
 
-  // Form state — auto-filled
+  // Modals
+  const [showCreateCoach, setShowCreateCoach] = useState(false);
+  const [editingAcademySession, setEditingAcademySession] = useState<AcademySession | null>(null);
+  const [showEditAcademy, setShowEditAcademy] = useState(false);
+  const [editingPersonalEntry, setEditingPersonalEntry] = useState<ScheduleEntry | null>(null);
+  const [showPersonalModal, setShowPersonalModal] = useState(false);
+
+  // Create coach session form
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState(todayStr());
   const [newTime, setNewTime] = useState(now12());
   const [newLocation, setNewLocation] = useState('');
-  const [newType] = useState('Training'); // Fixed to Training only
   const [newNotes, setNewNotes] = useState('');
-  const [planBlocks, setPlanBlocks] = useState<PlanBlock[]>([]);
-  const [objectives, setObjectives] = useState<string[]>(['', '']);
-  const [creating, setCreating] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  const [editingSession, setEditingSession] = useState<AcademySession | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [squads, setSquads] = useState<AcademySquad[]>([]);
+  const [newPlanBlocks, setNewPlanBlocks] = useState<PlanBlock[]>([]);
+  const [newObjectives, setNewObjectives] = useState<string[]>(['', '']);
   const [newSquadId, setNewSquadId] = useState<string | null>(null);
-  const [squadFilter, setSquadFilter] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [showCreateTimePicker, setShowCreateTimePicker] = useState(false);
 
   const load = useCallback(async () => {
-    const [sessionsRes, squadsRes] = await Promise.all([
+    if (!user) return;
+    const [sessRes, squadsRes] = await Promise.all([
       academyService.getAcademySessions(academyId),
       academyService.getSquads(academyId),
     ]);
-    setSessions(sessionsRes.data || []);
     setSquads(squadsRes.data || []);
+
+    const today = todayStr();
+    const academyEntries: ScheduleEntry[] = (sessRes.data || []).map(s => ({
+      id: `academy_${s.id}`,
+      source: 'academy' as const,
+      title: s.title,
+      date: s.session_date,
+      time: s.session_time,
+      location: s.location,
+      sessionType: s.session_type,
+      notes: s.notes,
+      squadId: (s as any).squad_id,
+      createdBy: (s as any).created_by,
+      rawAcademy: s,
+    }));
+
+    // Load personal sessions from `sessions` table for this user
+    let personalEntries: ScheduleEntry[] = [];
+    if (!isCoach) {
+      try {
+        const supabase = getSupabaseClient();
+        const fromDate = new Date();
+        fromDate.setDate(fromDate.getDate() - 30);
+        const { data: personalSessions } = await supabase
+          .from('sessions')
+          .select('id, title, scheduled_date, session_type, status, notes, user_id')
+          .eq('user_id', user.id)
+          .gte('scheduled_date', fromDate.toISOString())
+          .order('scheduled_date', { ascending: true });
+        personalEntries = (personalSessions || []).map(s => {
+          const dt = new Date(s.scheduled_date);
+          const dateStr = dt.toISOString().split('T')[0];
+          const timeStr = `${dt.getHours().toString().padStart(2, '0')}:${dt.getMinutes().toString().padStart(2, '0')}`;
+          return {
+            id: `personal_${s.id}`,
+            source: 'personal' as const,
+            title: s.title,
+            date: dateStr,
+            time: timeStr,
+            sessionType: s.session_type,
+            notes: s.notes || undefined,
+            createdBy: s.user_id,
+            rawPersonalId: s.id,
+          };
+        });
+      } catch (_) {}
+    }
+
+    setEntries([...academyEntries, ...personalEntries]);
     setLoading(false);
-  }, [academyId]);
+  }, [user, academyId, isCoach]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  };
+  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 
-  const resetForm = () => {
+  const resetCoachForm = () => {
     setNewTitle(''); setNewDate(todayStr()); setNewTime(now12());
-    setNewLocation(''); setNewNotes('');
-    setPlanBlocks([]); setObjectives(['', '']); setNewSquadId(null);
-  };
-
-  const openModal = () => {
-    resetForm();
-    setNewDate(todayStr());
-    setNewTime(now12()); // refresh to current time on open
-    setShowCreateModal(true);
+    setNewLocation(''); setNewNotes(''); setNewPlanBlocks([]); setNewObjectives(['', '']); setNewSquadId(null);
   };
 
   const handleCreate = async () => {
     if (!user) return;
     if (!newTitle.trim()) { showAlert('Error', 'Please enter a session title'); return; }
     setCreating(true);
-    const combinedNotes = buildNotes(newNotes, objectives, planBlocks);
     const { error } = await academyService.createSession({
       academy_id: academyId, title: newTitle.trim(), session_date: newDate,
       session_time: newTime, location: newLocation.trim() || undefined,
-      session_type: newType, notes: combinedNotes || undefined, created_by: user.id,
-      squad_id: newSquadId || null,
+      session_type: 'Training', notes: buildNotes(newNotes, newObjectives, newPlanBlocks) || undefined,
+      created_by: user.id, squad_id: newSquadId || null,
     });
     setCreating(false);
     if (error) { showAlert('Error', error); return; }
-    setShowCreateModal(false);
-    resetForm();
-    await load();
-    showAlert('Session Created', 'Players can now see this session and training plan.');
+    setShowCreateCoach(false); resetCoachForm(); await load();
+    showAlert('Session Created', 'Players can now see this session.');
   };
 
   const today = todayStr();
-  const filteredSessions = squadFilter
-    ? sessions.filter(s => (s as any).squad_id === squadFilter || !(s as any).squad_id)
-    : sessions;
-  const upcoming = filteredSessions.filter(s => s.session_date >= today).sort((a, b) => a.session_date.localeCompare(b.session_date));
-  const past = filteredSessions.filter(s => s.session_date < today).sort((a, b) => b.session_date.localeCompare(a.session_date));
-  const sessionColor = TYPE_COLORS[newType] || colors.primary;
+  const filteredEntries = squadFilter
+    ? entries.filter(e => !e.squadId || e.squadId === squadFilter || e.source === 'personal')
+    : entries;
 
-  const handleEditSession = (s: AcademySession) => {
-    setEditingSession(s);
-    setShowEditModal(true);
-  };
+  const upcoming = filteredEntries
+    .filter(e => e.date >= today)
+    .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
+  const past = filteredEntries
+    .filter(e => e.date < today)
+    .sort((a, b) => b.date !== a.date ? b.date.localeCompare(a.date) : b.time.localeCompare(a.time));
+
+  const userId = user?.id || '';
 
   if (loading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backBtn}>
-            <MaterialIcons name="arrow-back" size={24} color={colors.text} />
-          </Pressable>
+          <Pressable onPress={() => router.back()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color={colors.text} /></Pressable>
           <Text style={styles.headerTitle}>Schedule</Text>
           <View style={{ width: 40 }} />
         </View>
@@ -1037,39 +882,59 @@ export default function AcademyScheduleScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
-          <MaterialIcons name="arrow-back" size={24} color={colors.text} />
-        </Pressable>
+        <Pressable onPress={() => router.back()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color={colors.text} /></Pressable>
         <Text style={styles.headerTitle}>Schedule</Text>
-        {isCoach ? (
-          <Pressable style={styles.addBtn} onPress={openModal}>
-            <MaterialIcons name="add" size={22} color={colors.primary} />
-          </Pressable>
-        ) : <View style={{ width: 40 }} />}
+        <View style={{ flexDirection: 'row', gap: 6 }}>
+          {/* Players can add personal sessions */}
+          {!isCoach && (
+            <Pressable style={styles.addBtn} onPress={() => { setEditingPersonalEntry(null); setShowPersonalModal(true); }}>
+              <MaterialIcons name="person-add" size={20} color={colors.success} />
+            </Pressable>
+          )}
+          {/* Coaches create academy sessions */}
+          {isCoach && (
+            <Pressable style={styles.addBtn} onPress={() => { resetCoachForm(); setShowCreateCoach(true); }}>
+              <MaterialIcons name="add" size={22} color={colors.primary} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       {/* Squad filter chips */}
       {squads.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           style={{ maxHeight: 52, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}
-          contentContainerStyle={{ flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm }}>
-          <Pressable
-            style={[scheduleSquadStyles.chip, !squadFilter && scheduleSquadStyles.chipAll]}
-            onPress={() => setSquadFilter(null)}
-          >
-            <Text style={[scheduleSquadStyles.chipText, !squadFilter && scheduleSquadStyles.chipTextActive]}>All</Text>
+          contentContainerStyle={{ flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm, alignItems: 'center' }}>
+          <Pressable style={[schedSq.chip, !squadFilter && schedSq.chipAll]} onPress={() => setSquadFilter(null)}>
+            <Text style={[schedSq.chipText, !squadFilter && schedSq.chipTextActive]}>All</Text>
           </Pressable>
           {squads.map(sq => (
-            <Pressable
-              key={sq.id}
-              style={[scheduleSquadStyles.chip, squadFilter === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]}
-              onPress={() => setSquadFilter(squadFilter === sq.id ? null : sq.id)}
-            >
-              <View style={[scheduleSquadStyles.dot, { backgroundColor: squadFilter === sq.id ? 'rgba(255,255,255,0.7)' : sq.color }]} />
-              <Text style={[scheduleSquadStyles.chipText, squadFilter === sq.id && scheduleSquadStyles.chipTextActive]}>{sq.name}</Text>
+            <Pressable key={sq.id} style={[schedSq.chip, squadFilter === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]} onPress={() => setSquadFilter(squadFilter === sq.id ? null : sq.id)}>
+              <View style={[schedSq.dot, { backgroundColor: squadFilter === sq.id ? 'rgba(255,255,255,0.7)' : sq.color }]} />
+              <Text style={[schedSq.chipText, squadFilter === sq.id && schedSq.chipTextActive]}>{sq.name}</Text>
             </Pressable>
           ))}
         </ScrollView>
+      )}
+
+      {/* Legend for players */}
+      {!isCoach && (
+        <View style={styles.legendBar}>
+          <View style={styles.legendItem}>
+            <MaterialIcons name="shield" size={12} color={colors.primary} />
+            <Text style={[styles.legendText, { color: colors.primary }]}>Academy</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <MaterialIcons name="person" size={12} color={colors.success} />
+            <Text style={[styles.legendText, { color: colors.success }]}>Personal</Text>
+          </View>
+          <View style={[styles.legendItem, { marginLeft: 'auto' as any }]}>
+            <MaterialIcons name="check-circle" size={12} color={colors.success} />
+            <Text style={styles.legendText}>Done</Text>
+            <View style={[styles.legendDot, { backgroundColor: colors.primary + '60' }]} />
+            <Text style={styles.legendText}>Upcoming</Text>
+          </View>
+        </View>
       )}
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
@@ -1079,109 +944,86 @@ export default function AcademyScheduleScreen() {
           <View style={styles.emptyState}>
             <MaterialIcons name="event-note" size={64} color={colors.border} />
             <Text style={styles.emptyTitle}>No sessions scheduled</Text>
-            <Text style={styles.emptySubtitle}>
-              {isCoach ? 'Create a session to get started' : 'Your coach will schedule sessions here'}
-            </Text>
-            {isCoach && (
-              <Pressable style={styles.createBtn} onPress={openModal}>
-                <MaterialIcons name="add-circle" size={20} color={colors.textLight} />
-                <Text style={styles.createBtnText}>Create Session</Text>
-              </Pressable>
-            )}
+            <Text style={styles.emptySub}>{isCoach ? 'Tap + to create a session' : 'Your coach will schedule sessions · tap the icon above to add a personal session'}</Text>
           </View>
         )}
 
         {upcoming.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
-            {upcoming.map(s => <SessionCard key={s.id} s={s} isCoach={isCoach} academyId={academyId} today={today} router={router} onEdit={handleEditSession} />)}
+            {upcoming.map(e => (
+              <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
+                onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
+                onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
+              />
+            ))}
           </>
         )}
+
         {past.length > 0 && (
           <>
-            <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Past Sessions</Text>
-            {past.map(s => <SessionCard key={s.id} s={s} isCoach={isCoach} academyId={academyId} today={today} router={router} onEdit={handleEditSession} />)}
+            <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Past Sessions ({past.length})</Text>
+            {past.map(e => (
+              <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
+                onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
+                onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
+              />
+            ))}
           </>
         )}
       </ScrollView>
 
-      {/* ── Edit Session Modal ────────────────────────────────────────────────── */}
-      <EditSessionModal
-        visible={showEditModal}
-        session={editingSession}
-        onClose={() => { setShowEditModal(false); setEditingSession(null); }}
+      {/* Edit Academy Session (coaches only) */}
+      <EditAcademySessionModal
+        visible={showEditAcademy}
+        session={editingAcademySession}
+        onClose={() => { setShowEditAcademy(false); setEditingAcademySession(null); }}
         onSaved={load}
-        sessionColor={colors.primary}
       />
 
-      {/* ── Create Session Modal ─────────────────────────────────────────────── */}
-      <Modal visible={showCreateModal} animationType="slide" transparent onRequestClose={() => setShowCreateModal(false)}>
+      {/* Personal Session Modal */}
+      <PersonalSessionModal
+        visible={showPersonalModal}
+        editEntry={editingPersonalEntry}
+        userId={userId}
+        academyId={academyId}
+        onClose={() => { setShowPersonalModal(false); setEditingPersonalEntry(null); }}
+        onSaved={load}
+      />
+
+      {/* Create Academy Session (coaches only) */}
+      <Modal visible={showCreateCoach} animationType="slide" transparent onRequestClose={() => setShowCreateCoach(false)}>
         <View style={modal.overlay}>
           <View style={modal.sheet}>
             <View style={modal.handle} />
             <View style={modal.header}>
               <Text style={modal.headerTitle}>Plan Session</Text>
-              <Pressable onPress={() => setShowCreateModal(false)} style={modal.closeBtn}>
-                <MaterialIcons name="close" size={22} color={colors.text} />
-              </Pressable>
+              <Pressable onPress={() => setShowCreateCoach(false)} style={modal.closeBtn}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
             </View>
-
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
-
-                {/* ── Session Details ── */}
                 <View style={modal.sectionBlock}>
-                  <View style={modal.sectionHeader}>
-                    <MaterialIcons name="event" size={16} color={colors.primary} />
-                    <Text style={modal.sectionTitle}>Session Details</Text>
-                  </View>
-
-                  <Text style={modal.label}>Session Title *</Text>
+                  <View style={modal.sectionHeader}><MaterialIcons name="event" size={16} color={colors.primary} /><Text style={modal.sectionTitle}>Session Details</Text></View>
+                  <Text style={modal.label}>Title *</Text>
                   <TextInput style={modal.input} value={newTitle} onChangeText={setNewTitle} placeholder="e.g. Tuesday Nets" placeholderTextColor={colors.textSecondary} />
-
                   <DateField label="Date" value={newDate} onChange={setNewDate} />
-
-                  <Text style={modal.label}>Session Time</Text>
-                  <Pressable
-                    style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-                    onPress={() => setShowTimePicker(true)}
-                  >
+                  <Text style={modal.label}>Time</Text>
+                  <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowCreateTimePicker(true)}>
                     <MaterialIcons name="access-time" size={16} color={colors.primary} />
                     <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(newTime)}</Text>
                   </Pressable>
-                  <TimePickerModal
-                    visible={showTimePicker}
-                    value={newTime}
-                    onConfirm={setNewTime}
-                    onClose={() => setShowTimePicker(false)}
-                    label="Session Start Time"
-                  />
-
+                  <TimePickerModal visible={showCreateTimePicker} value={newTime} onConfirm={setNewTime} onClose={() => setShowCreateTimePicker(false)} label="Session Time" />
                   <Text style={modal.label}>Location (Optional)</Text>
                   <TextInput style={modal.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Main Oval" placeholderTextColor={colors.textSecondary} />
-
-                  <Text style={modal.label}>Session Type</Text>
-                  <View style={[modal.chip, { backgroundColor: colors.primary, borderColor: colors.primary, alignSelf: 'flex-start' }]}>
-                    <Text style={modal.chipTextActive}>Training</Text>
-                  </View>
-
-                  {/* Squad assignment */}
                   {squads.length > 0 && (
                     <>
-                      <Text style={modal.label}>Assign to Squad</Text>
+                      <Text style={modal.label}>Squad</Text>
                       <View style={modal.chipRow}>
-                        <Pressable
-                          style={[modal.chip, !newSquadId && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                          onPress={() => setNewSquadId(null)}
-                        >
+                        <Pressable style={[modal.chip, !newSquadId && { backgroundColor: colors.primary, borderColor: colors.primary }]} onPress={() => setNewSquadId(null)}>
                           <Text style={[modal.chipText, !newSquadId && modal.chipTextActive]}>All Squads</Text>
                         </Pressable>
                         {squads.map(sq => (
-                          <Pressable
-                            key={sq.id}
-                            style={[modal.chip, newSquadId === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]}
-                            onPress={() => setNewSquadId(newSquadId === sq.id ? null : sq.id)}
-                          >
+                          <Pressable key={sq.id} style={[modal.chip, newSquadId === sq.id && { backgroundColor: sq.color, borderColor: sq.color }]} onPress={() => setNewSquadId(newSquadId === sq.id ? null : sq.id)}>
                             <Text style={[modal.chipText, newSquadId === sq.id && modal.chipTextActive]}>{sq.name}</Text>
                           </Pressable>
                         ))}
@@ -1189,67 +1031,26 @@ export default function AcademyScheduleScreen() {
                     </>
                   )}
                 </View>
-
-                {/* ── Session Objectives — ABOVE Training Plan ── */}
                 <View style={modal.sectionBlock}>
-                  <View style={modal.sectionHeader}>
-                    <MaterialIcons name="flag" size={16} color={colors.warning} />
-                    <Text style={[modal.sectionTitle, { color: colors.warning }]}>Session Objectives</Text>
-                  </View>
-                  {objectives.map((obj, i) => (
+                  <View style={modal.sectionHeader}><MaterialIcons name="flag" size={16} color={colors.warning} /><Text style={[modal.sectionTitle, { color: colors.warning }]}>Objectives</Text></View>
+                  {newObjectives.map((obj, i) => (
                     <View key={i} style={modal.objRow}>
-                      <View style={[modal.objNum, { backgroundColor: colors.warning }]}>
-                        <Text style={modal.objNumText}>{i + 1}</Text>
-                      </View>
-                      <TextInput
-                        style={[modal.input, { flex: 1 }]}
-                        value={obj}
-                        onChangeText={v => { const arr = [...objectives]; arr[i] = v; setObjectives(arr); }}
-                        placeholder={`Objective ${i + 1}…`}
-                        placeholderTextColor={colors.textSecondary}
-                      />
-                      {i === objectives.length - 1 && (
-                        <Pressable onPress={() => setObjectives(o => [...o, ''])} hitSlop={6}>
-                          <MaterialIcons name="add-circle" size={22} color={colors.warning} />
-                        </Pressable>
-                      )}
+                      <View style={[modal.objNum, { backgroundColor: colors.warning }]}><Text style={modal.objNumText}>{i + 1}</Text></View>
+                      <TextInput style={[modal.input, { flex: 1 }]} value={obj} onChangeText={v => { const arr = [...newObjectives]; arr[i] = v; setNewObjectives(arr); }} placeholder={`Objective ${i + 1}…`} placeholderTextColor={colors.textSecondary} />
+                      {i === newObjectives.length - 1 && <Pressable onPress={() => setNewObjectives(o => [...o, ''])} hitSlop={6}><MaterialIcons name="add-circle" size={22} color={colors.warning} /></Pressable>}
                     </View>
                   ))}
                 </View>
-
-                {/* ── Training Plan Blocks ── */}
                 <View style={modal.sectionBlock}>
-                  <View style={modal.sectionHeader}>
-                    <MaterialIcons name="schedule" size={16} color={sessionColor} />
-                    <Text style={[modal.sectionTitle, { color: sessionColor }]}>Training Plan</Text>
-                    <Text style={modal.sectionHint}>Visible to players · add drills in block notes</Text>
-                  </View>
-                  <PlanBlockEditor blocks={planBlocks} onChange={setPlanBlocks} sessionColor={sessionColor} />
+                  <View style={modal.sectionHeader}><MaterialIcons name="schedule" size={16} color={colors.primary} /><Text style={modal.sectionTitle}>Training Plan</Text><Text style={modal.sectionHint}>Visible to players</Text></View>
+                  <PlanBlockEditor blocks={newPlanBlocks} onChange={setNewPlanBlocks} sessionColor={colors.primary} />
                 </View>
-
-                {/* ── Coach Notes ── */}
                 <View style={modal.sectionBlock}>
-                  <View style={modal.sectionHeader}>
-                    <MaterialIcons name="notes" size={16} color={colors.textSecondary} />
-                    <Text style={modal.sectionTitle}>Coach Notes (Optional)</Text>
-                  </View>
-                  <TextInput
-                    style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]}
-                    value={newNotes}
-                    onChangeText={setNewNotes}
-                    multiline
-                    placeholder="Anything else players should know…"
-                    placeholderTextColor={colors.textSecondary}
-                  />
+                  <View style={modal.sectionHeader}><MaterialIcons name="notes" size={16} color={colors.textSecondary} /><Text style={modal.sectionTitle}>Coach Notes (Optional)</Text></View>
+                  <TextInput style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]} value={newNotes} onChangeText={setNewNotes} multiline placeholder="Anything players should know…" placeholderTextColor={colors.textSecondary} />
                 </View>
-
-                <Pressable style={[modal.submitBtn, { backgroundColor: sessionColor, marginTop: spacing.md, marginBottom: spacing.xl }, creating && { opacity: 0.6 }]} onPress={handleCreate}>
-                  {creating ? <ActivityIndicator color={colors.textLight} /> : (
-                    <>
-                      <MaterialIcons name="event" size={18} color={colors.textLight} />
-                      <Text style={modal.submitBtnText}>Create Session</Text>
-                    </>
-                  )}
+                <Pressable style={[modal.submitBtn, { backgroundColor: colors.primary, marginTop: spacing.md, marginBottom: spacing.xl }, creating && { opacity: 0.6 }]} onPress={handleCreate}>
+                  {creating ? <ActivityIndicator color={colors.textLight} /> : <><MaterialIcons name="event" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>Create Session</Text></>}
                 </Pressable>
               </ScrollView>
             </KeyboardAvoidingView>
@@ -1260,7 +1061,7 @@ export default function AcademyScheduleScreen() {
   );
 }
 
-// ─── Modal Styles ─────────────────────────────────────────────────────────────
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const modal = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '92%', flex: 1 },
@@ -1274,7 +1075,6 @@ const modal = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
   sectionHint: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginLeft: 4, flex: 1 },
   label: { fontSize: 12, color: colors.text, fontWeight: '600', marginBottom: 3 },
-  row: { flexDirection: 'row', gap: spacing.sm },
   input: { backgroundColor: colors.surface, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: 14, color: colors.text },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   chip: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
@@ -1283,24 +1083,18 @@ const modal = StyleSheet.create({
   objRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 5 },
   objNum: { width: 22, height: 22, borderRadius: 11, justifyContent: 'center', alignItems: 'center', flexShrink: 0 },
   objNumText: { fontSize: 11, fontWeight: '900', color: colors.textLight },
-  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
+  submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: borderRadius.md },
   submitBtnText: { fontSize: 16, color: colors.textLight, fontWeight: '700' },
 });
 
-const scheduleSquadStyles = StyleSheet.create({
-  chip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: spacing.sm + 2, paddingVertical: 5,
-    borderRadius: borderRadius.full, backgroundColor: colors.background,
-    borderWidth: 1, borderColor: colors.border,
-  },
+const schedSq = StyleSheet.create({
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm + 2, paddingVertical: 5, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1, borderColor: colors.border },
   chipAll: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
   chipTextActive: { color: colors.textLight },
   dot: { width: 7, height: 7, borderRadius: 3.5 },
 });
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -1308,28 +1102,44 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
   headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700', flex: 1 },
   addBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+
+  legendBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 8 },
+
   scroll: { flex: 1 },
-  scrollContent: { padding: spacing.md, paddingBottom: 60 },
-  sectionLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.sm },
+  scrollContent: { padding: spacing.md, paddingBottom: 80, gap: spacing.xs },
+  sectionLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '700', marginBottom: spacing.xs, marginTop: spacing.xs, letterSpacing: 0.3 },
+
   sessionCard: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.lg, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   sessionCardToday: { borderColor: colors.primary + '80', borderWidth: 2 },
+  sessionCardPast: { opacity: 0.75 },
   sessionStripe: { width: 5 },
-  sessionContent: { flex: 1, padding: spacing.md },
+  sessionContent: { flex: 1, padding: spacing.md, gap: 4 },
+
   sessionTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   sessionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   sessionTitle: { fontSize: 15, color: colors.text, fontWeight: '700' },
+  sessionMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2, lineHeight: 16 },
+
   todayBadge: { backgroundColor: colors.primary, paddingHorizontal: spacing.xs + 2, paddingVertical: 2, borderRadius: borderRadius.sm },
   todayBadgeText: { fontSize: 9, color: colors.textLight, fontWeight: '800' },
-  sessionMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  typeBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.sm, alignSelf: 'flex-start' },
+  doneBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.success + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
+  doneBadgeText: { fontSize: 9, color: colors.success, fontWeight: '800' },
+
+  typeBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.sm },
   typeBadgeText: { fontSize: 10, fontWeight: '700' },
-  sessionNotes: { fontSize: 12, color: colors.textSecondary, marginTop: spacing.xs, lineHeight: 16 },
-  markAttendanceBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', marginTop: spacing.sm, backgroundColor: colors.primary + '15', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.sm },
-  markAttendanceText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
+
+  sourceBadgeRow: { flexDirection: 'row', marginTop: 2 },
+  sourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: borderRadius.sm, borderWidth: 1 },
+  sourceBadgeText: { fontSize: 10, fontWeight: '700' },
+
   blockPreviewChip: { borderWidth: 1, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: 3, alignItems: 'center' },
   blockPreviewTime: { fontSize: 9, fontWeight: '700' },
   blockPreviewActivity: { fontSize: 11, fontWeight: '800', marginTop: 1 },
-  planContainer: { marginTop: spacing.sm, gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+
+  planContainer: { gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border + '60', paddingTop: spacing.sm, marginTop: spacing.xs },
   planSection: { gap: spacing.xs },
   planSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 },
   planSectionTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
@@ -1345,9 +1155,11 @@ const styles = StyleSheet.create({
   objNumText: { fontSize: 11, fontWeight: '900', color: colors.textLight },
   objText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 18 },
   coachNoteText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+
+  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: colors.primary + '15', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.sm },
+  actionBtnText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
+
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
-  emptySubtitle: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
-  createBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, borderRadius: borderRadius.md },
-  createBtnText: { fontSize: 14, color: colors.textLight, fontWeight: '700' },
+  emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, paddingHorizontal: spacing.md },
 });
