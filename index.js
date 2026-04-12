@@ -19,46 +19,60 @@ try {
 } catch (_) {}
 
 // Patch 2: expo-font's isLoadedNative binding can be undefined inside the
-// OnSpace Android container (the NativeUnimoduleProxy may not expose the
-// ExpoFont.isLoadedNative method).  When MaterialIcons calls Font.isLoaded()
-// it invokes isLoadedNative() directly — if that value is undefined the call
-// throws "TypeError: undefined is not a function" and crashes the entire tree.
+// OnSpace Android container. When MaterialIcons calls Font.isLoaded() it
+// invokes isLoadedNative() — if undefined the call crashes the entire tree.
 //
-// Fix: find the ExpoFont native module through every known path and ensure
-// isLoadedNative is at least a no-op that returns false, which causes
-// expo-font to fall back to its JS-side font registry check instead.
+// Strategy: patch every known native module key AND every JS-layer export
+// path before the module graph resolves, ensuring no undefined call site.
 try {
   const { NativeModules } = require('react-native');
 
-  // Path A — direct NativeModules.ExpoFont (new arch)
-  const directFont = NativeModules && NativeModules.ExpoFont;
-  if (directFont && typeof directFont.isLoadedNative !== 'function') {
-    directFont.isLoadedNative = () => false;
+  // Helper: ensure isLoadedNative is always a callable on a module object
+  const ensureFn = (mod) => {
+    if (mod && typeof mod.isLoadedNative !== 'function') {
+      mod.isLoadedNative = () => false;
+    }
+  };
+
+  // Native module key variants (Expo SDK 49-52 use different names)
+  if (NativeModules) {
+    ensureFn(NativeModules.ExpoFont);        // SDK <= 49
+    ensureFn(NativeModules.ExpoFontLoader);  // SDK 50+
+    ensureFn(NativeModules.RNVectorIcons);   // react-native-vector-icons shim
+    // Also patch the proxy constants table if it exists
+    const proxy = NativeModules.NativeUnimoduleProxy;
+    if (proxy && proxy.modulesConstantsMap) {
+      try {
+        const fontConsts = proxy.modulesConstantsMap.ExpoFont ||
+                           proxy.modulesConstantsMap.ExpoFontLoader;
+        if (fontConsts) ensureFn(fontConsts);
+      } catch (_) {}
+    }
   }
 
-  // Path B — via NativeUnimoduleProxy.callMethod shim (old arch)
-  const proxy = NativeModules && NativeModules.NativeUnimoduleProxy;
-  if (proxy) {
-    // The proxy exposes each module's methods as properties on the constants
-    // object.  If the font method table entry is missing we cannot patch it
-    // there, but we can intercept at the expo-font JS layer instead.
-    try {
-      // Require expo-font's internal module object and patch the function.
-      const ExpoFont = require('expo-font/build/ExpoFont').default ||
-                       require('expo-font/build/ExpoFont');
-      if (ExpoFont && typeof ExpoFont.isLoadedNative !== 'function') {
-        ExpoFont.isLoadedNative = () => false;
-      }
-    } catch (_) {}
-  }
-
-  // Path C — patch the expo-font Font module's isLoadedNative reference
-  // directly so that even if the native binding arrives late (or not at all)
-  // the exported helper always returns a boolean instead of crashing.
+  // JS layer — expo-font/build/ExpoFont (the native module proxy wrapper)
   try {
-    const FontModule = require('expo-font/build/Font');
-    if (FontModule && typeof FontModule.isLoadedNative !== 'function') {
-      FontModule.isLoadedNative = () => false;
+    const m = require('expo-font/build/ExpoFont');
+    ensureFn(m && m.default ? m.default : m);
+  } catch (_) {}
+
+  // JS layer — expo-font/build/Font (the public isLoaded helper)
+  try {
+    const m = require('expo-font/build/Font');
+    if (m && typeof m.isLoadedNative !== 'function') {
+      m.isLoadedNative = () => false;
+    }
+    // Also patch the module-level isLoaded to short-circuit native call
+    if (m && typeof m.isLoaded !== 'function') {
+      m.isLoaded = () => false;
+    }
+  } catch (_) {}
+
+  // JS layer — expo-font top-level export
+  try {
+    const m = require('expo-font');
+    if (m && typeof m.isLoadedNative !== 'function') {
+      m.isLoadedNative = () => false;
     }
   } catch (_) {}
 
