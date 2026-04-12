@@ -234,9 +234,7 @@ export default function AcademyAttendanceScreen() {
           <MaterialIcons name="arrow-back" size={24} color={colors.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Attendance</Text>
-        <Pressable style={styles.createBtn} onPress={() => { const nd = new Date(); setNewDate(nd.toISOString().split('T')[0]); setNewTime(`${nd.getHours().toString().padStart(2,'0')}:${nd.getMinutes().toString().padStart(2,'0')}`); setShowCreateModal(true); }}>
-          <MaterialIcons name="add" size={22} color={colors.primary} />
-        </Pressable>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
