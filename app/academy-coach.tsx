@@ -485,30 +485,30 @@ export default function AcademyCoachScreen() {
 
         {activeTab === 'analytics' && (() => {
           // ── Aggregate cricket stats across all active players ──
-          const totalRuns = allLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
-          const totalWickets = allLogs.reduce((a, l) => a + (l.wickets || 0), 0);
+          const totalSuccessfulBat = allLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
+          const totalSuccessfulBowl = allLogs.reduce((a, l) => a + (l.wickets || 0), 0);
           const totalCatches = allLogs.reduce((a, l) => a + (l.catches || 0), 0);
           const totalRunOuts = allLogs.reduce((a, l) => a + (l.run_outs || 0), 0);
           const totalStumpings = allLogs.reduce((a, l) => a + (l.stumpings || 0), 0);
-          const teamShotRate = totalBallsFaced > 0
-            ? ((totalRuns / totalBallsFaced) * 100).toFixed(1) : '0';
-          const teamWktRate = totalBallsBowled > 0
-            ? (totalBallsBowled / Math.max(totalWickets, 1)).toFixed(1) : '—';
+          const totalFieldingChances = allLogs.reduce((a, l) => a + (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0), 0);
+          const battingPct = totalBallsFaced > 0 ? Math.round((totalSuccessfulBat / totalBallsFaced) * 100) : 0;
+          const bowlingPct = totalBallsBowled > 0 ? Math.round((totalSuccessfulBowl / totalBallsBowled) * 100) : 0;
+          const fieldingPct = totalFieldingChances > 0 ? Math.round((totalCatches / totalFieldingChances) * 100) : 0;
 
           // Per-player batting stats
           const battingStats = allActivePlayers.map(m => {
             const logs = allLogs.filter(l => l.user_id === m.user_id);
             const faced = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
             const successful = logs.reduce((a, l) => a + (l.runs_scored || 0), 0);
-            return { member: m, faced, runs: successful, shotRate: 0 };
+            return { member: m, faced, successful };
           }).filter(s => s.faced > 0).sort((a, b) => b.faced - a.faced);
 
           // Per-player bowling stats
           const bowlingStats = allActivePlayers.map(m => {
             const logs = allLogs.filter(l => l.user_id === m.user_id);
             const bowled = logs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
-            const wickets = logs.reduce((a, l) => a + (l.wickets || 0), 0);
-            return { member: m, bowled, wickets };
+            const successfulBowl = logs.reduce((a, l) => a + (l.wickets || 0), 0);
+            return { member: m, bowled, successfulBowl };
           }).filter(s => s.bowled > 0).sort((a, b) => b.bowled - a.bowled);
 
           // Per-player fielding stats
@@ -517,13 +517,13 @@ export default function AcademyCoachScreen() {
             const catches = logs.reduce((a, l) => a + (l.catches || 0), 0);
             const runOuts = logs.reduce((a, l) => a + (l.run_outs || 0), 0);
             const stumpings = logs.reduce((a, l) => a + (l.stumpings || 0), 0);
-            const total = catches + runOuts + stumpings;
-            return { member: m, catches, runOuts, stumpings, total };
-          }).filter(s => s.catches > 0).sort((a, b) => b.catches - a.catches);
+            const chances = catches + runOuts + stumpings;
+            return { member: m, catches, chances };
+          }).filter(s => s.chances > 0).sort((a, b) => b.chances - a.chances);
 
           const maxBatFaced = Math.max(...battingStats.map(s => s.faced), 1);
           const maxBowled = Math.max(...bowlingStats.map(s => s.bowled), 1);
-          const maxFielding = Math.max(...fieldingStats.map(s => s.catches), 1);
+          const maxFieldingChances = Math.max(...fieldingStats.map(s => s.chances), 1);
           const maxSessions = Math.max(...sessionCounts.map(s => s.count), 1);
 
           return (
@@ -544,22 +544,21 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
-                    <Text style={styles.analyticsVal}>
-                      {totalBallsFaced}/{allLogs.reduce((a, l) => a + (l.runs_scored || 0), 0)}
-                    </Text>
-                    <Text style={styles.analyticsLabel}>Faced / Successful</Text>
+                    <Text style={styles.analyticsVal}>{battingPct}%</Text>
+                    <Text style={styles.analyticsLabel}>Batting{'
+'}Success Rate</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
-                    <Text style={styles.analyticsVal}>{totalBallsBowled}</Text>
-                    <Text style={styles.analyticsLabel}>Balls Bowled</Text>
+                    <Text style={styles.analyticsVal}>{bowlingPct}%</Text>
+                    <Text style={styles.analyticsLabel}>Bowling{'
+'}Success Rate</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="pan-tool" size={22} color={colors.success} />
-                    <Text style={styles.analyticsVal}>
-                      {allLogs.reduce((a, l) => a + (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0), 0)}/{totalCatches}
-                    </Text>
-                    <Text style={styles.analyticsLabel}>Chances / Successful</Text>
+                    <Text style={styles.analyticsVal}>{fieldingPct}%</Text>
+                    <Text style={styles.analyticsLabel}>Fielding{'
+'}Success Rate</Text>
                   </View>
                 </View>
               </View>
@@ -583,7 +582,7 @@ export default function AcademyCoachScreen() {
                 {sessionCounts.length === 0 && <Text style={styles.emptyChartText}>No sessions logged yet</Text>}
               </View>
 
-              {/* ── Batting: Balls Faced vs Runs Scored ── */}
+              {/* ── Batting: Balls Faced vs Successful ── */}
               <View style={styles.card}>
                 <View style={analyticsStyles.sectionHeader}>
                   <View style={[analyticsStyles.pillIcon, { backgroundColor: colors.technical + '20' }]}>
@@ -604,38 +603,35 @@ export default function AcademyCoachScreen() {
                     <Text style={analyticsStyles.legendText}>Successfully Hit</Text>
                   </View>
                 </View>
-                {battingStats.map(({ member, faced, runs, shotRate }) => {
+                {battingStats.map(({ member, faced, successful }) => {
                   const name = member.display_name || member.user_profiles?.username || 'Player';
-                  const runsWidth = faced > 0 ? Math.min((runs / faced) * 100, 100) : 0;
+                  const successWidth = faced > 0 ? Math.min((successful / faced) * 100, 100) : 0;
                   return (
                     <View key={member.id} style={analyticsStyles.cricketBarRow}>
                       <View style={analyticsStyles.cricketBarHeader}>
                         <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
                         <Text style={[analyticsStyles.cricketBarRate, { color: colors.technical }]}>
-                          {faced} / {runs}
+                          {faced} / {successful}
                         </Text>
                       </View>
                       <View style={analyticsStyles.stackedTrack}>
-                        {/* Full bar = balls faced */}
                         <View style={[analyticsStyles.stackedBase, {
                           width: `${(faced / maxBatFaced) * 100}%`,
                           backgroundColor: colors.technical + '30',
                         }]}>
-                          {/* Inner fill = runs (success) */}
                           <View style={[analyticsStyles.stackedFill, {
-                            width: `${runsWidth}%`,
+                            width: `${successWidth}%`,
                             backgroundColor: colors.technical,
                           }]} />
                         </View>
                       </View>
-
                     </View>
                   );
                 })}
                 {battingStats.length === 0 && <Text style={styles.emptyChartText}>No batting data logged yet</Text>}
               </View>
 
-              {/* ── Bowling: Balls Bowled vs Wickets ── */}
+              {/* ── Bowling: Balls Bowled vs Successful ── */}
               <View style={styles.card}>
                 <View style={analyticsStyles.sectionHeader}>
                   <View style={[analyticsStyles.pillIcon, { backgroundColor: colors.physical + '20' }]}>
@@ -643,24 +639,40 @@ export default function AcademyCoachScreen() {
                   </View>
                   <View>
                     <Text style={styles.cardTitle}>Bowling Performance</Text>
-                    <Text style={styles.cardSub}>Balls bowled per player</Text>
+                    <Text style={styles.cardSub}>Balls bowled / successfully bowled</Text>
                   </View>
                 </View>
-                {bowlingStats.map(({ member, bowled }) => {
+                <View style={analyticsStyles.legendRow}>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.physical + '40' }]} />
+                    <Text style={analyticsStyles.legendText}>Balls Bowled</Text>
+                  </View>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.physical }]} />
+                    <Text style={analyticsStyles.legendText}>Successful</Text>
+                  </View>
+                </View>
+                {bowlingStats.map(({ member, bowled, successfulBowl }) => {
                   const name = member.display_name || member.user_profiles?.username || 'Player';
+                  const successWidth = bowled > 0 ? Math.min((successfulBowl / bowled) * 100, 100) : 0;
                   return (
                     <View key={member.id} style={analyticsStyles.cricketBarRow}>
                       <View style={analyticsStyles.cricketBarHeader}>
                         <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
                         <Text style={[analyticsStyles.cricketBarRate, { color: colors.physical }]}>
-                          {bowled} balls
+                          {bowled} / {successfulBowl}
                         </Text>
                       </View>
                       <View style={analyticsStyles.stackedTrack}>
                         <View style={[analyticsStyles.stackedBase, {
                           width: `${(bowled / maxBowled) * 100}%`,
-                          backgroundColor: colors.physical,
-                        }]} />
+                          backgroundColor: colors.physical + '30',
+                        }]}>
+                          <View style={[analyticsStyles.stackedFill, {
+                            width: `${successWidth}%`,
+                            backgroundColor: colors.physical,
+                          }]} />
+                        </View>
                       </View>
                     </View>
                   );
@@ -668,32 +680,48 @@ export default function AcademyCoachScreen() {
                 {bowlingStats.length === 0 && <Text style={styles.emptyChartText}>No bowling data logged yet</Text>}
               </View>
 
-              {/* ── Fielding: Catches / Run Outs / Stumpings ── */}
+              {/* ── Fielding: Chances vs Catches ── */}
               <View style={styles.card}>
                 <View style={analyticsStyles.sectionHeader}>
                   <View style={[analyticsStyles.pillIcon, { backgroundColor: colors.success + '20' }]}>
                     <MaterialIcons name="pan-tool" size={16} color={colors.success} />
                   </View>
                   <View>
-                    <Text style={styles.cardTitle}>Catches Taken</Text>
-                    <Text style={styles.cardSub}>Successful catches per player</Text>
+                    <Text style={styles.cardTitle}>Fielding Performance</Text>
+                    <Text style={styles.cardSub}>Chances / catches taken</Text>
                   </View>
                 </View>
-                {fieldingStats.map(({ member, catches }) => {
+                <View style={analyticsStyles.legendRow}>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.success + '40' }]} />
+                    <Text style={analyticsStyles.legendText}>Chances</Text>
+                  </View>
+                  <View style={analyticsStyles.legendItem}>
+                    <View style={[analyticsStyles.legendDot, { backgroundColor: colors.success }]} />
+                    <Text style={analyticsStyles.legendText}>Catches Taken</Text>
+                  </View>
+                </View>
+                {fieldingStats.map(({ member, catches, chances }) => {
                   const name = member.display_name || member.user_profiles?.username || 'Player';
+                  const catchWidth = chances > 0 ? Math.min((catches / chances) * 100, 100) : 0;
                   return (
                     <View key={member.id} style={analyticsStyles.cricketBarRow}>
                       <View style={analyticsStyles.cricketBarHeader}>
                         <Text style={analyticsStyles.cricketBarName} numberOfLines={1}>{name}</Text>
                         <Text style={[analyticsStyles.cricketBarRate, { color: colors.success }]}>
-                          {catches} catches
+                          {chances} / {catches}
                         </Text>
                       </View>
                       <View style={analyticsStyles.stackedTrack}>
                         <View style={[analyticsStyles.stackedBase, {
-                          width: `${(catches / maxFielding) * 100}%`,
-                          backgroundColor: colors.success,
-                        }]} />
+                          width: `${(chances / maxFieldingChances) * 100}%`,
+                          backgroundColor: colors.success + '30',
+                        }]}>
+                          <View style={[analyticsStyles.stackedFill, {
+                            width: `${catchWidth}%`,
+                            backgroundColor: colors.success,
+                          }]} />
+                        </View>
                       </View>
                     </View>
                   );
