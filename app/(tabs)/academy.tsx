@@ -925,7 +925,7 @@ export default function AcademyScreen() {
                 <Text style={styles.actionTitle}>My History</Text>
                 <Text style={styles.actionSub}>All past logs</Text>
               </Pressable>
-              <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: currentMembership!.academy.id } } as any)}>
+              <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: currentMembership!.academy.id, memberPosition: currentMembership!.member.position || 'Batsman' } } as any)}>
                 <View style={[styles.actionIcon, { backgroundColor: colors.mental + '20' }]}>
                   <MaterialIcons name="event" size={28} color={colors.mental} />
                 </View>

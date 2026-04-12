@@ -354,7 +354,7 @@ const pb = StyleSheet.create({
 
 // ─── Session Card ─────────────────────────────────────────────────────────────
 function SessionCard({
-  entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal,
+  entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal, memberPosition,
 }: {
   entry: ScheduleEntry;
   isCoach: boolean;
@@ -364,6 +364,7 @@ function SessionCard({
   router: any;
   onEditAcademy: (s: AcademySession) => void;
   onEditPersonal: (entry: ScheduleEntry) => void;
+  memberPosition?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
   const color = typeColor(entry.sessionType);
@@ -507,8 +508,22 @@ function SessionCard({
           </View>
         )}
 
+        {/* Start Session button — players, upcoming academy sessions only */}
+        {!isCoach && isAcademy && !isPast && (
+          <Pressable
+            style={styles.startSessionBtn}
+            onPress={() => router.push({
+              pathname: '/academy-log',
+              params: { academyId, position: memberPosition || 'Batsman' },
+            } as any)}
+          >
+            <MaterialIcons name="play-circle-filled" size={18} color={colors.textLight} />
+            <Text style={styles.startSessionBtnText}>Start Session</Text>
+          </Pressable>
+        )}
+
         {/* Action buttons */}
-        <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: expanded ? spacing.sm : 0 }}>
+        <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.xs }}>
           {/* Coaches: attendance + edit for academy sessions */}
           {isCoach && isAcademy && !isPast && (
             <Pressable style={styles.actionBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
@@ -742,6 +757,7 @@ export default function AcademyScheduleScreen() {
 
   const academyId = params.academyId as string;
   const isCoach = params.isCoach === 'true';
+  const memberPosition = (params.memberPosition as string) || 'Batsman';
 
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [squads, setSquads] = useState<AcademySquad[]>([]);
@@ -953,6 +969,7 @@ export default function AcademyScheduleScreen() {
             <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
             {upcoming.map(e => (
               <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
+                memberPosition={memberPosition}
                 onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
                 onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
               />
@@ -965,6 +982,7 @@ export default function AcademyScheduleScreen() {
             <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Past Sessions ({past.length})</Text>
             {past.map(e => (
               <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
+                memberPosition={memberPosition}
                 onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
                 onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
               />
@@ -1158,6 +1176,9 @@ const styles = StyleSheet.create({
 
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: colors.primary + '15', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.sm },
   actionBtnText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
+
+  startSessionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
+  startSessionBtnText: { fontSize: 13, fontWeight: '800', color: colors.textLight },
 
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
