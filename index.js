@@ -8,11 +8,10 @@ LogBox.ignoreLogs([
   'SimpleCache',
 ]);
 
-// ─── Phase 1: CREATE + patch NativeModules entries ───────────────────────────
-// Critical fix: NativeModules.ExpoFont / ExpoFontLoader are NULL (not just
-// missing) in the OnSpace Android container. The previous guard `obj && ...`
-// skipped null values. We now unconditionally CREATE stub objects so that
-// expo-font's module-level code captures a valid reference at evaluation time.
+// ─── Phase 1: Force-define NativeModules entries via Object.defineProperty ───
+// Plain assignment (`NM.ExpoFont = {}`) silently fails on sealed/native-proxy
+// NativeModules objects in the OnSpace Android container.
+// Object.defineProperty with configurable:true forces the override.
 (function patchNativeModules() {
   try {
     const RN = require('react-native');
@@ -27,112 +26,160 @@ LogBox.ignoreLogs([
       unloadAllAsync: function () { return Promise.resolve(); },
     };
 
-    // Create the stub objects if null/undefined — this is the key fix.
-    // expo-font captures a module-level reference; if that ref is null,
-    // calling .isLoadedNative() inside it crashes regardless of later patches.
-    if (!NM.ExpoFont) NM.ExpoFont = Object.assign({}, fontStub);
-    if (!NM.ExpoFontLoader) NM.ExpoFontLoader = Object.assign({}, fontStub);
-    if (!NM.RNVectorIcons) NM.RNVectorIcons = Object.assign({}, fontStub);
-
-    // Patch any already-existing (but incomplete) native module objects
-    const patchObj = (obj) => {
-      if (!obj || typeof obj !== 'object') return;
-      if (typeof obj.isLoadedNative !== 'function') obj.isLoadedNative = fontStub.isLoadedNative;
-      if (typeof obj.isLoaded !== 'function') obj.isLoaded = fontStub.isLoaded;
-      if (typeof obj.getLoadedFonts !== 'function') obj.getLoadedFonts = fontStub.getLoadedFonts;
-      if (typeof obj.loadAsync !== 'function') obj.loadAsync = fontStub.loadAsync;
+    const forceSet = (obj, key, value) => {
+      try {
+        // Try plain assignment first
+        obj[key] = value;
+        // If it still didn't take (native proxy), force it
+        if (obj[key] !== value) {
+          Object.defineProperty(obj, key, {
+            value,
+            writable: true,
+            configurable: true,
+            enumerable: true,
+          });
+        }
+      } catch (e1) {
+        try {
+          Object.defineProperty(obj, key, {
+            value,
+            writable: true,
+            configurable: true,
+            enumerable: true,
+          });
+        } catch (_) {}
+      }
     };
 
-    patchObj(NM.ExpoFont);
-    patchObj(NM.ExpoFontLoader);
-    patchObj(NM.RNVectorIcons);
+    const patchModule = (mod) => {
+      if (!mod || typeof mod !== 'object') return;
+      if (typeof mod.isLoadedNative !== 'function') forceSet(mod, 'isLoadedNative', fontStub.isLoadedNative);
+      if (typeof mod.isLoaded !== 'function') forceSet(mod, 'isLoaded', fontStub.isLoaded);
+      if (typeof mod.getLoadedFonts !== 'function') forceSet(mod, 'getLoadedFonts', fontStub.getLoadedFonts);
+      if (typeof mod.loadAsync !== 'function') forceSet(mod, 'loadAsync', fontStub.loadAsync);
+    };
+
+    // Force-define the font module entries even if NM is a native proxy
+    ['ExpoFont', 'ExpoFontLoader', 'RNVectorIcons'].forEach(key => {
+      if (!NM[key] || typeof NM[key] !== 'object') {
+        forceSet(NM, key, Object.assign({}, fontStub));
+      } else {
+        patchModule(NM[key]);
+      }
+    });
 
     // NativeUnimoduleProxy constants table (SDK 48 compatibility)
     try {
       const proxy = NM.NativeUnimoduleProxy;
       if (proxy && proxy.modulesConstantsMap) {
-        if (!proxy.modulesConstantsMap.ExpoFont) proxy.modulesConstantsMap.ExpoFont = Object.assign({}, fontStub);
-        if (!proxy.modulesConstantsMap.ExpoFontLoader) proxy.modulesConstantsMap.ExpoFontLoader = Object.assign({}, fontStub);
-        patchObj(proxy.modulesConstantsMap.ExpoFont);
-        patchObj(proxy.modulesConstantsMap.ExpoFontLoader);
+        ['ExpoFont', 'ExpoFontLoader'].forEach(key => {
+          if (!proxy.modulesConstantsMap[key]) {
+            forceSet(proxy.modulesConstantsMap, key, Object.assign({}, fontStub));
+          }
+          patchModule(proxy.modulesConstantsMap[key]);
+        });
       }
     } catch (_) {}
 
   } catch (_) {}
 })();
 
-// ─── Phase 2: Override JS-layer expo-font so isLoaded always returns true ────
-// Even if native stubs are in place, the internal `isLoadedNative` closure in
-// the expo-font bundle may still reference the original null value captured at
-// module eval time. We override `isLoaded` at the JS export layer to short-
-// circuit before it ever reaches the native call.
+// ─── Phase 2: Patch expo-font JS modules — use defineProperty on exports ─────
+// `m.isLoaded = fn` can fail if the module object is sealed (Object.freeze).
+// We use defineProperty to force-write properties on frozen module exports too.
 (function patchExpoFontJS() {
+
+  const forceWrite = (obj, key, val) => {
+    if (!obj || typeof obj !== 'object') return;
+    try {
+      obj[key] = val;
+      if (obj[key] !== val) throw new Error('assignment failed');
+    } catch (_) {
+      try {
+        Object.defineProperty(obj, key, { value: val, writable: true, configurable: true });
+      } catch (__) {}
+    }
+  };
 
   // 2a — ExpoFont native proxy wrapper
   try {
     const m = require('expo-font/build/ExpoFont');
     const target = (m && m.default) ? m.default : m;
-    if (target && typeof target === 'object') {
-      target.isLoadedNative = () => false;
-      target.getLoadedFonts = () => [];
-      target.loadAsync = () => Promise.resolve();
+    if (target) {
+      forceWrite(target, 'isLoadedNative', () => false);
+      forceWrite(target, 'getLoadedFonts', () => []);
+      forceWrite(target, 'loadAsync', () => Promise.resolve());
     }
   } catch (_) {}
 
-  // 2b — Font.isLoaded: override to return TRUE so Icon never triggers a load
-  // This is the critical override — returning true means "font is ready",
-  // bypassing the native check that crashes on this container.
+  // 2b — Font module: isLoaded returns TRUE so Icon never reaches isLoadedNative
   try {
     const m = require('expo-font/build/Font');
     if (m) {
-      m.isLoadedNative = () => false;
-      // Return true so @expo/vector-icons skips any reload attempt
-      m.isLoaded = () => true;
-      if (typeof m.loadAsync !== 'function') m.loadAsync = () => Promise.resolve();
+      forceWrite(m, 'isLoadedNative', () => false);
+      forceWrite(m, 'isLoaded', () => true);
+      forceWrite(m, 'loadAsync', () => Promise.resolve());
     }
   } catch (_) {}
 
-  // 2c — top-level expo-font barrel export
+  // 2c — top-level expo-font barrel
   try {
     const m = require('expo-font');
     if (m) {
-      m.isLoadedNative = () => false;
-      m.isLoaded = () => true;
-      if (typeof m.loadAsync !== 'function') m.loadAsync = () => Promise.resolve();
+      forceWrite(m, 'isLoadedNative', () => false);
+      forceWrite(m, 'isLoaded', () => true);
+      forceWrite(m, 'loadAsync', () => Promise.resolve());
     }
   } catch (_) {}
 
-  // 2d — FontLoader module (SDK 50+)
+  // 2d — FontLoader (SDK 50+)
   try {
     const m = require('expo-font/build/FontLoader');
     if (m) {
-      m.isLoadedNative = () => false;
-      m.isLoaded = () => true;
-    }
-  } catch (_) {}
-
-  // 2e — Server module fallback (some bundler configs)
-  try {
-    const m = require('expo-font/build/server');
-    if (m && typeof m.isLoaded !== 'function') {
-      m.isLoaded = () => true;
+      forceWrite(m, 'isLoadedNative', () => false);
+      forceWrite(m, 'isLoaded', () => true);
     }
   } catch (_) {}
 
 })();
 
-// ─── Phase 3: Guard AppRegistry so "main has not been registered" never fires ─
+// ─── Phase 3: Intercept @expo/vector-icons Icon at its source ────────────────
+// Even after patching exported `isLoaded`, vector-icons may hold a direct
+// closure reference to the old function. We intercept the Icon class's
+// `_getIconStyle` / render to swallow the crash as a last resort.
+(function patchVectorIcons() {
+  try {
+    // Patch the underlying createIconSet factory result
+    const factory = require('@expo/vector-icons/build/vendor/react-native-vector-icons/lib/create-icon-set');
+    const orig = (factory && factory.default) ? factory.default : factory;
+    if (typeof orig === 'function') {
+      const wrap = function (...args) {
+        const Component = orig(...args);
+        // Wrap the isLoaded check used inside the component
+        try {
+          if (Component && Component.prototype && Component.prototype.render) {
+            const origRender = Component.prototype.render;
+            Component.prototype.render = function () {
+              try { return origRender.call(this); } catch (_) { return null; }
+            };
+          }
+        } catch (_) {}
+        return Component;
+      };
+      if (factory && factory.default) factory.default = wrap;
+    }
+  } catch (_) {}
+})();
+
+// ─── Phase 4: Guard AppRegistry ──────────────────────────────────────────────
 (function guardAppRegistry() {
   try {
     const { AppRegistry } = require('react-native');
     if (AppRegistry) {
       const orig = AppRegistry.registerComponent;
       AppRegistry.registerComponent = function (name, componentProvider) {
-        try {
-          return orig.call(AppRegistry, name, componentProvider);
-        } catch (err) {
-          console.warn('[index.js] registerComponent failed:', err);
-        }
+        try { return orig.call(AppRegistry, name, componentProvider); }
+        catch (err) { console.warn('[index.js] registerComponent failed:', err); }
       };
     }
   } catch (_) {}
