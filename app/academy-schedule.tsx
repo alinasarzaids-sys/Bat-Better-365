@@ -107,7 +107,7 @@ const tp = StyleSheet.create({
   card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 340, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.25, shadowRadius: 16, elevation: 16 },
   pickerLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', marginBottom: spacing.xs, textTransform: 'uppercase', letterSpacing: 0.5 },
   display: { fontSize: 32, fontWeight: '900', color: colors.primary, textAlign: 'center', marginBottom: spacing.lg, letterSpacing: 1 },
-  columns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', gap: 6, marginBottom: spacing.lg },
+  columns: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: spacing.lg },
   col: { alignItems: 'center', minWidth: 56 },
   colLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   colValue: { fontSize: 38, fontWeight: '900', color: colors.text, lineHeight: 46, textAlign: 'center' },
@@ -384,17 +384,19 @@ function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
               <Pressable style={tp.arrowBtn} onPress={incMonth} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-up" size={32} color={colors.primary} />
               </Pressable>
-              <TextInput
-                style={[tp.colValue, tp.colInput, { fontSize: 26 }]}
-                value={monthText}
-                onChangeText={setMonthText}
-                onBlur={() => commitMonth(monthText)}
-                onSubmitEditing={() => commitMonth(monthText)}
-                keyboardType="number-pad"
-                maxLength={2}
-                selectTextOnFocus
-              />
-              <Text style={[tp.colLabel, { marginTop: 2, fontSize: 10 }]}>{MONTHS[(parseInt(monthText,10)||month)-1] || ''}</Text>
+              <View style={{ alignItems: 'center' }}>
+                <TextInput
+                  style={[tp.colValue, tp.colInput, { fontSize: 26 }]}
+                  value={monthText}
+                  onChangeText={setMonthText}
+                  onBlur={() => commitMonth(monthText)}
+                  onSubmitEditing={() => commitMonth(monthText)}
+                  keyboardType="number-pad"
+                  maxLength={2}
+                  selectTextOnFocus
+                />
+                <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2 }}>{MONTHS[(parseInt(monthText,10)||month)-1] || ''}</Text>
+              </View>
               <Pressable style={tp.arrowBtn} onPress={decMonth} hitSlop={8}>
                 <MaterialIcons name="keyboard-arrow-down" size={32} color={colors.primary} />
               </Pressable>
