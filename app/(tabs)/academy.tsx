@@ -22,26 +22,52 @@ function getPositionColor(position: string): string {
   }
 }
 
-function WeeklyBar({ logs }: { logs: AcademyTrainingLog[] }) {
+type UpcomingSession = { session_date: string; status?: string };
+
+function WeeklyBar({ logs, sessions }: { logs: AcademyTrainingLog[]; sessions: UpcomingSession[] }) {
   const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
   const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-  const sessionsByDay: number[] = Array(7).fill(0);
+
+  // Days with a logged training session
+  const loggedDays: Set<number> = new Set();
   logs.forEach(log => {
     const diff = Math.floor((new Date(log.log_date).getTime() - monday.getTime()) / 86400000);
-    if (diff >= 0 && diff < 7) sessionsByDay[diff] = Math.min(3, sessionsByDay[diff] + 1);
+    if (diff >= 0 && diff < 7) loggedDays.add(diff);
   });
+
+  // Days with a scheduled session (upcoming or today)
+  const scheduledDays: Set<number> = new Set();
+  sessions.forEach(s => {
+    const diff = Math.floor((new Date(s.session_date).getTime() - monday.getTime()) / 86400000);
+    if (diff >= 0 && diff < 7) scheduledDays.add(diff);
+  });
+
+  const todayDayIdx = (today.getDay() + 6) % 7; // 0=Mon
+
   return (
     <View style={weekBarStyles.row}>
-      {days.map((d, i) => (
-        <View key={i} style={weekBarStyles.dayCol}>
-          <View style={[weekBarStyles.dot, sessionsByDay[i] > 0 && weekBarStyles.dotActive]}>
-            {sessionsByDay[i] > 1 && <Text style={weekBarStyles.dotCount}>{sessionsByDay[i]}</Text>}
+      {days.map((d, i) => {
+        const isLogged = loggedDays.has(i);
+        const isScheduled = scheduledDays.has(i);
+        const isToday = i === todayDayIdx;
+        return (
+          <View key={i} style={weekBarStyles.dayCol}>
+            <View style={[
+              weekBarStyles.dot,
+              isLogged && weekBarStyles.dotLogged,
+              !isLogged && isScheduled && weekBarStyles.dotScheduled,
+              isToday && weekBarStyles.dotToday,
+            ]}>
+              {isLogged && <MaterialIcons name="check" size={14} color={colors.textLight} />}
+              {!isLogged && isScheduled && <MaterialIcons name="event" size={12} color={colors.primary} />}
+            </View>
+            <Text style={[weekBarStyles.dayLabel, isToday && { color: colors.primary, fontWeight: '800' }]}>{d}</Text>
           </View>
-          <Text style={weekBarStyles.dayLabel}>{d}</Text>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -50,7 +76,9 @@ const weekBarStyles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: spacing.sm },
   dayCol: { alignItems: 'center', gap: 4 },
   dot: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' },
-  dotActive: { backgroundColor: colors.primary },
+  dotLogged: { backgroundColor: colors.primary },
+  dotScheduled: { backgroundColor: colors.primary + '18', borderWidth: 2, borderColor: colors.primary },
+  dotToday: { borderWidth: 2.5, borderColor: colors.primary },
   dotCount: { ...typography.caption, color: colors.textLight, fontWeight: '800', fontSize: 10 },
   dayLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
 });
@@ -422,6 +450,7 @@ export default function AcademyScreen() {
   const [allMembers, setAllMembers] = useState<AcademyMember[]>([]);
   const [squads, setSquads] = useState<AcademySquad[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [weeklySessions, setWeeklySessions] = useState<UpcomingSession[]>([]);
 
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -468,8 +497,26 @@ export default function AcademyScreen() {
   const loadPlayerLogs = useCallback(async (academyId: string) => {
     if (!user) return;
     setLogsLoading(true);
-    const { data } = await academyService.getMyLogs(user.id, academyId, 7);
-    setRecentLogs(data || []);
+    const [logsRes] = await Promise.all([
+      academyService.getMyLogs(user.id, academyId, 7),
+    ]);
+    setRecentLogs(logsRes.data || []);
+    // Load this week's scheduled sessions
+    try {
+      const supabase = (await import('@/template')).getSupabaseClient();
+      const today = new Date();
+      const monday = new Date(today);
+      monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const { data: sessData } = await supabase
+        .from('academy_sessions')
+        .select('session_date')
+        .eq('academy_id', academyId)
+        .gte('session_date', monday.toISOString().split('T')[0])
+        .lte('session_date', sunday.toISOString().split('T')[0]);
+      setWeeklySessions(sessData || []);
+    } catch (_) {}
     setLogsLoading(false);
   }, [user]);
 
@@ -831,7 +878,7 @@ export default function AcademyScreen() {
                 <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
               ) : (
                 <>
-                  <WeeklyBar logs={recentLogs} />
+                  <WeeklyBar logs={recentLogs} sessions={weeklySessions} />
                   <View style={styles.weekSummaryRow}>
                     <View style={styles.weekStat}>
                       <Text style={styles.weekStatVal}>{recentLogs.length}</Text>
@@ -848,10 +895,8 @@ export default function AcademyScreen() {
                       <Text style={styles.weekStatLabel}>Avg Intensity</Text>
                     </View>
                     <View style={styles.weekStat}>
-                      <Text style={styles.weekStatVal}>
-                        {recentLogs.reduce((a, l) => a + (l.balls_faced || 0), 0) || recentLogs.reduce((a, l) => a + (l.balls_bowled || 0), 0) || '—'}
-                      </Text>
-                      <Text style={styles.weekStatLabel}>Balls</Text>
+                      <Text style={styles.weekStatVal}>{weeklySessions.length > 0 ? weeklySessions.length : '—'}</Text>
+                      <Text style={styles.weekStatLabel}>Scheduled</Text>
                     </View>
                   </View>
                 </>
