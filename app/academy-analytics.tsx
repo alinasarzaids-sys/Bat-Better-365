@@ -92,9 +92,9 @@ function StatCard({ icon, iconColor, val, label }: { icon: string; iconColor: st
   );
 }
 const sc = StyleSheet.create({
-  card: { flex: 1, minWidth: '28%', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm, alignItems: 'center', gap: 3, borderWidth: 1, borderColor: colors.border },
+  card: { flex: 1, minWidth: '28%', backgroundColor: colors.surface, borderRadius: borderRadius.md, padding: spacing.sm, alignItems: 'center', gap: 2, borderWidth: 1, borderColor: colors.border },
   val: { ...typography.h4, color: colors.text, fontWeight: '800' },
-  label: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 13 },
+  label: { fontSize: 9, color: colors.textSecondary, textAlign: 'center', lineHeight: 13 },
 });
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
@@ -162,8 +162,12 @@ export default function AcademyAnalyticsScreen() {
   const totalBallsFaced = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
   const totalBallsHit = logs.reduce((a, l) => a + (l.runs_scored || 0), 0); // successfully hit (stored as runs_scored in DB)
   const totalBallsBowled = logs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
+  const totalSuccessfulBowl = logs.reduce((a, l) => a + (l.wickets || 0), 0);
   const totalCatches = logs.reduce((a, l) => a + (l.catches || 0), 0);
   const totalFieldingChances = logs.reduce((a, l) => a + (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0), 0);
+  const battingPct = totalBallsFaced > 0 ? Math.round((totalBallsHit / totalBallsFaced) * 100) : 0;
+  const bowlingPct = totalBallsBowled > 0 ? Math.round((totalSuccessfulBowl / totalBallsBowled) * 100) : 0;
+  const fieldingPct = totalFieldingChances > 0 ? Math.round((totalCatches / totalFieldingChances) * 100) : 0;
 
   // Weekly data — last 12 weeks
   const weeklyData = (() => {
@@ -292,9 +296,9 @@ export default function AcademyAnalyticsScreen() {
                   <StatCard icon="event" iconColor={colors.primary} val={n} label="Sessions" />
                   <StatCard icon="timer" iconColor={colors.mental} val={`${Math.round(totalMin / 60)}h ${totalMin % 60}m`} label="Total Time" />
                   <StatCard icon="flash-on" iconColor={ic(Math.round(avgInt))} val={avgInt.toFixed(1)} label="Avg Intensity" />
-                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${totalBallsFaced}/${totalBallsHit}`} label="Faced / Successful" />}
-                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={totalBallsBowled} label="Bowled" />}
-                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${totalFieldingChances}/${totalCatches}`} label="Chances / Successful" />}
+                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${battingPct}%`} label={`Batting Success\n${totalBallsFaced}/${totalBallsHit}`} />}
+                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={`${bowlingPct}%`} label={`Bowling Success\n${totalBallsBowled}/${totalSuccessfulBowl}`} />}
+                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${fieldingPct}%`} label={`Fielding Success\n${totalFieldingChances}/${totalCatches}`} />}
                 </View>
 
                 {/* Intensity distribution */}
@@ -484,53 +488,50 @@ export default function AcademyAnalyticsScreen() {
                 )}
 
                 {/* Bowling stats */}
-                {totalBallsBowled > 0 && (() => {
-                  const totalSuccessfulBowl = logs.reduce((a, l) => a + (l.wickets || 0), 0);
-                  return (
-                    <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.physical }]}>
-                      <View style={styles.cardTitleRow}>
-                        <MaterialIcons name="sports-cricket" size={18} color={colors.physical} />
-                        <Text style={[styles.cardTitle, { color: colors.physical }]}>Bowling Performance</Text>
-                      </View>
-                      <View style={styles.bigStatRow}>
-                        <View style={styles.bigStat}>
-                          <Text style={[styles.bigStatVal, { color: colors.physical }]}>{totalBallsBowled}</Text>
-                          <Text style={styles.bigStatLabel}>Balls Bowled</Text>
-                        </View>
-                        <View style={styles.bigStat}>
-                          <Text style={[styles.bigStatVal, { color: colors.success }]}>{totalSuccessfulBowl}</Text>
-                          <Text style={styles.bigStatLabel}>Successfully Bowled</Text>
-                        </View>
-                      </View>
-                      {logs.some(l => l.balls_bowled) && (
-                        <>
-                          <Text style={styles.trendSubTitle}>Balls Bowled Per Session</Text>
-                          <BarChart
-                            data={logs.filter(l => l.balls_bowled).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.balls_bowled || 0 }))}
-                            maxVal={Math.max(...logs.map(l => l.balls_bowled || 0), 1)}
-                            barColor={colors.physical}
-                            labelKey="label"
-                            valueKey="val"
-                            height={100}
-                          />
-                        </>
-                      )}
-                      {logs.some(l => l.wickets) && (
-                        <>
-                          <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Successfully Bowled Per Session</Text>
-                          <BarChart
-                            data={logs.filter(l => (l.wickets || 0) >= 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.wickets || 0 }))}
-                            maxVal={Math.max(...logs.map(l => l.wickets || 0), 1)}
-                            barColor={colors.success}
-                            labelKey="label"
-                            valueKey="val"
-                            height={100}
-                          />
-                        </>
-                      )}
+                {totalBallsBowled > 0 && (
+                  <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.physical }]}>
+                    <View style={styles.cardTitleRow}>
+                      <MaterialIcons name="sports-cricket" size={18} color={colors.physical} />
+                      <Text style={[styles.cardTitle, { color: colors.physical }]}>Bowling Performance</Text>
                     </View>
-                  );
-                })()}
+                    <View style={styles.bigStatRow}>
+                      <View style={styles.bigStat}>
+                        <Text style={[styles.bigStatVal, { color: colors.physical }]}>{totalBallsBowled}</Text>
+                        <Text style={styles.bigStatLabel}>Balls Bowled</Text>
+                      </View>
+                      <View style={styles.bigStat}>
+                        <Text style={[styles.bigStatVal, { color: colors.success }]}>{totalSuccessfulBowl}</Text>
+                        <Text style={styles.bigStatLabel}>Successfully Bowled</Text>
+                      </View>
+                    </View>
+                    {logs.some(l => l.balls_bowled) && (
+                      <>
+                        <Text style={styles.trendSubTitle}>Balls Bowled Per Session</Text>
+                        <BarChart
+                          data={logs.filter(l => l.balls_bowled).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.balls_bowled || 0 }))}
+                          maxVal={Math.max(...logs.map(l => l.balls_bowled || 0), 1)}
+                          barColor={colors.physical}
+                          labelKey="label"
+                          valueKey="val"
+                          height={100}
+                        />
+                      </>
+                    )}
+                    {logs.some(l => l.wickets) && (
+                      <>
+                        <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Successfully Bowled Per Session</Text>
+                        <BarChart
+                          data={logs.filter(l => (l.wickets || 0) >= 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.wickets || 0 }))}
+                          maxVal={Math.max(...logs.map(l => l.wickets || 0), 1)}
+                          barColor={colors.success}
+                          labelKey="label"
+                          valueKey="val"
+                          height={100}
+                        />
+                      </>
+                    )}
+                  </View>
+                )}
 
                 {/* Fielding stats */}
                 {totalFieldingChances > 0 && (
