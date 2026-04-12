@@ -484,33 +484,53 @@ export default function AcademyAnalyticsScreen() {
                 )}
 
                 {/* Bowling stats */}
-                {totalBallsBowled > 0 && (
-                  <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.physical }]}>
-                    <View style={styles.cardTitleRow}>
-                      <MaterialIcons name="sports-cricket" size={18} color={colors.physical} />
-                      <Text style={[styles.cardTitle, { color: colors.physical }]}>Bowling Performance</Text>
-                    </View>
-                    <View style={styles.bigStatRow}>
-                      <View style={styles.bigStat}>
-                        <Text style={[styles.bigStatVal, { color: colors.physical }]}>{totalBallsBowled}</Text>
-                        <Text style={styles.bigStatLabel}>Balls Bowled</Text>
+                {totalBallsBowled > 0 && (() => {
+                  const totalSuccessfulBowl = logs.reduce((a, l) => a + (l.wickets || 0), 0);
+                  return (
+                    <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.physical }]}>
+                      <View style={styles.cardTitleRow}>
+                        <MaterialIcons name="sports-cricket" size={18} color={colors.physical} />
+                        <Text style={[styles.cardTitle, { color: colors.physical }]}>Bowling Performance</Text>
                       </View>
+                      <View style={styles.bigStatRow}>
+                        <View style={styles.bigStat}>
+                          <Text style={[styles.bigStatVal, { color: colors.physical }]}>{totalBallsBowled}</Text>
+                          <Text style={styles.bigStatLabel}>Balls Bowled</Text>
+                        </View>
+                        <View style={styles.bigStat}>
+                          <Text style={[styles.bigStatVal, { color: colors.success }]}>{totalSuccessfulBowl}</Text>
+                          <Text style={styles.bigStatLabel}>Successfully Bowled</Text>
+                        </View>
+                      </View>
+                      {logs.some(l => l.balls_bowled) && (
+                        <>
+                          <Text style={styles.trendSubTitle}>Balls Bowled Per Session</Text>
+                          <BarChart
+                            data={logs.filter(l => l.balls_bowled).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.balls_bowled || 0 }))}
+                            maxVal={Math.max(...logs.map(l => l.balls_bowled || 0), 1)}
+                            barColor={colors.physical}
+                            labelKey="label"
+                            valueKey="val"
+                            height={100}
+                          />
+                        </>
+                      )}
+                      {logs.some(l => l.wickets) && (
+                        <>
+                          <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Successfully Bowled Per Session</Text>
+                          <BarChart
+                            data={logs.filter(l => (l.wickets || 0) >= 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.wickets || 0 }))}
+                            maxVal={Math.max(...logs.map(l => l.wickets || 0), 1)}
+                            barColor={colors.success}
+                            labelKey="label"
+                            valueKey="val"
+                            height={100}
+                          />
+                        </>
+                      )}
                     </View>
-                    {logs.some(l => l.balls_bowled) && (
-                      <>
-                        <Text style={styles.trendSubTitle}>Balls Bowled Per Session</Text>
-                        <BarChart
-                          data={logs.filter(l => l.balls_bowled).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.balls_bowled || 0 }))}
-                          maxVal={Math.max(...logs.map(l => l.balls_bowled || 0), 1)}
-                          barColor={colors.physical}
-                          labelKey="label"
-                          valueKey="val"
-                          height={100}
-                        />
-                      </>
-                    )}
-                  </View>
-                )}
+                  );
+                })()}
 
                 {/* Fielding stats */}
                 {totalFieldingChances > 0 && (
@@ -526,9 +546,31 @@ export default function AcademyAnalyticsScreen() {
                       </View>
                       <View style={styles.bigStat}>
                         <Text style={[styles.bigStatVal, { color: colors.tactical }]}>{totalCatches}</Text>
-                        <Text style={styles.bigStatLabel}>Successful</Text>
+                        <Text style={styles.bigStatLabel}>Catches Taken</Text>
                       </View>
                     </View>
+                    {logs.some(l => (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0) > 0) && (
+                      <>
+                        <Text style={styles.trendSubTitle}>Chances Per Session</Text>
+                        <BarChart
+                          data={logs.filter(l => (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0) > 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0) }))}
+                          maxVal={Math.max(...logs.map(l => (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0)), 1)}
+                          barColor={colors.textSecondary}
+                          labelKey="label"
+                          valueKey="val"
+                          height={100}
+                        />
+                        <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Catches Taken Per Session</Text>
+                        <BarChart
+                          data={logs.filter(l => (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0) > 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.catches || 0 }))}
+                          maxVal={Math.max(...logs.map(l => l.catches || 0), 1)}
+                          barColor={colors.tactical}
+                          labelKey="label"
+                          valueKey="val"
+                          height={100}
+                        />
+                      </>
+                    )}
                   </View>
                 )}
 
