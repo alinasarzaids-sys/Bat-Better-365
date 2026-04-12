@@ -160,7 +160,7 @@ export default function AcademyAnalyticsScreen() {
   const totalMin = logs.reduce((a, l) => a + l.duration_minutes, 0);
   const avgInt = n > 0 ? avg(logs.map(l => l.intensity)) : 0;
   const totalBallsFaced = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
-  const totalBallsHit = logs.reduce((a, l) => a + (l.runs_scored || 0), 0); // using runs_scored as proxy for "successfully hit"
+  const totalBallsHit = logs.reduce((a, l) => a + (l.runs_scored || 0), 0); // successfully hit (stored as runs_scored in DB)
   const totalBallsBowled = logs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
   const totalCatches = logs.reduce((a, l) => a + (l.catches || 0), 0);
   const totalFieldingChances = logs.reduce((a, l) => a + (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0), 0);
@@ -292,9 +292,9 @@ export default function AcademyAnalyticsScreen() {
                   <StatCard icon="event" iconColor={colors.primary} val={n} label="Sessions" />
                   <StatCard icon="timer" iconColor={colors.mental} val={`${Math.round(totalMin / 60)}h ${totalMin % 60}m`} label="Total Time" />
                   <StatCard icon="flash-on" iconColor={ic(Math.round(avgInt))} val={avgInt.toFixed(1)} label="Avg Intensity" />
-                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${totalBallsFaced}/${totalBallsHit}`} label={`Faced / Hit`} />}
-                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={totalBallsBowled} label="Balls Bowled" />}
-                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${totalFieldingChances}/${totalCatches}`} label="Chances / Caught" />}
+                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${totalBallsFaced}/${totalBallsHit}`} label="Faced / Successful" />}
+                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={totalBallsBowled} label="Bowled" />}
+                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${totalFieldingChances}/${totalCatches}`} label="Chances / Successful" />}
                 </View>
 
                 {/* Intensity distribution */}
@@ -345,7 +345,7 @@ export default function AcademyAnalyticsScreen() {
                         <Text style={styles.recentMeta}>{log.log_date} · {log.duration_minutes}min</Text>
                         {(log.balls_faced || log.balls_bowled || log.catches) ? (
                           <Text style={styles.recentStats}>
-                            {log.balls_faced ? `${log.balls_faced} faced / ${log.runs_scored || 0} hit` : ''}
+                            {log.balls_faced ? `${log.balls_faced} faced / ${log.runs_scored || 0} successful` : ''}
                             {log.balls_bowled ? `${log.balls_faced ? ' · ' : ''}${log.balls_bowled} bowled` : ''}
                             {log.catches ? `${(log.balls_faced || log.balls_bowled) ? ' · ' : ''}${log.catches} catches` : ''}
                           </Text>
@@ -526,7 +526,7 @@ export default function AcademyAnalyticsScreen() {
                       </View>
                       <View style={styles.bigStat}>
                         <Text style={[styles.bigStatVal, { color: colors.tactical }]}>{totalCatches}</Text>
-                        <Text style={styles.bigStatLabel}>Catches Taken</Text>
+                        <Text style={styles.bigStatLabel}>Successful</Text>
                       </View>
                     </View>
                   </View>
