@@ -545,20 +545,17 @@ export default function AcademyCoachScreen() {
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.technical} />
                     <Text style={styles.analyticsVal}>{battingPct}%</Text>
-                    <Text style={styles.analyticsLabel}>Batting{'
-'}Success Rate</Text>
+                    <Text style={styles.analyticsLabel}>{"Batting\nSuccess Rate"}</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="sports-cricket" size={22} color={colors.physical} />
                     <Text style={styles.analyticsVal}>{bowlingPct}%</Text>
-                    <Text style={styles.analyticsLabel}>Bowling{'
-'}Success Rate</Text>
+                    <Text style={styles.analyticsLabel}>{"Bowling\nSuccess Rate"}</Text>
                   </View>
                   <View style={styles.analyticsItem}>
                     <MaterialIcons name="pan-tool" size={22} color={colors.success} />
                     <Text style={styles.analyticsVal}>{fieldingPct}%</Text>
-                    <Text style={styles.analyticsLabel}>Fielding{'
-'}Success Rate</Text>
+                    <Text style={styles.analyticsLabel}>{"Fielding\nSuccess Rate"}</Text>
                   </View>
                 </View>
               </View>
