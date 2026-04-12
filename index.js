@@ -8,89 +8,114 @@ LogBox.ignoreLogs([
   'SimpleCache',
 ]);
 
-// ─── Phase 1: Patch NativeModules before any module graph loads ───────────────
-// The OnSpace Android container may not have ExpoFont / ExpoFontLoader native
-// bindings. Patching isLoadedNative here ensures every module that calls it
-// gets a safe no-op instead of crashing.
+// ─── Phase 1: CREATE + patch NativeModules entries ───────────────────────────
+// Critical fix: NativeModules.ExpoFont / ExpoFontLoader are NULL (not just
+// missing) in the OnSpace Android container. The previous guard `obj && ...`
+// skipped null values. We now unconditionally CREATE stub objects so that
+// expo-font's module-level code captures a valid reference at evaluation time.
 (function patchNativeModules() {
   try {
     const RN = require('react-native');
     const NM = RN && RN.NativeModules;
     if (!NM) return;
 
-    const ensureIsLoaded = (obj) => {
-      if (obj && typeof obj === 'object') {
-        if (typeof obj.isLoadedNative !== 'function') {
-          obj.isLoadedNative = function () { return false; };
-        }
-        if (typeof obj.isLoaded !== 'function') {
-          obj.isLoaded = function () { return false; };
-        }
-        if (typeof obj.getLoadedFonts !== 'function') {
-          obj.getLoadedFonts = function () { return []; };
-        }
-        if (typeof obj.loadAsync !== 'function') {
-          obj.loadAsync = function () { return Promise.resolve(); };
-        }
-      }
+    const fontStub = {
+      isLoadedNative: function () { return false; },
+      isLoaded: function () { return false; },
+      getLoadedFonts: function () { return []; },
+      loadAsync: function () { return Promise.resolve(); },
+      unloadAllAsync: function () { return Promise.resolve(); },
     };
 
-    // All known native module key names across Expo SDK 48-52
-    ensureIsLoaded(NM.ExpoFont);
-    ensureIsLoaded(NM.ExpoFontLoader);
-    ensureIsLoaded(NM.RNVectorIcons);
+    // Create the stub objects if null/undefined — this is the key fix.
+    // expo-font captures a module-level reference; if that ref is null,
+    // calling .isLoadedNative() inside it crashes regardless of later patches.
+    if (!NM.ExpoFont) NM.ExpoFont = Object.assign({}, fontStub);
+    if (!NM.ExpoFontLoader) NM.ExpoFontLoader = Object.assign({}, fontStub);
+    if (!NM.RNVectorIcons) NM.RNVectorIcons = Object.assign({}, fontStub);
 
-    // Also patch via NativeUnimoduleProxy constants table
+    // Patch any already-existing (but incomplete) native module objects
+    const patchObj = (obj) => {
+      if (!obj || typeof obj !== 'object') return;
+      if (typeof obj.isLoadedNative !== 'function') obj.isLoadedNative = fontStub.isLoadedNative;
+      if (typeof obj.isLoaded !== 'function') obj.isLoaded = fontStub.isLoaded;
+      if (typeof obj.getLoadedFonts !== 'function') obj.getLoadedFonts = fontStub.getLoadedFonts;
+      if (typeof obj.loadAsync !== 'function') obj.loadAsync = fontStub.loadAsync;
+    };
+
+    patchObj(NM.ExpoFont);
+    patchObj(NM.ExpoFontLoader);
+    patchObj(NM.RNVectorIcons);
+
+    // NativeUnimoduleProxy constants table (SDK 48 compatibility)
     try {
       const proxy = NM.NativeUnimoduleProxy;
       if (proxy && proxy.modulesConstantsMap) {
-        ensureIsLoaded(proxy.modulesConstantsMap.ExpoFont);
-        ensureIsLoaded(proxy.modulesConstantsMap.ExpoFontLoader);
+        if (!proxy.modulesConstantsMap.ExpoFont) proxy.modulesConstantsMap.ExpoFont = Object.assign({}, fontStub);
+        if (!proxy.modulesConstantsMap.ExpoFontLoader) proxy.modulesConstantsMap.ExpoFontLoader = Object.assign({}, fontStub);
+        patchObj(proxy.modulesConstantsMap.ExpoFont);
+        patchObj(proxy.modulesConstantsMap.ExpoFontLoader);
       }
     } catch (_) {}
 
   } catch (_) {}
 })();
 
-// ─── Phase 2: Patch JS-layer expo-font exports ────────────────────────────────
-// Each require is isolated so one failure doesn't abort the others.
+// ─── Phase 2: Override JS-layer expo-font so isLoaded always returns true ────
+// Even if native stubs are in place, the internal `isLoadedNative` closure in
+// the expo-font bundle may still reference the original null value captured at
+// module eval time. We override `isLoaded` at the JS export layer to short-
+// circuit before it ever reaches the native call.
 (function patchExpoFontJS() {
 
-  // 2a — native module proxy wrapper
+  // 2a — ExpoFont native proxy wrapper
   try {
     const m = require('expo-font/build/ExpoFont');
     const target = (m && m.default) ? m.default : m;
-    if (target && typeof target.isLoadedNative !== 'function') {
+    if (target && typeof target === 'object') {
       target.isLoadedNative = () => false;
+      target.getLoadedFonts = () => [];
+      target.loadAsync = () => Promise.resolve();
     }
   } catch (_) {}
 
-  // 2b — Font helper (isLoaded calls isLoadedNative internally)
+  // 2b — Font.isLoaded: override to return TRUE so Icon never triggers a load
+  // This is the critical override — returning true means "font is ready",
+  // bypassing the native check that crashes on this container.
   try {
     const m = require('expo-font/build/Font');
     if (m) {
-      if (typeof m.isLoadedNative !== 'function') m.isLoadedNative = () => false;
-      if (typeof m.isLoaded !== 'function') m.isLoaded = () => false;
+      m.isLoadedNative = () => false;
+      // Return true so @expo/vector-icons skips any reload attempt
+      m.isLoaded = () => true;
       if (typeof m.loadAsync !== 'function') m.loadAsync = () => Promise.resolve();
     }
   } catch (_) {}
 
-  // 2c — top-level expo-font barrel
+  // 2c — top-level expo-font barrel export
   try {
     const m = require('expo-font');
     if (m) {
-      if (typeof m.isLoadedNative !== 'function') m.isLoadedNative = () => false;
-      if (typeof m.isLoaded !== 'function') m.isLoaded = () => false;
+      m.isLoadedNative = () => false;
+      m.isLoaded = () => true;
       if (typeof m.loadAsync !== 'function') m.loadAsync = () => Promise.resolve();
     }
   } catch (_) {}
 
-  // 2d — FontLoader (SDK 50+)
+  // 2d — FontLoader module (SDK 50+)
   try {
     const m = require('expo-font/build/FontLoader');
     if (m) {
-      if (typeof m.isLoadedNative !== 'function') m.isLoadedNative = () => false;
-      if (typeof m.isLoaded !== 'function') m.isLoaded = () => false;
+      m.isLoadedNative = () => false;
+      m.isLoaded = () => true;
+    }
+  } catch (_) {}
+
+  // 2e — Server module fallback (some bundler configs)
+  try {
+    const m = require('expo-font/build/server');
+    if (m && typeof m.isLoaded !== 'function') {
+      m.isLoaded = () => true;
     }
   } catch (_) {}
 
