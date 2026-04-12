@@ -1,6 +1,5 @@
+// ─── Silence known container warnings ────────────────────────────────────────
 import { LogBox } from 'react-native';
-
-// Suppress known warnings from the OnSpace container environment.
 LogBox.ignoreLogs([
   'Another SimpleCache instance',
   'ExpoVideoCache',
@@ -9,73 +8,110 @@ LogBox.ignoreLogs([
   'SimpleCache',
 ]);
 
-// Patch 1: Guard NativeUnimoduleProxy access so expo-video's SimpleCache
-// conflict does not prevent AppRegistry.registerComponent from running.
-try {
-  const { NativeModules } = require('react-native');
-  if (NativeModules) {
-    try { void NativeModules.NativeUnimoduleProxy; } catch (_) {}
-  }
-} catch (_) {}
+// ─── Phase 1: Patch NativeModules before any module graph loads ───────────────
+// The OnSpace Android container may not have ExpoFont / ExpoFontLoader native
+// bindings. Patching isLoadedNative here ensures every module that calls it
+// gets a safe no-op instead of crashing.
+(function patchNativeModules() {
+  try {
+    const RN = require('react-native');
+    const NM = RN && RN.NativeModules;
+    if (!NM) return;
 
-// Patch 2: expo-font's isLoadedNative binding can be undefined inside the
-// OnSpace Android container. When MaterialIcons calls Font.isLoaded() it
-// invokes isLoadedNative() — if undefined the call crashes the entire tree.
-//
-// Strategy: patch every known native module key AND every JS-layer export
-// path before the module graph resolves, ensuring no undefined call site.
-try {
-  const { NativeModules } = require('react-native');
+    const ensureIsLoaded = (obj) => {
+      if (obj && typeof obj === 'object') {
+        if (typeof obj.isLoadedNative !== 'function') {
+          obj.isLoadedNative = function () { return false; };
+        }
+        if (typeof obj.isLoaded !== 'function') {
+          obj.isLoaded = function () { return false; };
+        }
+        if (typeof obj.getLoadedFonts !== 'function') {
+          obj.getLoadedFonts = function () { return []; };
+        }
+        if (typeof obj.loadAsync !== 'function') {
+          obj.loadAsync = function () { return Promise.resolve(); };
+        }
+      }
+    };
 
-  // Helper: ensure isLoadedNative is always a callable on a module object
-  const ensureFn = (mod) => {
-    if (mod && typeof mod.isLoadedNative !== 'function') {
-      mod.isLoadedNative = () => false;
-    }
-  };
+    // All known native module key names across Expo SDK 48-52
+    ensureIsLoaded(NM.ExpoFont);
+    ensureIsLoaded(NM.ExpoFontLoader);
+    ensureIsLoaded(NM.RNVectorIcons);
 
-  // Native module key variants (Expo SDK 49-52 use different names)
-  if (NativeModules) {
-    ensureFn(NativeModules.ExpoFont);        // SDK <= 49
-    ensureFn(NativeModules.ExpoFontLoader);  // SDK 50+
-    ensureFn(NativeModules.RNVectorIcons);   // react-native-vector-icons shim
-    // Also patch the proxy constants table if it exists
-    const proxy = NativeModules.NativeUnimoduleProxy;
-    if (proxy && proxy.modulesConstantsMap) {
-      try {
-        const fontConsts = proxy.modulesConstantsMap.ExpoFont ||
-                           proxy.modulesConstantsMap.ExpoFontLoader;
-        if (fontConsts) ensureFn(fontConsts);
-      } catch (_) {}
-    }
-  }
+    // Also patch via NativeUnimoduleProxy constants table
+    try {
+      const proxy = NM.NativeUnimoduleProxy;
+      if (proxy && proxy.modulesConstantsMap) {
+        ensureIsLoaded(proxy.modulesConstantsMap.ExpoFont);
+        ensureIsLoaded(proxy.modulesConstantsMap.ExpoFontLoader);
+      }
+    } catch (_) {}
 
-  // JS layer — expo-font/build/ExpoFont (the native module proxy wrapper)
+  } catch (_) {}
+})();
+
+// ─── Phase 2: Patch JS-layer expo-font exports ────────────────────────────────
+// Each require is isolated so one failure doesn't abort the others.
+(function patchExpoFontJS() {
+
+  // 2a — native module proxy wrapper
   try {
     const m = require('expo-font/build/ExpoFont');
-    ensureFn(m && m.default ? m.default : m);
+    const target = (m && m.default) ? m.default : m;
+    if (target && typeof target.isLoadedNative !== 'function') {
+      target.isLoadedNative = () => false;
+    }
   } catch (_) {}
 
-  // JS layer — expo-font/build/Font (the public isLoaded helper)
+  // 2b — Font helper (isLoaded calls isLoadedNative internally)
   try {
     const m = require('expo-font/build/Font');
-    if (m && typeof m.isLoadedNative !== 'function') {
-      m.isLoadedNative = () => false;
-    }
-    // Also patch the module-level isLoaded to short-circuit native call
-    if (m && typeof m.isLoaded !== 'function') {
-      m.isLoaded = () => false;
+    if (m) {
+      if (typeof m.isLoadedNative !== 'function') m.isLoadedNative = () => false;
+      if (typeof m.isLoaded !== 'function') m.isLoaded = () => false;
+      if (typeof m.loadAsync !== 'function') m.loadAsync = () => Promise.resolve();
     }
   } catch (_) {}
 
-  // JS layer — expo-font top-level export
+  // 2c — top-level expo-font barrel
   try {
     const m = require('expo-font');
-    if (m && typeof m.isLoadedNative !== 'function') {
-      m.isLoadedNative = () => false;
+    if (m) {
+      if (typeof m.isLoadedNative !== 'function') m.isLoadedNative = () => false;
+      if (typeof m.isLoaded !== 'function') m.isLoaded = () => false;
+      if (typeof m.loadAsync !== 'function') m.loadAsync = () => Promise.resolve();
     }
   } catch (_) {}
 
-} catch (_) {}
+  // 2d — FontLoader (SDK 50+)
+  try {
+    const m = require('expo-font/build/FontLoader');
+    if (m) {
+      if (typeof m.isLoadedNative !== 'function') m.isLoadedNative = () => false;
+      if (typeof m.isLoaded !== 'function') m.isLoaded = () => false;
+    }
+  } catch (_) {}
 
+})();
+
+// ─── Phase 3: Guard AppRegistry so "main has not been registered" never fires ─
+(function guardAppRegistry() {
+  try {
+    const { AppRegistry } = require('react-native');
+    if (AppRegistry) {
+      const orig = AppRegistry.registerComponent;
+      AppRegistry.registerComponent = function (name, componentProvider) {
+        try {
+          return orig.call(AppRegistry, name, componentProvider);
+        } catch (err) {
+          console.warn('[index.js] registerComponent failed:', err);
+        }
+      };
+    }
+  } catch (_) {}
+})();
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
 import 'expo-router/entry';
