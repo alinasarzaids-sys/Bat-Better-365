@@ -143,9 +143,19 @@ function InlineDatePicker({ value, onChange, onClose }: {
   const daysInMonth = new Date(year, month, 0).getDate();
   const safeDay = Math.min(day, daysInMonth);
   const formatted = `${String(safeDay).padStart(2, '0')} ${MONTHS[month - 1]} ${year}`;
+  const [dayText, setDayText] = useState(String(safeDay).padStart(2, '0'));
+  const [monthText, setMonthText] = useState(String(month).padStart(2, '0'));
+  const [yearText, setYearText] = useState(String(year));
+  React.useEffect(() => { setDayText(String(Math.min(day, daysInMonth)).padStart(2, '0')); }, [day, month, year]);
+  React.useEffect(() => { setMonthText(String(month).padStart(2, '0')); }, [month]);
+  React.useEffect(() => { setYearText(String(year)); }, [year]);
 
   const handleConfirm = () => {
-    onChange(`${year}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`);
+    const fd = parseInt(dayText, 10); const fm = parseInt(monthText, 10); const fy = parseInt(yearText, 10);
+    const finalDay = (!isNaN(fd) && fd >= 1 && fd <= daysInMonth) ? fd : safeDay;
+    const finalMonth = (!isNaN(fm) && fm >= 1 && fm <= 12) ? fm : month;
+    const finalYear = (!isNaN(fy) && fy >= 2020) ? fy : year;
+    onChange(`${finalYear}-${String(finalMonth).padStart(2, '0')}-${String(finalDay).padStart(2, '0')}`);
     onClose();
   };
 
@@ -158,7 +168,15 @@ function InlineDatePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setDay(d => d >= daysInMonth ? 1 : d + 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <Text style={inl.colVal}>{String(safeDay).padStart(2, '0')}</Text>
+          <TextInput
+            style={inl.colInput}
+            value={dayText}
+            onChangeText={setDayText}
+            onBlur={() => { const n = parseInt(dayText, 10); if (!isNaN(n) && n >= 1 && n <= daysInMonth) setDay(n); else setDayText(String(safeDay).padStart(2, '0')); }}
+            keyboardType="number-pad"
+            maxLength={2}
+            selectTextOnFocus
+          />
           <Pressable style={inl.arrowBtn} onPress={() => setDay(d => d <= 1 ? daysInMonth : d - 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -168,7 +186,18 @@ function InlineDatePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setMonth(m => m >= 12 ? 1 : m + 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <Text style={[inl.colVal, { fontSize: 20 }]}>{MONTHS[month - 1]}</Text>
+          <View style={{ alignItems: 'center' }}>
+            <TextInput
+              style={inl.colInput}
+              value={monthText}
+              onChangeText={setMonthText}
+              onBlur={() => { const n = parseInt(monthText, 10); if (!isNaN(n) && n >= 1 && n <= 12) setMonth(n); else setMonthText(String(month).padStart(2, '0')); }}
+              keyboardType="number-pad"
+              maxLength={2}
+              selectTextOnFocus
+            />
+            <Text style={{ fontSize: 10, color: colors.success, fontWeight: '700', marginTop: 2 }}>{MONTHS[(parseInt(monthText, 10) || month) - 1] || ''}</Text>
+          </View>
           <Pressable style={inl.arrowBtn} onPress={() => setMonth(m => m <= 1 ? 12 : m - 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -178,7 +207,15 @@ function InlineDatePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setYear(y => y + 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <Text style={[inl.colVal, { fontSize: 20 }]}>{year}</Text>
+          <TextInput
+            style={[inl.colInput, { minWidth: 64, fontSize: 18 }]}
+            value={yearText}
+            onChangeText={setYearText}
+            onBlur={() => { const n = parseInt(yearText, 10); if (!isNaN(n) && n >= 2020) setYear(n); else setYearText(String(year)); }}
+            keyboardType="number-pad"
+            maxLength={4}
+            selectTextOnFocus
+          />
           <Pressable style={inl.arrowBtn} onPress={() => setYear(y => Math.max(2020, y - 1))} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -205,9 +242,29 @@ function InlineTimePicker({ value, onChange, onClose }: {
   const isPM = hour >= 12;
   const h12 = hour % 12 || 12;
   const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
+  const [hourText, setHourText] = useState(String(h12).padStart(2, '0'));
+  const [minText, setMinText] = useState(String(minute).padStart(2, '0'));
+  // Keep text in sync when arrows change values
+  React.useEffect(() => { setHourText(String(hour % 12 || 12).padStart(2, '0')); }, [hour]);
+  React.useEffect(() => { setMinText(String(minute).padStart(2, '0')); }, [minute]);
+
+  const commitHour = (t: string) => {
+    const n = parseInt(t, 10);
+    if (!isNaN(n) && n >= 1 && n <= 12) setHour(isPM ? (n === 12 ? 12 : n + 12) : (n === 12 ? 0 : n));
+    else setHourText(String(hour % 12 || 12).padStart(2, '0'));
+  };
+  const commitMin = (t: string) => {
+    const n = parseInt(t, 10);
+    if (!isNaN(n) && n >= 0 && n <= 59) setMinute(n);
+    else setMinText(String(minute).padStart(2, '0'));
+  };
 
   const handleConfirm = () => {
-    onChange(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    // commit any pending text edits
+    const fh = parseInt(hourText, 10); const fm = parseInt(minText, 10);
+    const finalHour = (!isNaN(fh) && fh >= 1 && fh <= 12) ? (isPM ? (fh === 12 ? 12 : fh + 12) : (fh === 12 ? 0 : fh)) : hour;
+    const finalMin = (!isNaN(fm) && fm >= 0 && fm <= 59) ? fm : minute;
+    onChange(`${String(finalHour).padStart(2, '0')}:${String(finalMin).padStart(2, '0')}`);
     onClose();
   };
 
@@ -220,7 +277,15 @@ function InlineTimePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setHour(h => (h + 1) % 24)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <Text style={inl.colVal}>{String(h12).padStart(2, '0')}</Text>
+          <TextInput
+            style={inl.colInput}
+            value={hourText}
+            onChangeText={setHourText}
+            onBlur={() => commitHour(hourText)}
+            keyboardType="number-pad"
+            maxLength={2}
+            selectTextOnFocus
+          />
           <Pressable style={inl.arrowBtn} onPress={() => setHour(h => (h - 1 + 24) % 24)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -228,11 +293,19 @@ function InlineTimePicker({ value, onChange, onClose }: {
         <Text style={[tp.colon, { color: colors.text, fontSize: 24, paddingBottom: 0, alignSelf: 'center' }]}>:</Text>
         <View style={inl.col}>
           <Text style={inl.colLabel}>Min</Text>
-          <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m + 5) % 60)} hitSlop={8}>
+          <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m + 1) % 60)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <Text style={inl.colVal}>{String(minute).padStart(2, '0')}</Text>
-          <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m - 5 + 60) % 60)} hitSlop={8}>
+          <TextInput
+            style={inl.colInput}
+            value={minText}
+            onChangeText={setMinText}
+            onBlur={() => commitMin(minText)}
+            keyboardType="number-pad"
+            maxLength={2}
+            selectTextOnFocus
+          />
+          <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m - 1 + 60) % 60)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
         </View>
@@ -272,6 +345,7 @@ const inl = StyleSheet.create({
   col: { alignItems: 'center', minWidth: 52 },
   colLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
   colVal: { fontSize: 26, fontWeight: '900', color: colors.text, lineHeight: 32, textAlign: 'center', minWidth: 44 },
+  colInput: { fontSize: 26, fontWeight: '900', color: colors.success, textAlign: 'center', minWidth: 44, borderBottomWidth: 2, borderBottomColor: colors.success + '80', paddingVertical: 2, backgroundColor: 'transparent' },
   arrowBtn: { padding: 2 },
 });
 
@@ -808,7 +882,7 @@ function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: 
     } else {
       const { error } = await supabase.from('sessions').insert({
         user_id: userId, title: title.trim(), scheduled_date: scheduledDate,
-        session_type: 'Training', status: 'planned', notes: notes || null,
+        session_type: 'Structured', status: 'planned', notes: notes || null,
       });
       setSaving(false);
       if (error) { showAlert('Error', error.message); return; }
