@@ -451,6 +451,7 @@ export default function AcademyScreen() {
   const [squads, setSquads] = useState<AcademySquad[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
   const [weeklySessions, setWeeklySessions] = useState<UpcomingSession[]>([]);
+  const [upcomingSessions, setUpcomingSessions] = useState<Array<{ id: string; title: string; session_date: string; session_time: string; location?: string; session_type: string }>>([]);
 
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -511,11 +512,15 @@ export default function AcademyScreen() {
       sunday.setDate(monday.getDate() + 6);
       const { data: sessData } = await supabase
         .from('academy_sessions')
-        .select('session_date')
+        .select('id, title, session_date, session_time, location, session_type')
         .eq('academy_id', academyId)
         .gte('session_date', monday.toISOString().split('T')[0])
-        .lte('session_date', sunday.toISOString().split('T')[0]);
+        .lte('session_date', sunday.toISOString().split('T')[0])
+        .order('session_date', { ascending: true });
       setWeeklySessions(sessData || []);
+      // upcoming = today + future this week
+      const todayStr2 = new Date().toISOString().split('T')[0];
+      setUpcomingSessions((sessData || []).filter((s: any) => s.session_date >= todayStr2));
     } catch (_) {}
     setLogsLoading(false);
   }, [user]);
@@ -879,6 +884,41 @@ export default function AcademyScreen() {
               ) : (
                 <>
                   <WeeklyBar logs={recentLogs} sessions={weeklySessions} />
+
+                  {/* Upcoming sessions list */}
+                  {upcomingSessions.length > 0 && (
+                    <View style={{ marginTop: spacing.sm, gap: spacing.xs }}>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700', marginBottom: 2 }}>UPCOMING THIS WEEK</Text>
+                      {upcomingSessions.map(sess => {
+                        const [y, m, d] = sess.session_date.split('-').map(Number);
+                        const dateReadable = new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+                        const [hh, mm] = (sess.session_time || '10:00').split(':').map(Number);
+                        const period = hh >= 12 ? 'PM' : 'AM';
+                        const h12 = hh % 12 || 12;
+                        const timeStr = `${h12}:${String(mm).padStart(2, '0')} ${period}`;
+                        const isToday = sess.session_date === new Date().toISOString().split('T')[0];
+                        return (
+                          <View key={sess.id} style={[upcomStyles.row, isToday && upcomStyles.rowToday]}>
+                            <View style={{ flex: 1 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                                {isToday && <View style={upcomStyles.todayBadge}><Text style={upcomStyles.todayText}>TODAY</Text></View>}
+                                <Text style={upcomStyles.title} numberOfLines={1}>{sess.title}</Text>
+                              </View>
+                              <Text style={upcomStyles.meta}>{dateReadable} · {timeStr}{sess.location ? ` · ${sess.location}` : ''}</Text>
+                            </View>
+                            <Pressable
+                              style={upcomStyles.startBtn}
+                              onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman' } } as any)}
+                            >
+                              <MaterialIcons name="play-arrow" size={14} color={colors.textLight} />
+                              <Text style={upcomStyles.startBtnText}>Start</Text>
+                            </Pressable>
+                          </View>
+                        );
+                      })}
+                    </View>
+                  )}
+
                   <View style={styles.weekSummaryRow}>
                     <View style={styles.weekStat}>
                       <Text style={styles.weekStatVal}>{recentLogs.length}</Text>
@@ -895,7 +935,7 @@ export default function AcademyScreen() {
                       <Text style={styles.weekStatLabel}>Avg Intensity</Text>
                     </View>
                     <View style={styles.weekStat}>
-                      <Text style={styles.weekStatVal}>{weeklySessions.length > 0 ? weeklySessions.length : '—'}</Text>
+                      <Text style={styles.weekStatVal}>{weeklySessions.length > 0 ? weeklySessions.length : 0}</Text>
                       <Text style={styles.weekStatLabel}>Scheduled</Text>
                     </View>
                   </View>
@@ -1177,6 +1217,17 @@ const modalStyles = StyleSheet.create({
   chipTextActive: { color: colors.textLight },
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingVertical: spacing.md + 2, borderRadius: borderRadius.md, marginTop: spacing.lg },
   submitBtnText: { ...typography.body, color: colors.textLight, fontWeight: '700' },
+});
+
+const upcomStyles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary + '0C', borderRadius: borderRadius.md, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderWidth: 1, borderColor: colors.primary + '25' },
+  rowToday: { backgroundColor: colors.primary + '18', borderColor: colors.primary + '60' },
+  todayBadge: { backgroundColor: colors.primary, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
+  todayText: { fontSize: 8, color: colors.textLight, fontWeight: '800', letterSpacing: 0.5 },
+  title: { fontSize: 13, color: colors.text, fontWeight: '700', flex: 1 },
+  meta: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  startBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.primary, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.sm },
+  startBtnText: { fontSize: 12, color: colors.textLight, fontWeight: '800' },
 });
 
 const styles = StyleSheet.create({

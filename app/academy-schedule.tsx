@@ -692,9 +692,9 @@ function SessionCard({
           </View>
         )}
 
-        {!isCoach && isAcademy && !isPast && (
+        {!isCoach && !isPast && (
           <Pressable
-            style={styles.startSessionBtn}
+            style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
             onPress={() => router.push({
               pathname: '/academy-log',
               params: { academyId, position: memberPosition || 'Batsman' },
