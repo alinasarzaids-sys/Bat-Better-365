@@ -1,23 +1,426 @@
 /**
- * SafeIcon — drop-in replacement for MaterialIcons that never crashes on Android.
+ * SafeIcon — 100% pure-JS icon renderer. Zero native font loading.
  *
- * Root cause: The @expo/vector-icons Icon class calls NativeModules.ExpoFont.isLoadedNative()
- * during render. In the OnSpace Android container this native method does not exist, causing
- * a "TypeError: undefined is not a function" crash that kills the entire component tree.
+ * Root cause of all prior crashes: @expo/vector-icons MaterialIcons calls
+ * NativeModules.ExpoFont.isLoadedNative() which does not exist in the OnSpace
+ * Android container, killing the entire component tree.
  *
- * Fix: Wrap MaterialIcons in a React Error Boundary (class component). The React reconciler
- * catches the render-time error BEFORE it propagates up the tree, and we return null instead.
- *
- * IMPORTANT: The fallback must return null — NOT a View element. Passing the string 'View'
- * to React.createElement causes "View config getter callback must be a function (received
- * undefined)" on the OnSpace Android bundler because the native view registry lookup fails
- * for string-referenced components when the bridge is in a degraded state.
+ * This component never touches @expo/vector-icons at all.
+ * Icons are rendered as Text using Unicode/emoji characters — works everywhere.
  */
 
 import React from 'react';
-import { MaterialIcons } from '@expo/vector-icons';
+import { Text, StyleSheet } from 'react-native';
 
-type IconName = React.ComponentProps<typeof MaterialIcons>['name'];
+// Comprehensive map: MaterialIcons name → Unicode / emoji character
+const ICON_MAP: Record<string, string> = {
+  // Navigation
+  'arrow-back': '←',
+  'arrow-forward': '→',
+  'arrow-upward': '↑',
+  'arrow-downward': '↓',
+  'chevron-left': '‹',
+  'chevron-right': '›',
+  'chevron-up': '⌃',
+  'chevron-down': '⌄',
+  'expand-more': '▾',
+  'expand-less': '▴',
+  'menu': '☰',
+  'close': '✕',
+  'cancel': '✕',
+  'clear': '✕',
+
+  // Actions
+  'add': '+',
+  'add-circle': '+',
+  'add-circle-outline': '+',
+  'remove': '−',
+  'edit': '✎',
+  'create': '✎',
+  'delete': '🗑',
+  'delete-outline': '🗑',
+  'save': '💾',
+  'send': '➤',
+  'share': '↗',
+  'search': '🔍',
+  'filter-list': '⚡',
+  'sort': '≡',
+  'refresh': '↺',
+  'sync': '↺',
+  'undo': '↩',
+  'redo': '↪',
+  'copy': '⎘',
+  'content-copy': '⎘',
+  'cut': '✂',
+  'paste': '📋',
+  'download': '⬇',
+  'upload': '⬆',
+  'print': '🖨',
+  'settings': '⚙',
+  'tune': '⚙',
+  'more-vert': '⋮',
+  'more-horiz': '⋯',
+  'open-in-new': '↗',
+  'launch': '↗',
+  'fullscreen': '⛶',
+  'minimize': '−',
+  'maximize': '□',
+
+  // Status & feedback
+  'check': '✓',
+  'check-circle': '✓',
+  'check-box': '☑',
+  'check-box-outline-blank': '☐',
+  'radio-button-checked': '◉',
+  'radio-button-unchecked': '○',
+  'done': '✓',
+  'done-all': '✓✓',
+  'error': '⚠',
+  'error-outline': '⚠',
+  'warning': '⚠',
+  'info': 'ℹ',
+  'info-outline': 'ℹ',
+  'help': '?',
+  'help-outline': '?',
+  'block': '⊘',
+  'report': '⚑',
+  'flag': '⚑',
+  'verified': '✓',
+  'verified-user': '✓',
+  'new-releases': '★',
+  'notification-important': '!',
+
+  // Cricket & sports
+  'sports-cricket': '🏏',
+  'sports-soccer': '⚽',
+  'sports-basketball': '🏀',
+  'fitness-center': '💪',
+  'directions-run': '🏃',
+  'self-improvement': '🧘',
+  'pool': '🏊',
+  'golf-course': '⛳',
+
+  // People & social
+  'person': '👤',
+  'person-outline': '👤',
+  'people': '👥',
+  'group': '👥',
+  'group-add': '👥+',
+  'account-circle': '👤',
+  'account-box': '👤',
+  'face': '😊',
+  'mood': '😊',
+  'emoji-events': '🏆',
+  'emoji-people': '👋',
+  'celebration': '🎉',
+  'sentiment-satisfied': '😊',
+  'sentiment-dissatisfied': '😟',
+  'thumbs-up-down': '👍',
+
+  // Communication
+  'message': '💬',
+  'chat': '💬',
+  'chat-bubble': '💬',
+  'chat-bubble-outline': '💬',
+  'comment': '💬',
+  'forum': '💬',
+  'email': '✉',
+  'mail': '✉',
+  'phone': '📞',
+  'call': '📞',
+  'notifications': '🔔',
+  'notifications-none': '🔕',
+  'notifications-active': '🔔',
+  'notification-add': '🔔',
+
+  // Time & calendar
+  'event': '📅',
+  'event-available': '📅',
+  'event-note': '📝',
+  'calendar-today': '📅',
+  'access-time': '🕐',
+  'schedule': '🕐',
+  'timer': '⏱',
+  'timer-off': '⏱',
+  'alarm': '⏰',
+  'alarm-on': '⏰',
+  'watch-later': '🕐',
+  'history': '🕐',
+  'update': '🔄',
+  'date-range': '📅',
+
+  // Content
+  'article': '📄',
+  'description': '📄',
+  'notes': '📝',
+  'note': '📝',
+  'book': '📖',
+  'library-books': '📚',
+  'folder': '📁',
+  'folder-open': '📂',
+  'attachment': '📎',
+  'link': '🔗',
+  'image': '🖼',
+  'photo': '📷',
+  'camera': '📷',
+  'videocam': '🎥',
+  'play-arrow': '▶',
+  'play-circle-filled': '▶',
+  'pause': '⏸',
+  'stop': '⏹',
+  'skip-next': '⏭',
+  'skip-previous': '⏮',
+  'fast-forward': '⏩',
+  'fast-rewind': '⏪',
+  'replay': '↺',
+  'mic': '🎤',
+  'volume-up': '🔊',
+  'volume-off': '🔇',
+  'music-note': '🎵',
+  'format-list-numbered': '①②③',
+  'format-list-bulleted': '•••',
+
+  // Navigation & location
+  'home': '🏠',
+  'place': '📍',
+  'location-on': '📍',
+  'location-off': '📍',
+  'map': '🗺',
+  'directions': '➤',
+  'near-me': '📍',
+  'explore': '🧭',
+  'navigation': '➤',
+  'gps-fixed': '📍',
+
+  // Health & fitness
+  'favorite': '❤',
+  'favorite-border': '♡',
+  'spa': '🌿',
+  'local-hospital': '🏥',
+  'healing': '💊',
+  'psychology': '🧠',
+  'accessibility': '♿',
+  'accessibility-new': '♿',
+
+  // Finance & shopping
+  'shopping-cart': '🛒',
+  'payment': '💳',
+  'attach-money': '💰',
+  'account-balance': '🏦',
+  'credit-card': '💳',
+  'receipt': '🧾',
+  'store': '🏪',
+  'local-offer': '🏷',
+  'label': '🏷',
+  'star': '★',
+  'star-border': '☆',
+  'star-half': '⭑',
+  'grade': '★',
+
+  // Tech
+  'computer': '💻',
+  'phone-android': '📱',
+  'phone-iphone': '📱',
+  'tablet': '📱',
+  'devices': '📱',
+  'wifi': '📶',
+  'bluetooth': '⚡',
+  'battery-full': '🔋',
+  'cloud': '☁',
+  'cloud-upload': '⬆',
+  'cloud-download': '⬇',
+  'cloud-done': '☁✓',
+  'backup': '☁',
+  'security': '🔒',
+  'lock': '🔒',
+  'lock-open': '🔓',
+  'vpn-key': '🔑',
+  'key': '🔑',
+  'code': '</>',
+  'build': '🔧',
+  'extension': '🧩',
+  'power': '⏻',
+  'flash-on': '⚡',
+  'flash-off': '⚡',
+  'highlight': '✨',
+  'lightbulb': '💡',
+  'lightbulb-outline': '💡',
+
+  // Misc
+  'dashboard': '⊞',
+  'view-module': '⊞',
+  'view-list': '≡',
+  'grid-view': '⊞',
+  'bar-chart': '📊',
+  'show-chart': '📈',
+  'trending-up': '📈',
+  'trending-down': '📉',
+  'pie-chart': '⬤',
+  'leaderboard': '📊',
+  'assessment': '📊',
+  'analytics': '📊',
+  'insights': '💡',
+  'whatshot': '🔥',
+  'local-fire-department': '🔥',
+  'bolt': '⚡',
+  'adjust': '◎',
+  'lens': '◉',
+  'panorama-fish-eye': '○',
+  'radio-button-on': '◉',
+  'brightness-1': '●',
+  'fiber-manual-record': '●',
+  'circle': '●',
+  'shield': '🛡',
+  'verified-user': '🛡',
+  'gavel': '⚖',
+  'balance': '⚖',
+  'thumb-up': '👍',
+  'thumb-down': '👎',
+  'thumbs-up-alt': '👍',
+  'tag': '#',
+  'category': '⊞',
+  'label-important': '▶',
+  'bookmarks': '🔖',
+  'bookmark': '🔖',
+  'bookmark-border': '🔖',
+  'visibility': '👁',
+  'visibility-off': '🚫',
+  'swap-horiz': '⇄',
+  'swap-vert': '⇅',
+  'compare-arrows': '⇄',
+  'swap-horizontal-circle': '⇄',
+  'cached': '↺',
+  'autorenew': '↺',
+  'loop': '↺',
+  'repeat': '↺',
+  'shuffle': '⇌',
+  'double-arrow': '»',
+  'first-page': '|←',
+  'last-page': '→|',
+  'navigate-before': '‹',
+  'navigate-next': '›',
+  'unfold-more': '⇕',
+  'unfold-less': '⇔',
+  'drag-handle': '⋮⋮',
+  'drag-indicator': '⋮⋮',
+  'open-with': '⤢',
+  'fullscreen-exit': '⛶',
+  'zoom-in': '🔍+',
+  'zoom-out': '🔍−',
+  'crop': '✂',
+  'rotate-left': '↺',
+  'rotate-right': '↻',
+  'flip': '⇔',
+  'center-focus-strong': '◉',
+  'wb-sunny': '☀',
+  'brightness-high': '☀',
+  'nights-stay': '🌙',
+  'dark-mode': '🌙',
+  'light-mode': '☀',
+  'public': '🌐',
+  'language': '🌐',
+  'translate': '🌐',
+  'record-voice-over': '🎤',
+  'headset': '🎧',
+  'headphones': '🎧',
+  'sports': '⚽',
+  'rowing': '🚣',
+  'hiking': '🥾',
+  'pedal-bike': '🚲',
+  'directions-bike': '🚲',
+  'directions-walk': '🚶',
+  'self-improvement': '🧘',
+  'sports-gymnastics': '🤸',
+  'sports-martial-arts': '🥋',
+  'sports-tennis': '🎾',
+  'sports-volleyball': '🏐',
+  'sports-handball': '🤾',
+
+  // Academy specific
+  'school': '🎓',
+  'class': '📚',
+  'assignment': '📋',
+  'assignment-turned-in': '📋✓',
+  'grade': '★',
+  'military-tech': '🏅',
+  'workspace-premium': '⭐',
+  'manage-accounts': '👤⚙',
+  'supervisor-account': '👥',
+  'badge': '🎖',
+  'admin-panel-settings': '⚙',
+  'how-to-reg': '✓',
+  'app-registration': '📋',
+  'content-paste-search': '🔍',
+  'receipt-long': '📄',
+  'fact-check': '☑',
+  'playlist-add-check': '☑',
+  'add-task': '+☑',
+  'task-alt': '✓',
+  'rule': '≡',
+  'pending': '⏳',
+  'pending-actions': '⏳',
+  'hourglass-empty': '⌛',
+  'hourglass-full': '⌛',
+  'av-timer': '⏱',
+  'timelapse': '⏱',
+  'watch': '⌚',
+  'timer-10': '⏱',
+  'timer-3': '⏱',
+  'stop-circle': '⏹',
+  'pause-circle': '⏸',
+  'pause-circle-filled': '⏸',
+  'play-disabled': '▶',
+  'not-started': '▷',
+  'replay-circle-filled': '↺',
+  'cancel-presentation': '⊗',
+  'remove-circle': '⊖',
+  'remove-circle-outline': '⊖',
+  'do-not-disturb': '⊘',
+  'do-not-disturb-on': '⊘',
+  'indeterminate-check-box': '⊟',
+  'exposure-plus-1': '+1',
+  'exposure-plus-2': '+2',
+  'exposure-neg-1': '−1',
+  'exposure-neg-2': '−2',
+  'plus-one': '+1',
+  'format-bold': 'B',
+  'format-italic': 'I',
+  'format-underlined': 'U',
+  'text-format': 'T',
+  'title': 'T',
+  'subject': '≡',
+  'short-text': '≡',
+  'wrap-text': '≡',
+  'text-fields': 'Aa',
+  'spellcheck': '✓',
+  'functions': 'ƒ',
+  'calculate': '🧮',
+  'money': '💰',
+  'payments': '💳',
+  'price-check': '💳✓',
+  'sell': '🏷',
+  'loyalty': '❤',
+  'card-giftcard': '🎁',
+  'card-membership': '🎫',
+  'redeem': '🎁',
+  'volunteer-activism': '🤝',
+  'handshake': '🤝',
+  'waving-hand': '👋',
+  'back-hand': '✋',
+  'front-hand': '✋',
+  'do-not-touch': '🚫',
+  'pan-tool': '✋',
+  'swipe': '👆',
+  'touch-app': '👆',
+  'gesture': '✌',
+  'pinch': '🤌',
+
+  // Default fallback
+  'default': '■',
+};
+
+// TypeScript type that accepts any string (matches MaterialIcons name type)
+type IconName = string;
 
 interface SafeIconProps {
   name: IconName;
@@ -26,38 +429,41 @@ interface SafeIconProps {
   style?: any;
 }
 
-interface State {
-  hasError: boolean;
+// Static glyphMap stub — keeps `keyof typeof MaterialIcons.glyphMap` usages from breaking
+const glyphMap: Record<string, number> = new Proxy({} as Record<string, number>, {
+  get: () => 1,
+  has: () => true,
+});
+
+function SafeIcon({ name, size = 24, color = '#000000', style }: SafeIconProps) {
+  const char = ICON_MAP[name] ?? ICON_MAP['default'];
+  const fontSize = size * 0.75; // scale to approximate visual match
+
+  return (
+    <Text
+      style={[
+        {
+          fontSize,
+          color,
+          lineHeight: size,
+          width: size,
+          height: size,
+          textAlign: 'center',
+          // Prevent text scaling from breaking icon sizes
+          includeFontPadding: false,
+        },
+        style,
+      ]}
+      allowFontScaling={false}
+      numberOfLines={1}
+    >
+      {char}
+    </Text>
+  );
 }
 
-class SafeIcon extends React.Component<SafeIconProps, State> {
-  // Expose glyphMap so usages like `keyof typeof MaterialIcons.glyphMap` still work
-  static glyphMap = MaterialIcons.glyphMap;
-
-  constructor(props: SafeIconProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
-
-  static getDerivedStateFromError(): State {
-    return { hasError: true };
-  }
-
-  componentDidCatch() {
-    // Silently swallow — expected on Android in the OnSpace container
-  }
-
-  render() {
-    if (this.state.hasError) {
-      // Return null — do NOT render any View here.
-      // Using React.createElement('View') or a View component causes a secondary
-      // "View config getter callback must be a function" crash when the native
-      // view registry is in a degraded state on the OnSpace Android container.
-      return null;
-    }
-    return React.createElement(MaterialIcons, this.props as any);
-  }
-}
+// Expose glyphMap so patterns like `keyof typeof MaterialIcons.glyphMap` compile
+SafeIcon.glyphMap = glyphMap;
 
 export { SafeIcon };
 export default SafeIcon;
