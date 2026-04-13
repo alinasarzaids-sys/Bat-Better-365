@@ -1,9 +1,6 @@
 // ─── Phase 1: Stub NativeModules font entries BEFORE any module loads ─────────
-// CRITICAL: This file must use only require() calls, never ES import statements.
-// ES `import` is hoisted by Babel/Metro and executes BEFORE any code in the
-// module body, which would cause expo-router/entry to load and evaluate
-// expo-font BEFORE our patches run. require() calls are NOT hoisted and execute
-// in the order they appear.
+// CRITICAL: Only require() calls here — ES `import` is hoisted by Babel/Metro
+// and executes BEFORE any code in the module body, so patches would run too late.
 
 (function patchNativeModulesFonts() {
   try {
@@ -11,35 +8,18 @@
     var NativeModules = RN.NativeModules;
     if (!NativeModules) return;
 
-    // Safe stub: isLoadedNative returns false so expo-font falls back to JS checks
-    var fontStub = {
-      isLoadedNative: function() { return false; },
-      isLoaded: function() { return true; },
-      getLoadedFonts: function() { return []; },
-      loadAsync: function() { return Promise.resolve(); },
-      unloadAllAsync: function() { return Promise.resolve(); },
-    };
-
-    // Force-write a property even on sealed/native-proxy objects
     function forceDefine(obj, key, value) {
       if (!obj || typeof obj !== 'object') return;
+      try { obj[key] = value; } catch (_) {}
       try {
-        obj[key] = value;
         if (obj[key] !== value) {
           Object.defineProperty(obj, key, {
             value: value, writable: true, configurable: true, enumerable: true,
           });
         }
-      } catch (_a) {
-        try {
-          Object.defineProperty(obj, key, {
-            value: value, writable: true, configurable: true, enumerable: true,
-          });
-        } catch (_b) { /* cannot patch this property */ }
-      }
+      } catch (_) {}
     }
 
-    // Ensure each font-related native module key exists and has valid functions
     ['ExpoFont', 'ExpoFontLoader', 'RNVectorIcons'].forEach(function(key) {
       var existing = NativeModules[key];
       if (!existing || typeof existing !== 'object') {
@@ -51,7 +31,6 @@
           unloadAllAsync: function() { return Promise.resolve(); },
         });
       } else {
-        // Always overwrite these — they may be present but broken
         forceDefine(existing, 'isLoadedNative', function() { return false; });
         forceDefine(existing, 'isLoaded', function() { return true; });
         forceDefine(existing, 'getLoadedFonts', function() { return []; });
@@ -61,7 +40,6 @@
       }
     });
 
-    // Also patch NativeUnimoduleProxy constants map (SDK 48 compat layer)
     try {
       var proxy = NativeModules.NativeUnimoduleProxy;
       if (proxy && proxy.modulesConstantsMap) {
@@ -77,9 +55,7 @@
       }
     } catch (_) {}
 
-  } catch (_) {
-    // If even require('react-native') fails, nothing we can do
-  }
+  } catch (_) {}
 })();
 
 // ─── Phase 2: Silence known container warnings ────────────────────────────────
@@ -96,22 +72,15 @@ try {
   }
 } catch (_) {}
 
-// ─── Phase 3: Patch expo-font's isLoaded at module level ─────────────────────
-// CRITICAL FIX: Always overwrite isLoaded (and isLoadedNative) unconditionally.
-// The previous bug: we only patched if `typeof isLoaded !== 'function'` — but
-// isLoaded IS a function, just one that internally calls the broken native
-// isLoadedNative. We must replace it with a safe version that never reaches
-// the native layer.
+// ─── Phase 3: Patch expo-font isLoaded / isLoadedNative unconditionally ───────
 try {
   var expoFont = require('expo-font');
   if (expoFont) {
-    // Always overwrite — even if it's already a function it may be broken
     var safeIsLoaded = function() { return true; };
     var safeIsLoadedNative = function() { return false; };
 
     try { expoFont.isLoaded = safeIsLoaded; } catch (_) {}
     try { expoFont.isLoadedNative = safeIsLoadedNative; } catch (_) {}
-
     try {
       Object.defineProperty(expoFont, 'isLoaded', {
         value: safeIsLoaded, writable: true, configurable: true, enumerable: true,
@@ -122,8 +91,6 @@ try {
         value: safeIsLoadedNative, writable: true, configurable: true, enumerable: true,
       });
     } catch (_) {}
-
-    // Patch the default export too (some bundler versions expose it differently)
     if (expoFont.default) {
       try { expoFont.default.isLoaded = safeIsLoaded; } catch (_) {}
       try { expoFont.default.isLoadedNative = safeIsLoadedNative; } catch (_) {}
@@ -131,6 +98,79 @@ try {
   }
 } catch (_) {}
 
+// ─── Phase 4: Wrap Icon.prototype.render to swallow isLoadedNative crashes ────
+// ROOT CAUSE: Icon is a class component that captured its own closure reference
+// to the internal isLoaded/isLoadedNative functions at module evaluation time.
+// Patching expoFont.isLoaded AFTER the module loaded doesn't update those
+// captured references. The only guaranteed fix is to wrap the class render()
+// method itself in a try-catch so crashes inside it return null instead of
+// propagating up and crashing the entire React tree.
+(function patchVectorIconsRender() {
+  try {
+    var vectorIcons = require('@expo/vector-icons');
+    if (!vectorIcons) return;
+
+    // Get all icon set classes exported from the package
+    var iconSets = ['MaterialIcons', 'MaterialCommunityIcons', 'Ionicons', 'FontAwesome',
+      'FontAwesome5', 'AntDesign', 'Entypo', 'EvilIcons', 'Feather', 'Foundation',
+      'Octicons', 'SimpleLineIcons', 'Zocial'];
+
+    iconSets.forEach(function(name) {
+      try {
+        var IconClass = vectorIcons[name];
+        if (!IconClass) return;
+
+        // Walk the prototype chain to find the render method
+        var proto = IconClass.prototype;
+        if (!proto) return;
+
+        // Patch render if it exists on this prototype
+        if (typeof proto.render === 'function' && !proto.__iconRenderPatched) {
+          var originalRender = proto.render;
+          proto.render = function() {
+            try {
+              return originalRender.apply(this, arguments);
+            } catch (e) {
+              // isLoadedNative crash — return null to avoid tree crash
+              return null;
+            }
+          };
+          proto.__iconRenderPatched = true;
+        }
+
+        // Also patch the class's own render if different from prototype
+        if (typeof IconClass.render === 'function' && !IconClass.__iconRenderPatched) {
+          var originalClassRender = IconClass.render;
+          IconClass.render = function() {
+            try {
+              return originalClassRender.apply(this, arguments);
+            } catch (e) {
+              return null;
+            }
+          };
+          IconClass.__iconRenderPatched = true;
+        }
+      } catch (_) {}
+    });
+
+    // Also try patching via the createIconSet base class if accessible
+    try {
+      var createIconSet = require('@expo/vector-icons/build/vendor/react-native-vector-icons/lib/create-icon-set');
+      if (createIconSet && createIconSet.default) {
+        var BaseIcon = createIconSet.default;
+        var baseProto = BaseIcon && BaseIcon.prototype;
+        if (baseProto && typeof baseProto.render === 'function' && !baseProto.__iconRenderPatched) {
+          var origBaseRender = baseProto.render;
+          baseProto.render = function() {
+            try { return origBaseRender.apply(this, arguments); } catch (_) { return null; }
+          };
+          baseProto.__iconRenderPatched = true;
+        }
+      }
+    } catch (_) {}
+
+  } catch (_) {}
+})();
+
 // ─── Entry point ──────────────────────────────────────────────────────────────
-// This must be last — it triggers the full app load including expo-router.
 require('expo-router/entry');
