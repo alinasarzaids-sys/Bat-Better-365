@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, Dimensions,
@@ -169,6 +170,12 @@ export default function AcademyAnalyticsScreen() {
   const bowlingPct = totalBallsBowled > 0 ? Math.round((totalSuccessfulBowl / totalBallsBowled) * 100) : 0;
   const fieldingPct = totalFieldingChances > 0 ? Math.round((totalCatches / totalFieldingChances) * 100) : 0;
 
+  const totalFitnessSets = logs.reduce((a, l) => a + ((l as any).fitness_sets || 0), 0);
+  const totalFitnessReps = logs.reduce((a, l) => a + ((l as any).fitness_reps || 0), 0);
+  const totalFitnessExercises = logs.reduce((a, l) => a + ((l as any).fitness_exercises || 0), 0);
+  const fitnessLogs = logs.filter(l => l.session_type === 'Fitness');
+  const hasFitness = fitnessLogs.length > 0;
+
   // Weekly data — last 12 weeks
   const weeklyData = (() => {
     const today = new Date();
@@ -296,9 +303,11 @@ export default function AcademyAnalyticsScreen() {
                   <StatCard icon="event" iconColor={colors.primary} val={n} label="Sessions" />
                   <StatCard icon="timer" iconColor={colors.mental} val={`${Math.round(totalMin / 60)}h ${totalMin % 60}m`} label="Total Time" />
                   <StatCard icon="flash-on" iconColor={ic(Math.round(avgInt))} val={avgInt.toFixed(1)} label="Avg Intensity" />
-                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${battingPct}%`} label={`Batting Success\n${totalBallsFaced}/${totalBallsHit}`} />}
-                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={`${bowlingPct}%`} label={`Bowling Success\n${totalBallsBowled}/${totalSuccessfulBowl}`} />}
-                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${fieldingPct}%`} label={`Fielding Success\n${totalFieldingChances}/${totalCatches}`} />}
+                  {/* Fitness stats */}
+                  {hasFitness && <StatCard icon="fitness-center" iconColor={colors.success} val={fitnessLogs.length} label="Fitness Sessions" />}
+                  {totalBallsFaced > 0 && <StatCard icon="sports-cricket" iconColor={colors.technical} val={`${battingPct}%`} label={`Batting Success\n${totalBallsHit}/${totalBallsFaced}`} />}
+                  {totalBallsBowled > 0 && <StatCard icon="sports-cricket" iconColor={colors.physical} val={`${bowlingPct}%`} label={`Bowling Success\n${totalSuccessfulBowl}/${totalBallsBowled}`} />}
+                  {totalFieldingChances > 0 && <StatCard icon="sports-handball" iconColor={colors.tactical} val={`${fieldingPct}%`} label={`Fielding Success\n${totalCatches}/${totalFieldingChances}`} />}
                 </View>
 
                 {/* Intensity distribution */}
@@ -566,6 +575,58 @@ export default function AcademyAnalyticsScreen() {
                           data={logs.filter(l => (l.catches || 0) + (l.run_outs || 0) + (l.stumpings || 0) > 0).slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: l.catches || 0 }))}
                           maxVal={Math.max(...logs.map(l => l.catches || 0), 1)}
                           barColor={colors.tactical}
+                          labelKey="label"
+                          valueKey="val"
+                          height={100}
+                        />
+                      </>
+                    )}
+                  </View>
+                )}
+
+                {/* Fitness analytics */}
+                {hasFitness && (
+                  <View style={[styles.card, { borderLeftWidth: 4, borderLeftColor: colors.success }]}>
+                    <View style={styles.cardTitleRow}>
+                      <MaterialIcons name="fitness-center" size={18} color={colors.success} />
+                      <Text style={[styles.cardTitle, { color: colors.success }]}>Fitness Performance</Text>
+                    </View>
+                    <View style={styles.bigStatRow}>
+                      <View style={styles.bigStat}>
+                        <Text style={[styles.bigStatVal, { color: colors.success }]}>{totalFitnessSets}</Text>
+                        <Text style={styles.bigStatLabel}>Sets Done</Text>
+                      </View>
+                      <View style={styles.bigStat}>
+                        <Text style={[styles.bigStatVal, { color: colors.primary }]}>{totalFitnessReps}</Text>
+                        <Text style={styles.bigStatLabel}>Reps Done</Text>
+                      </View>
+                      {totalFitnessExercises > 0 && (
+                        <View style={styles.bigStat}>
+                          <Text style={[styles.bigStatVal, { color: colors.warning }]}>{totalFitnessExercises}</Text>
+                          <Text style={styles.bigStatLabel}>Exercises</Text>
+                        </View>
+                      )}
+                    </View>
+                    {fitnessLogs.some(l => (l as any).fitness_sets) && (
+                      <>
+                        <Text style={styles.trendSubTitle}>Sets Per Session</Text>
+                        <BarChart
+                          data={fitnessLogs.slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: (l as any).fitness_sets || 0 }))}
+                          maxVal={Math.max(...fitnessLogs.map(l => (l as any).fitness_sets || 0), 1)}
+                          barColor={colors.success}
+                          labelKey="label"
+                          valueKey="val"
+                          height={100}
+                        />
+                      </>
+                    )}
+                    {fitnessLogs.some(l => (l as any).fitness_reps) && (
+                      <>
+                        <Text style={[styles.trendSubTitle, { marginTop: spacing.md }]}>Reps Per Session</Text>
+                        <BarChart
+                          data={fitnessLogs.slice(0, 10).reverse().map(l => ({ label: l.log_date.slice(5), val: (l as any).fitness_reps || 0 }))}
+                          maxVal={Math.max(...fitnessLogs.map(l => (l as any).fitness_reps || 0), 1)}
+                          barColor={colors.primary}
                           labelKey="label"
                           valueKey="val"
                           height={100}

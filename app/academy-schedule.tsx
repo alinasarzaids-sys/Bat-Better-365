@@ -650,25 +650,35 @@ function EditAcademySessionModal({ visible, session, onClose, onSaved }: {
 }
 
 // ─── Personal Session Modal (create / edit) ───────────────────────────────────
-function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, onSaved }: {
-  visible: boolean; editEntry: ScheduleEntry | null; userId: string; academyId: string; onClose: () => void; onSaved: () => void;
+function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, onSaved,
+  personalDate, setPersonalDate, personalTime, setPersonalTime,
+  showPersonalDatePicker, setShowPersonalDatePicker,
+  showPersonalTimePicker, setShowPersonalTimePicker,
+}: {
+  visible: boolean; editEntry: ScheduleEntry | null; userId: string; academyId: string;
+  onClose: () => void; onSaved: () => void;
+  personalDate: string; setPersonalDate: (v: string) => void;
+  personalTime: string; setPersonalTime: (v: string) => void;
+  showPersonalDatePicker: boolean; setShowPersonalDatePicker: (v: boolean) => void;
+  showPersonalTimePicker: boolean; setShowPersonalTimePicker: (v: boolean) => void;
 }) {
   const { showAlert } = useAlert();
   const [title, setTitle] = useState('');
-  const [date, setDate] = useState(todayStr());
-  const [time, setTime] = useState(now12());
-  const [location, setLocation] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
 
   React.useEffect(() => {
     if (visible) {
       if (editEntry) {
-        setTitle(editEntry.title); setDate(editEntry.date); setTime(editEntry.time);
-        setLocation(editEntry.location || ''); setNotes(editEntry.notes || '');
+        setTitle(editEntry.title);
+        setPersonalDate(editEntry.date);
+        setPersonalTime(editEntry.time);
+        setNotes(editEntry.notes || '');
       } else {
-        setTitle(''); setDate(todayStr()); setTime(now12()); setLocation(''); setNotes('');
+        setTitle('');
+        setPersonalDate(todayStr());
+        setPersonalTime(now12());
+        setNotes('');
       }
     }
   }, [visible, editEntry]);
@@ -677,20 +687,19 @@ function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, 
     if (!title.trim()) { showAlert('Error', 'Please enter a title'); return; }
     setSaving(true);
     const supabase = getSupabaseClient();
+    const scheduledDate = `${personalDate}T${personalTime}:00`;
     if (editEntry?.rawPersonalId) {
-      // Update existing personal session
       const { error } = await supabase.from('sessions').update({
-        title: title.trim(), scheduled_date: `${date}T${time}:00`,
+        title: title.trim(), scheduled_date: scheduledDate,
         notes: notes || null,
       }).eq('id', editEntry.rawPersonalId).eq('user_id', userId);
       setSaving(false);
       if (error) { showAlert('Error', error.message); return; }
     } else {
-      // Create new personal session linked to this academy context (just a personal session)
       const { error } = await supabase.from('sessions').insert({
         user_id: userId,
         title: title.trim(),
-        scheduled_date: `${date}T${time}:00`,
+        scheduled_date: scheduledDate,
         session_type: 'Training',
         status: 'planned',
         notes: notes || null,
@@ -727,13 +736,18 @@ function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, 
                 <View style={modal.sectionHeader}><MaterialIcons name="event" size={16} color={colors.success} /><Text style={modal.sectionTitle}>Session Details</Text></View>
                 <Text style={modal.label}>Title *</Text>
                 <TextInput style={modal.input} value={title} onChangeText={setTitle} placeholder="e.g. Solo batting practice" placeholderTextColor={colors.textSecondary} />
-                <DateField label="Date" value={date} onChange={setDate} />
-                <Text style={modal.label}>Time</Text>
-                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowTimePicker(true)}>
-                  <MaterialIcons name="access-time" size={16} color={colors.success} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(time)}</Text>
+                <Text style={modal.label}>Date</Text>
+                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowPersonalDatePicker(true)}>
+                  <MaterialIcons name="calendar-today" size={16} color={colors.success} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
+                    {(() => { try { const [y,m,d] = personalDate.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'}); } catch { return personalDate; } })()}
+                  </Text>
                 </Pressable>
-                <TimePickerModal visible={showTimePicker} value={time} onConfirm={setTime} onClose={() => setShowTimePicker(false)} label="Session Time" />
+                <Text style={modal.label}>Time</Text>
+                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowPersonalTimePicker(true)}>
+                  <MaterialIcons name="access-time" size={16} color={colors.success} />
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(personalTime)}</Text>
+                </Pressable>
                 <Text style={modal.label}>Notes (Optional)</Text>
                 <TextInput style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} multiline placeholder="What do you plan to work on?" placeholderTextColor={colors.textSecondary} />
               </View>
@@ -771,6 +785,10 @@ export default function AcademyScheduleScreen() {
   const [showEditAcademy, setShowEditAcademy] = useState(false);
   const [editingPersonalEntry, setEditingPersonalEntry] = useState<ScheduleEntry | null>(null);
   const [showPersonalModal, setShowPersonalModal] = useState(false);
+  const [personalDate, setPersonalDate] = useState(todayStr());
+  const [personalTime, setPersonalTime] = useState(now12());
+  const [showPersonalDatePicker, setShowPersonalDatePicker] = useState(false);
+  const [showPersonalTimePicker, setShowPersonalTimePicker] = useState(false);
 
   // Create coach session form
   const [newTitle, setNewTitle] = useState('');
@@ -1007,6 +1025,29 @@ export default function AcademyScheduleScreen() {
         academyId={academyId}
         onClose={() => { setShowPersonalModal(false); setEditingPersonalEntry(null); }}
         onSaved={load}
+        personalDate={personalDate}
+        setPersonalDate={setPersonalDate}
+        personalTime={personalTime}
+        setPersonalTime={setPersonalTime}
+        showPersonalDatePicker={showPersonalDatePicker}
+        setShowPersonalDatePicker={setShowPersonalDatePicker}
+        showPersonalTimePicker={showPersonalTimePicker}
+        setShowPersonalTimePicker={setShowPersonalTimePicker}
+      />
+      {/* Date/time pickers for personal session — rendered at root level to avoid nested-modal issues */}
+      <DatePickerModal
+        visible={showPersonalDatePicker}
+        value={personalDate}
+        onConfirm={(v) => { setPersonalDate(v); setShowPersonalDatePicker(false); }}
+        onClose={() => setShowPersonalDatePicker(false)}
+        label="Session Date"
+      />
+      <TimePickerModal
+        visible={showPersonalTimePicker}
+        value={personalTime}
+        onConfirm={(v) => { setPersonalTime(v); setShowPersonalTimePicker(false); }}
+        onClose={() => setShowPersonalTimePicker(false)}
+        label="Session Time"
       />
 
       {/* Create Academy Session (coaches only) */}

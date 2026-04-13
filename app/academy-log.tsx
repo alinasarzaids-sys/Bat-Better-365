@@ -12,7 +12,7 @@ import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { useActiveSession } from '@/hooks/useActiveSession';
 
 // ─── Session Type Config ──────────────────────────────────────────────────────
-type SessionKind = 'Batting' | 'Bowling' | 'Fielding' | 'Keeping' | 'Fitness';
+type SessionKind = 'Batting' | 'Bowling' | 'Fielding' | 'Fitness';
 
 interface SessionConfig {
   kind: SessionKind;
@@ -76,21 +76,6 @@ const SESSION_CONFIGS: SessionConfig[] = [
       { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
       { id: 'confidence', text: 'How confident were you in the field?', type: 'stars' },
       { id: 'focus', text: 'How focused were you throughout?', type: 'stars' },
-    ],
-  },
-  {
-    kind: 'Keeping',
-    icon: 'sports-handball',
-    color: colors.mental,
-    counter1Label: 'Chances',
-    counter1Sub: 'Total balls coming to keeper',
-    counter2Label: 'Dismissals',
-    counter2Sub: 'Catches + stumpings completed',
-    closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'footwork', text: 'How was your footwork behind the stumps?', type: 'stars' },
-      { id: 'confidence', text: 'How confident did you feel overall?', type: 'stars' },
-      { id: 'focus', text: 'How focused were you behind the stumps?', type: 'stars' },
     ],
   },
   {
@@ -309,9 +294,14 @@ export default function AcademyLogScreen() {
       duration_minutes: Math.max(1, Math.floor(elapsed / 60)),
       intensity: answers['effort'] || answers['energy'] || answers['focus'] || answers['consistency'] || 5,
       balls_faced: config.kind === 'Batting' ? counter1 || undefined : undefined,
+      runs_scored: config.kind === 'Batting' ? counter2 || undefined : undefined,
       balls_bowled: config.kind === 'Bowling' ? counter1 || undefined : undefined,
-      catches: (config.kind === 'Keeping' || config.kind === 'Fielding') ? counter2 || undefined : undefined,
-      stumpings: config.kind === 'Keeping' ? counter2 || undefined : undefined,
+      wickets: config.kind === 'Bowling' ? counter2 || undefined : undefined,
+      catches: config.kind === 'Fielding' ? counter2 || undefined : undefined,
+      run_outs: config.kind === 'Fielding' ? counter1 || undefined : undefined,
+      fitness_exercises: config.kind === 'Fitness' ? (answers['exercises'] || undefined) : undefined,
+      fitness_sets: config.kind === 'Fitness' ? counter1 || undefined : undefined,
+      fitness_reps: config.kind === 'Fitness' ? counter2 || undefined : undefined,
       notes: noteParts.join('\n') || undefined,
     });
 
