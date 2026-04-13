@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { Card } from '../ui/Card';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { UserProgress } from '@/types';

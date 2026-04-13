@@ -4,7 +4,7 @@ import {
   ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
 import { getSupabaseClient } from '@/template';

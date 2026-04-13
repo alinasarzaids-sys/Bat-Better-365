@@ -10,7 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { Card } from '@/components/ui/Card';
 import { aiCoachService } from '@/services/aiCoachService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';

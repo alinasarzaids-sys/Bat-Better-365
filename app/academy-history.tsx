@@ -4,7 +4,7 @@ import {
   View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth } from '@/template';
 import { academyService, AcademyTrainingLog } from '@/services/academyService';

@@ -4,7 +4,7 @@ import {
   Platform, ScrollView, Pressable, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';

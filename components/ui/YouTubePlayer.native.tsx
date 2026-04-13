@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, StyleSheet, Pressable, Image, Text } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import YoutubePlayer from 'react-native-youtube-iframe';
 
 interface YouTubePlayerProps {

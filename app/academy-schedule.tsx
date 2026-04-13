@@ -4,7 +4,7 @@ import {
   Modal, TextInput, RefreshControl, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { useAuth, useAlert, getSupabaseClient } from '@/template';
 import { academyService, AcademySession, AcademySquad } from '@/services/academyService';

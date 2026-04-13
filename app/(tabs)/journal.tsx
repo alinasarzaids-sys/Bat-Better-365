@@ -11,7 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useAuth } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { useRouter, useLocalSearchParams } from 'expo-router';
