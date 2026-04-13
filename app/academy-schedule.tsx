@@ -19,19 +19,17 @@ interface PlanBlock {
   notes: string;
 }
 
-// A combined session entry — either an academy session or a personal one
 interface ScheduleEntry {
   id: string;
   source: 'academy' | 'personal';
   title: string;
-  date: string;       // YYYY-MM-DD
-  time: string;       // HH:MM (24h)
+  date: string;
+  time: string;
   location?: string;
   sessionType: string;
   notes?: string;
   squadId?: string | null;
   createdBy?: string;
-  // raw objects for editing
   rawAcademy?: AcademySession;
   rawPersonalId?: string;
 }
@@ -106,13 +104,12 @@ const SESSION_TYPE_COLORS: Record<string, string> = {
 };
 function typeColor(t: string) { return SESSION_TYPE_COLORS[t] || colors.primary; }
 
-// Source badge colors
 const SOURCE_COLORS = {
   academy: { bg: colors.primary + '18', text: colors.primary, border: colors.primary + '40' },
   personal: { bg: colors.success + '18', text: colors.success, border: colors.success + '40' },
 };
 
-// ─── Shared picker sheet styles ───────────────────────────────────────────────
+// ─── Shared picker styles ─────────────────────────────────────────────────────
 const tp = StyleSheet.create({
   overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg },
   card: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, width: '100%', maxWidth: 340 },
@@ -135,7 +132,150 @@ const tp = StyleSheet.create({
   confirmText: { fontSize: 15, fontWeight: '700', color: colors.textLight },
 });
 
-// ─── Time Picker ──────────────────────────────────────────────────────────────
+// ─── Inline Date Picker (View-based, no nested Modal) ─────────────────────────
+function InlineDatePicker({ value, onChange, onClose }: {
+  value: string; onChange: (v: string) => void; onClose: () => void;
+}) {
+  const parts = (value || todayStr()).split('-').map(Number);
+  const [year, setYear] = useState(parts[0] || new Date().getFullYear());
+  const [month, setMonth] = useState(parts[1] || new Date().getMonth() + 1);
+  const [day, setDay] = useState(parts[2] || new Date().getDate());
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const safeDay = Math.min(day, daysInMonth);
+  const formatted = `${String(safeDay).padStart(2, '0')} ${MONTHS[month - 1]} ${year}`;
+
+  const handleConfirm = () => {
+    onChange(`${year}-${String(month).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`);
+    onClose();
+  };
+
+  return (
+    <View style={inl.box}>
+      <Text style={inl.display}>{formatted}</Text>
+      <View style={inl.cols}>
+        <View style={inl.col}>
+          <Text style={inl.colLabel}>Day</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setDay(d => d >= daysInMonth ? 1 : d + 1)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
+          </Pressable>
+          <Text style={inl.colVal}>{String(safeDay).padStart(2, '0')}</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setDay(d => d <= 1 ? daysInMonth : d - 1)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
+          </Pressable>
+        </View>
+        <View style={[inl.col, { minWidth: 60 }]}>
+          <Text style={inl.colLabel}>Month</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setMonth(m => m >= 12 ? 1 : m + 1)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
+          </Pressable>
+          <Text style={[inl.colVal, { fontSize: 20 }]}>{MONTHS[month - 1]}</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setMonth(m => m <= 1 ? 12 : m - 1)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
+          </Pressable>
+        </View>
+        <View style={[inl.col, { minWidth: 72 }]}>
+          <Text style={inl.colLabel}>Year</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setYear(y => y + 1)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
+          </Pressable>
+          <Text style={[inl.colVal, { fontSize: 20 }]}>{year}</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setYear(y => Math.max(2020, y - 1))} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
+          </Pressable>
+        </View>
+      </View>
+      <View style={tp.btnRow}>
+        <Pressable style={tp.cancelBtn} onPress={onClose}><Text style={tp.cancelText}>Cancel</Text></Pressable>
+        <Pressable style={[tp.confirmBtn, { backgroundColor: colors.success }]} onPress={handleConfirm}>
+          <MaterialIcons name="check" size={18} color={colors.textLight} />
+          <Text style={tp.confirmText}>Set Date</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+// ─── Inline Time Picker (View-based, no nested Modal) ─────────────────────────
+function InlineTimePicker({ value, onChange, onClose }: {
+  value: string; onChange: (v: string) => void; onClose: () => void;
+}) {
+  const [hh, mm] = (value || '10:00').split(':').map(Number);
+  const [hour, setHour] = useState(isNaN(hh) ? 10 : hh);
+  const [minute, setMinute] = useState(isNaN(mm) ? 0 : mm);
+  const isPM = hour >= 12;
+  const h12 = hour % 12 || 12;
+  const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
+
+  const handleConfirm = () => {
+    onChange(`${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+    onClose();
+  };
+
+  return (
+    <View style={inl.box}>
+      <Text style={inl.display}>{formatted}</Text>
+      <View style={inl.cols}>
+        <View style={inl.col}>
+          <Text style={inl.colLabel}>Hour</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setHour(h => (h + 1) % 24)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
+          </Pressable>
+          <Text style={inl.colVal}>{String(h12).padStart(2, '0')}</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setHour(h => (h - 1 + 24) % 24)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
+          </Pressable>
+        </View>
+        <Text style={[tp.colon, { color: colors.text, fontSize: 24, paddingBottom: 0, alignSelf: 'center' }]}>:</Text>
+        <View style={inl.col}>
+          <Text style={inl.colLabel}>Min</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m + 5) % 60)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
+          </Pressable>
+          <Text style={inl.colVal}>{String(minute).padStart(2, '0')}</Text>
+          <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m - 5 + 60) % 60)} hitSlop={8}>
+            <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
+          </Pressable>
+        </View>
+        <View style={[tp.ampmCol, { marginTop: 20 }]}>
+          <Pressable
+            style={[tp.ampmBtn, !isPM ? { backgroundColor: colors.success, borderColor: colors.success } : { backgroundColor: 'transparent', borderColor: colors.border }]}
+            onPress={() => { if (hour >= 12) setHour(h => h - 12); }}
+          >
+            <Text style={[tp.ampmText, { color: !isPM ? colors.textLight : colors.textSecondary }]}>AM</Text>
+          </Pressable>
+          <Pressable
+            style={[tp.ampmBtn, isPM ? { backgroundColor: colors.success, borderColor: colors.success } : { backgroundColor: 'transparent', borderColor: colors.border }]}
+            onPress={() => { if (hour < 12) setHour(h => h + 12); }}
+          >
+            <Text style={[tp.ampmText, { color: isPM ? colors.textLight : colors.textSecondary }]}>PM</Text>
+          </Pressable>
+        </View>
+      </View>
+      <View style={tp.btnRow}>
+        <Pressable style={tp.cancelBtn} onPress={onClose}><Text style={tp.cancelText}>Cancel</Text></Pressable>
+        <Pressable style={[tp.confirmBtn, { backgroundColor: colors.success }]} onPress={handleConfirm}>
+          <MaterialIcons name="check" size={18} color={colors.textLight} />
+          <Text style={tp.confirmText}>Set Time</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const inl = StyleSheet.create({
+  box: {
+    backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md,
+    borderWidth: 1.5, borderColor: colors.success + '60', marginTop: 6, marginBottom: 4,
+  },
+  display: { fontSize: 22, fontWeight: '900', color: colors.success, textAlign: 'center', marginBottom: spacing.md },
+  cols: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: spacing.md },
+  col: { alignItems: 'center', minWidth: 52 },
+  colLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
+  colVal: { fontSize: 26, fontWeight: '900', color: colors.text, lineHeight: 32, textAlign: 'center', minWidth: 44 },
+  arrowBtn: { padding: 2 },
+});
+
+// ─── Time Picker Modal (for coach modals — single modal context) ───────────────
 function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   visible: boolean; value: string; onConfirm: (v: string) => void; onClose: () => void; label?: string;
 }) {
@@ -203,7 +343,7 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   );
 }
 
-// ─── Date Picker ──────────────────────────────────────────────────────────────
+// ─── Date Picker Modal (for coach modals) ─────────────────────────────────────
 function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
   visible: boolean; value: string; onConfirm: (v: string) => void; onClose: () => void; label?: string;
 }) {
@@ -356,14 +496,8 @@ const pb = StyleSheet.create({
 function SessionCard({
   entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal, memberPosition,
 }: {
-  entry: ScheduleEntry;
-  isCoach: boolean;
-  academyId: string;
-  userId: string;
-  today: string;
-  router: any;
-  onEditAcademy: (s: AcademySession) => void;
-  onEditPersonal: (entry: ScheduleEntry) => void;
+  entry: ScheduleEntry; isCoach: boolean; academyId: string; userId: string; today: string;
+  router: any; onEditAcademy: (s: AcademySession) => void; onEditPersonal: (entry: ScheduleEntry) => void;
   memberPosition?: string;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -372,44 +506,27 @@ function SessionCard({
   const isPast = entry.date < today;
   const isAcademy = entry.source === 'academy';
   const isPersonal = entry.source === 'personal';
-
-  // Players can only edit personal sessions they created
-  const canEdit = isCoach
-    ? isAcademy
-    : (isPersonal && entry.createdBy === userId);
-
+  const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId);
   const planBlocks = parsePlanBlocks(entry.notes);
   const objectives = parseObjectives(entry.notes);
   const coachNotes = parseCoachNotes(entry.notes);
   const hasPlan = planBlocks.length > 0 || objectives.length > 0 || !!coachNotes;
-
   const sourceC = SOURCE_COLORS[entry.source];
   const stripeColor = isPersonal ? colors.success : color;
 
   return (
     <Pressable
-      style={[
-        styles.sessionCard,
-        isToday && styles.sessionCardToday,
-        isPast && styles.sessionCardPast,
-      ]}
+      style={[styles.sessionCard, isToday && styles.sessionCardToday, isPast && styles.sessionCardPast]}
       onPress={() => setExpanded(e => !e)}
       activeOpacity={0.85}
     >
-      {/* Left stripe */}
       <View style={[styles.sessionStripe, { backgroundColor: isPast ? colors.border : stripeColor }]} />
-
       <View style={styles.sessionContent}>
-        {/* Top row: title + type badge */}
         <View style={styles.sessionTop}>
           <View style={{ flex: 1 }}>
             <View style={styles.sessionTitleRow}>
               <Text style={[styles.sessionTitle, isPast && { color: colors.textSecondary }]}>{entry.title}</Text>
-              {isToday && (
-                <View style={styles.todayBadge}>
-                  <Text style={styles.todayBadgeText}>TODAY</Text>
-                </View>
-              )}
+              {isToday && <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>}
               {isPast && (
                 <View style={styles.doneBadge}>
                   <MaterialIcons name="check-circle" size={12} color={colors.success} />
@@ -430,21 +547,15 @@ function SessionCard({
           </View>
         </View>
 
-        {/* Source badge row */}
         <View style={styles.sourceBadgeRow}>
           <View style={[styles.sourceBadge, { backgroundColor: sourceC.bg, borderColor: sourceC.border }]}>
-            <MaterialIcons
-              name={isAcademy ? 'shield' : 'person'}
-              size={10}
-              color={sourceC.text}
-            />
+            <MaterialIcons name={isAcademy ? 'shield' : 'person'} size={10} color={sourceC.text} />
             <Text style={[styles.sourceBadgeText, { color: sourceC.text }]}>
               {isAcademy ? 'Academy Session' : 'Personal Session'}
             </Text>
           </View>
         </View>
 
-        {/* Collapsed preview chips */}
         {!expanded && planBlocks.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.xs }}>
             <View style={{ flexDirection: 'row', gap: 5 }}>
@@ -458,7 +569,6 @@ function SessionCard({
           </ScrollView>
         )}
 
-        {/* Expanded details */}
         {expanded && hasPlan && (
           <View style={styles.planContainer}>
             {objectives.length > 0 && (
@@ -508,7 +618,6 @@ function SessionCard({
           </View>
         )}
 
-        {/* Start Session button — players, upcoming academy sessions only */}
         {!isCoach && isAcademy && !isPast && (
           <Pressable
             style={styles.startSessionBtn}
@@ -522,9 +631,7 @@ function SessionCard({
           </Pressable>
         )}
 
-        {/* Action buttons */}
         <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.xs }}>
-          {/* Coaches: attendance + edit for academy sessions */}
           {isCoach && isAcademy && !isPast && (
             <Pressable style={styles.actionBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
               <MaterialIcons name="fact-check" size={13} color={colors.primary} />
@@ -540,7 +647,6 @@ function SessionCard({
               <Text style={[styles.actionBtnText, { color: colors.warning }]}>Edit</Text>
             </Pressable>
           )}
-          {/* Players viewing academy sessions: read-only hint */}
           {!isCoach && isAcademy && expanded && (
             <View style={[styles.actionBtn, { backgroundColor: colors.border + '60' }]}>
               <MaterialIcons name="lock-outline" size={13} color={colors.textSecondary} />
@@ -649,60 +755,60 @@ function EditAcademySessionModal({ visible, session, onClose, onSaved }: {
   );
 }
 
-// ─── Personal Session Modal (create / edit) ───────────────────────────────────
-function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, onSaved,
-  personalDate, setPersonalDate, personalTime, setPersonalTime,
-  showPersonalDatePicker, setShowPersonalDatePicker,
-  showPersonalTimePicker, setShowPersonalTimePicker,
-}: {
-  visible: boolean; editEntry: ScheduleEntry | null; userId: string; academyId: string;
+// ─── Personal Session Modal — inline date/time (NO nested Modal) ──────────────
+function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: {
+  visible: boolean; editEntry: ScheduleEntry | null; userId: string;
   onClose: () => void; onSaved: () => void;
-  personalDate: string; setPersonalDate: (v: string) => void;
-  personalTime: string; setPersonalTime: (v: string) => void;
-  showPersonalDatePicker: boolean; setShowPersonalDatePicker: (v: boolean) => void;
-  showPersonalTimePicker: boolean; setShowPersonalTimePicker: (v: boolean) => void;
 }) {
   const { showAlert } = useAlert();
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [date, setDate] = useState(todayStr());
+  const [time, setTime] = useState(now12());
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   React.useEffect(() => {
     if (visible) {
       if (editEntry) {
         setTitle(editEntry.title);
-        setPersonalDate(editEntry.date);
-        setPersonalTime(editEntry.time);
+        setDate(editEntry.date);
+        setTime(editEntry.time);
         setNotes(editEntry.notes || '');
       } else {
         setTitle('');
-        setPersonalDate(todayStr());
-        setPersonalTime(now12());
+        setDate(todayStr());
+        setTime(now12());
         setNotes('');
       }
+      setShowDatePicker(false);
+      setShowTimePicker(false);
     }
   }, [visible, editEntry]);
+
+  const displayDate = (() => {
+    try {
+      const [y, m, d] = date.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch { return date; }
+  })();
 
   const handleSave = async () => {
     if (!title.trim()) { showAlert('Error', 'Please enter a title'); return; }
     setSaving(true);
     const supabase = getSupabaseClient();
-    const scheduledDate = `${personalDate}T${personalTime}:00`;
+    const scheduledDate = `${date}T${time}:00`;
     if (editEntry?.rawPersonalId) {
       const { error } = await supabase.from('sessions').update({
-        title: title.trim(), scheduled_date: scheduledDate,
-        notes: notes || null,
+        title: title.trim(), scheduled_date: scheduledDate, notes: notes || null,
       }).eq('id', editEntry.rawPersonalId).eq('user_id', userId);
       setSaving(false);
       if (error) { showAlert('Error', error.message); return; }
     } else {
       const { error } = await supabase.from('sessions').insert({
-        user_id: userId,
-        title: title.trim(),
-        scheduled_date: scheduledDate,
-        session_type: 'Training',
-        status: 'planned',
-        notes: notes || null,
+        user_id: userId, title: title.trim(), scheduled_date: scheduledDate,
+        session_type: 'Training', status: 'planned', notes: notes || null,
       });
       setSaving(false);
       if (error) { showAlert('Error', error.message); return; }
@@ -732,27 +838,71 @@ function PersonalSessionModal({ visible, editEntry, userId, academyId, onClose, 
                   This session is only visible to you. Academy sessions are created by your coach.
                 </Text>
               </View>
+
               <View style={modal.sectionBlock}>
-                <View style={modal.sectionHeader}><MaterialIcons name="event" size={16} color={colors.success} /><Text style={modal.sectionTitle}>Session Details</Text></View>
+                <View style={modal.sectionHeader}>
+                  <MaterialIcons name="event" size={16} color={colors.success} />
+                  <Text style={modal.sectionTitle}>Session Details</Text>
+                </View>
+
                 <Text style={modal.label}>Title *</Text>
-                <TextInput style={modal.input} value={title} onChangeText={setTitle} placeholder="e.g. Solo batting practice" placeholderTextColor={colors.textSecondary} />
-                <Text style={modal.label}>Date</Text>
-                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowPersonalDatePicker(true)}>
+                <TextInput
+                  style={modal.input} value={title} onChangeText={setTitle}
+                  placeholder="e.g. Solo batting practice" placeholderTextColor={colors.textSecondary}
+                />
+
+                {/* Date — inline picker, no nested Modal */}
+                <Text style={[modal.label, { marginTop: spacing.sm }]}>Date</Text>
+                <Pressable
+                  style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                  onPress={() => { setShowTimePicker(false); setShowDatePicker(v => !v); }}
+                >
                   <MaterialIcons name="calendar-today" size={16} color={colors.success} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
-                    {(() => { try { const [y,m,d] = personalDate.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString('en-US',{day:'numeric',month:'short',year:'numeric'}); } catch { return personalDate; } })()}
-                  </Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 }}>{displayDate}</Text>
+                  <MaterialIcons name={showDatePicker ? 'expand-less' : 'expand-more'} size={16} color={colors.textSecondary} />
                 </Pressable>
-                <Text style={modal.label}>Time</Text>
-                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => setShowPersonalTimePicker(true)}>
+                {showDatePicker && (
+                  <InlineDatePicker
+                    value={date}
+                    onChange={(v) => { setDate(v); setShowDatePicker(false); }}
+                    onClose={() => setShowDatePicker(false)}
+                  />
+                )}
+
+                {/* Time — inline picker, no nested Modal */}
+                <Text style={[modal.label, { marginTop: spacing.sm }]}>Time</Text>
+                <Pressable
+                  style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
+                  onPress={() => { setShowDatePicker(false); setShowTimePicker(v => !v); }}
+                >
                   <MaterialIcons name="access-time" size={16} color={colors.success} />
-                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>{formatTime12(personalTime)}</Text>
+                  <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 }}>{formatTime12(time)}</Text>
+                  <MaterialIcons name={showTimePicker ? 'expand-less' : 'expand-more'} size={16} color={colors.textSecondary} />
                 </Pressable>
-                <Text style={modal.label}>Notes (Optional)</Text>
-                <TextInput style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} multiline placeholder="What do you plan to work on?" placeholderTextColor={colors.textSecondary} />
+                {showTimePicker && (
+                  <InlineTimePicker
+                    value={time}
+                    onChange={(v) => { setTime(v); setShowTimePicker(false); }}
+                    onClose={() => setShowTimePicker(false)}
+                  />
+                )}
+
+                <Text style={[modal.label, { marginTop: spacing.sm }]}>Notes (Optional)</Text>
+                <TextInput
+                  style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]}
+                  value={notes} onChangeText={setNotes} multiline
+                  placeholder="What do you plan to work on?" placeholderTextColor={colors.textSecondary}
+                />
               </View>
-              <Pressable style={[modal.submitBtn, { backgroundColor: colors.success, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]} onPress={handleSave}>
-                {saving ? <ActivityIndicator color={colors.textLight} /> : <><MaterialIcons name="save" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>{editEntry ? 'Save Changes' : 'Add to Schedule'}</Text></>}
+
+              <Pressable
+                style={[modal.submitBtn, { backgroundColor: colors.success, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]}
+                onPress={handleSave}
+              >
+                {saving
+                  ? <ActivityIndicator color={colors.textLight} />
+                  : <><MaterialIcons name="save" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>{editEntry ? 'Save Changes' : 'Add to Schedule'}</Text></>
+                }
               </Pressable>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -779,18 +929,12 @@ export default function AcademyScheduleScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [squadFilter, setSquadFilter] = useState<string | null>(null);
 
-  // Modals
   const [showCreateCoach, setShowCreateCoach] = useState(false);
   const [editingAcademySession, setEditingAcademySession] = useState<AcademySession | null>(null);
   const [showEditAcademy, setShowEditAcademy] = useState(false);
   const [editingPersonalEntry, setEditingPersonalEntry] = useState<ScheduleEntry | null>(null);
   const [showPersonalModal, setShowPersonalModal] = useState(false);
-  const [personalDate, setPersonalDate] = useState(todayStr());
-  const [personalTime, setPersonalTime] = useState(now12());
-  const [showPersonalDatePicker, setShowPersonalDatePicker] = useState(false);
-  const [showPersonalTimePicker, setShowPersonalTimePicker] = useState(false);
 
-  // Create coach session form
   const [newTitle, setNewTitle] = useState('');
   const [newDate, setNewDate] = useState(todayStr());
   const [newTime, setNewTime] = useState(now12());
@@ -810,7 +954,6 @@ export default function AcademyScheduleScreen() {
     ]);
     setSquads(squadsRes.data || []);
 
-    const today = todayStr();
     const academyEntries: ScheduleEntry[] = (sessRes.data || []).map(s => ({
       id: `academy_${s.id}`,
       source: 'academy' as const,
@@ -825,7 +968,6 @@ export default function AcademyScheduleScreen() {
       rawAcademy: s,
     }));
 
-    // Load personal sessions from `sessions` table for this user
     let personalEntries: ScheduleEntry[] = [];
     if (!isCoach) {
       try {
@@ -918,14 +1060,17 @@ export default function AcademyScheduleScreen() {
       <View style={styles.header}>
         <Pressable onPress={() => router.back()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color={colors.text} /></Pressable>
         <Text style={styles.headerTitle}>Schedule</Text>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          {/* Players can add personal sessions */}
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          {/* Players: clearly labelled text button */}
           {!isCoach && (
-            <Pressable style={styles.addBtn} onPress={() => { setEditingPersonalEntry(null); setShowPersonalModal(true); }}>
-              <MaterialIcons name="person-add" size={20} color={colors.success} />
+            <Pressable
+              style={styles.addPersonalBtn}
+              onPress={() => { setEditingPersonalEntry(null); setShowPersonalModal(true); }}
+            >
+              <Text style={styles.addPersonalBtnText}>+ Personal Session</Text>
             </Pressable>
           )}
-          {/* Coaches create academy sessions */}
+          {/* Coaches: + icon button */}
           {isCoach && (
             <Pressable style={styles.addBtn} onPress={() => { resetCoachForm(); setShowCreateCoach(true); }}>
               <MaterialIcons name="add" size={22} color={colors.primary} />
@@ -934,7 +1079,6 @@ export default function AcademyScheduleScreen() {
         </View>
       </View>
 
-      {/* Squad filter chips */}
       {squads.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           style={{ maxHeight: 52, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border }}
@@ -951,7 +1095,6 @@ export default function AcademyScheduleScreen() {
         </ScrollView>
       )}
 
-      {/* Legend for players */}
       {!isCoach && (
         <View style={styles.legendBar}>
           <View style={styles.legendItem}>
@@ -978,7 +1121,7 @@ export default function AcademyScheduleScreen() {
           <View style={styles.emptyState}>
             <MaterialIcons name="event-note" size={64} color={colors.border} />
             <Text style={styles.emptyTitle}>No sessions scheduled</Text>
-            <Text style={styles.emptySub}>{isCoach ? 'Tap + to create a session' : 'Your coach will schedule sessions · tap the icon above to add a personal session'}</Text>
+            <Text style={styles.emptySub}>{isCoach ? 'Tap + to create a session' : 'Your coach will schedule sessions'}</Text>
           </View>
         )}
 
@@ -1009,7 +1152,6 @@ export default function AcademyScheduleScreen() {
         )}
       </ScrollView>
 
-      {/* Edit Academy Session (coaches only) */}
       <EditAcademySessionModal
         visible={showEditAcademy}
         session={editingAcademySession}
@@ -1017,37 +1159,13 @@ export default function AcademyScheduleScreen() {
         onSaved={load}
       />
 
-      {/* Personal Session Modal */}
+      {/* Personal Session Modal — date/time are inline Views, no secondary Modal */}
       <PersonalSessionModal
         visible={showPersonalModal}
         editEntry={editingPersonalEntry}
         userId={userId}
-        academyId={academyId}
         onClose={() => { setShowPersonalModal(false); setEditingPersonalEntry(null); }}
         onSaved={load}
-        personalDate={personalDate}
-        setPersonalDate={setPersonalDate}
-        personalTime={personalTime}
-        setPersonalTime={setPersonalTime}
-        showPersonalDatePicker={showPersonalDatePicker}
-        setShowPersonalDatePicker={setShowPersonalDatePicker}
-        showPersonalTimePicker={showPersonalTimePicker}
-        setShowPersonalTimePicker={setShowPersonalTimePicker}
-      />
-      {/* Date/time pickers for personal session — rendered at root level to avoid nested-modal issues */}
-      <DatePickerModal
-        visible={showPersonalDatePicker}
-        value={personalDate}
-        onConfirm={(v) => { setPersonalDate(v); setShowPersonalDatePicker(false); }}
-        onClose={() => setShowPersonalDatePicker(false)}
-        label="Session Date"
-      />
-      <TimePickerModal
-        visible={showPersonalTimePicker}
-        value={personalTime}
-        onConfirm={(v) => { setPersonalTime(v); setShowPersonalTimePicker(false); }}
-        onClose={() => setShowPersonalTimePicker(false)}
-        label="Session Time"
       />
 
       {/* Create Academy Session (coaches only) */}
@@ -1161,6 +1279,11 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
   headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700', flex: 1 },
   addBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
+  addPersonalBtn: {
+    backgroundColor: colors.success + '18', borderWidth: 1, borderColor: colors.success + '60',
+    borderRadius: borderRadius.md, paddingHorizontal: spacing.sm + 2, paddingVertical: 8,
+  },
+  addPersonalBtnText: { fontSize: 12, color: colors.success, fontWeight: '800' },
 
   legendBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
