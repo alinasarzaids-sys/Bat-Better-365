@@ -12,7 +12,7 @@
     if (!NativeModules) return;
 
     // Safe stub: isLoadedNative returns false so expo-font falls back to JS checks
-    var stub = {
+    var fontStub = {
       isLoadedNative: function() { return false; },
       isLoaded: function() { return true; },
       getLoadedFonts: function() { return []; },
@@ -51,17 +51,12 @@
           unloadAllAsync: function() { return Promise.resolve(); },
         });
       } else {
-        if (typeof existing.isLoadedNative !== 'function') {
-          forceDefine(existing, 'isLoadedNative', stub.isLoadedNative);
-        }
-        if (typeof existing.isLoaded !== 'function') {
-          forceDefine(existing, 'isLoaded', stub.isLoaded);
-        }
-        if (typeof existing.getLoadedFonts !== 'function') {
-          forceDefine(existing, 'getLoadedFonts', stub.getLoadedFonts);
-        }
+        // Always overwrite these — they may be present but broken
+        forceDefine(existing, 'isLoadedNative', function() { return false; });
+        forceDefine(existing, 'isLoaded', function() { return true; });
+        forceDefine(existing, 'getLoadedFonts', function() { return []; });
         if (typeof existing.loadAsync !== 'function') {
-          forceDefine(existing, 'loadAsync', stub.loadAsync);
+          forceDefine(existing, 'loadAsync', function() { return Promise.resolve(); });
         }
       }
     });
@@ -102,16 +97,37 @@ try {
 } catch (_) {}
 
 // ─── Phase 3: Patch expo-font's isLoaded at module level ─────────────────────
-// Now that NativeModules is patched, we can also patch expo-font's exported
-// isLoaded function directly so @expo/vector-icons never reaches the native call.
+// CRITICAL FIX: Always overwrite isLoaded (and isLoadedNative) unconditionally.
+// The previous bug: we only patched if `typeof isLoaded !== 'function'` — but
+// isLoaded IS a function, just one that internally calls the broken native
+// isLoadedNative. We must replace it with a safe version that never reaches
+// the native layer.
 try {
   var expoFont = require('expo-font');
-  if (expoFont && typeof expoFont.isLoaded !== 'function') {
-    expoFont.isLoaded = function() { return true; };
-  }
-  // Some versions expose it on the default export
-  if (expoFont && expoFont.default && typeof expoFont.default.isLoaded !== 'function') {
-    expoFont.default.isLoaded = function() { return true; };
+  if (expoFont) {
+    // Always overwrite — even if it's already a function it may be broken
+    var safeIsLoaded = function() { return true; };
+    var safeIsLoadedNative = function() { return false; };
+
+    try { expoFont.isLoaded = safeIsLoaded; } catch (_) {}
+    try { expoFont.isLoadedNative = safeIsLoadedNative; } catch (_) {}
+
+    try {
+      Object.defineProperty(expoFont, 'isLoaded', {
+        value: safeIsLoaded, writable: true, configurable: true, enumerable: true,
+      });
+    } catch (_) {}
+    try {
+      Object.defineProperty(expoFont, 'isLoadedNative', {
+        value: safeIsLoadedNative, writable: true, configurable: true, enumerable: true,
+      });
+    } catch (_) {}
+
+    // Patch the default export too (some bundler versions expose it differently)
+    if (expoFont.default) {
+      try { expoFont.default.isLoaded = safeIsLoaded; } catch (_) {}
+      try { expoFont.default.isLoadedNative = safeIsLoadedNative; } catch (_) {}
+    }
   }
 } catch (_) {}
 
