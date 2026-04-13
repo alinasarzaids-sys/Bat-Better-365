@@ -1,21 +1,15 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 
 export function HeroCard() {
   return (
-    <LinearGradient
-      colors={['#4CAF50', '#388E3C']}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.hero}
-    >
+    <View style={styles.hero}>
       <Text style={styles.heroTitle}>Ready to Train?</Text>
       <Text style={styles.heroSubtitle}>
         Plan your perfect cricket training with drill-based or freestyle sessions, schedule training or match events, and track your progress with the daily journal.
       </Text>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -24,6 +18,7 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     borderRadius: borderRadius.xl,
     marginBottom: spacing.lg,
+    backgroundColor: '#4CAF50',
   },
   heroTitle: {
     ...typography.h1,

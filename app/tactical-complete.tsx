@@ -15,7 +15,6 @@ import { progressService } from '@/services/progressService';
 import { useAuth, useAlert, getSupabaseClient } from '@/template';
 import Slider from '@react-native-community/slider';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
-import { LinearGradient } from 'expo-linear-gradient';
 
 const { width } = Dimensions.get('window');
 
@@ -344,17 +343,12 @@ export default function TacticalCompleteScreen() {
           onPress={handleSave}
           disabled={saving}
         >
-          <LinearGradient
-            colors={['#52B788', '#4A90E2']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.saveButton}
-          >
+          <View style={styles.saveButton}>
             <MaterialIcons name="save" size={24} color={colors.textLight} />
             <Text style={styles.saveButtonText}>
               {saving ? 'Saving...' : 'Save & Continue'}
             </Text>
-          </LinearGradient>
+          </View>
         </Pressable>
       </View>
     </SafeAreaView>
@@ -583,6 +577,8 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.xl,
+    backgroundColor: '#52B788',
+    borderRadius: borderRadius.md,
   },
   saveButtonText: {
     ...typography.body,
