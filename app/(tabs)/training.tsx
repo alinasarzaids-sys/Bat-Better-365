@@ -196,13 +196,7 @@ export default function TrainingScreen() {
             <Text style={styles.headerTitle}>Training Pillars</Text>
             <Text style={styles.headerSubtitle}>Select a pillar to view drills</Text>
           </View>
-          <Pressable
-            style={styles.performanceHubBtn}
-            onPress={() => router.push('/session-analytics' as any)}
-          >
-            <MaterialIcons name="analytics" size={18} color={colors.primary} />
-            <Text style={styles.performanceHubText}>Performance Hub</Text>
-          </Pressable>
+
         </View>
       </View>
 
@@ -248,7 +242,7 @@ export default function TrainingScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Search - Only show for non-Tactical or when phase is selected */}
+        {/* Search - Show for all non-Tactical pillars; Mental always shows search */}
         {(selectedPillar !== 'Tactical' || selectedPhase) && (
           <View style={styles.searchContainer}>
             <MaterialIcons name="search" size={20} color={colors.textSecondary} />
@@ -449,9 +443,8 @@ export default function TrainingScreen() {
                           );
                         }
                         
-                        // Priority 2: Video URL or local image file
+                        // Priority 2: Local image file (check extension FIRST before remote thumbnail)
                         if (drill.video_url) {
-                          // Check if it's a local image file
                           if (drill.video_url.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
                             return (
                               <Image
@@ -462,8 +455,7 @@ export default function TrainingScreen() {
                               />
                             );
                           }
-                          
-                          // Try to get video thumbnail for remote videos
+                          // Remote video — try to extract thumbnail (YouTube / Drive)
                           const thumbnail = getVideoThumbnail(drill.video_url);
                           if (thumbnail) {
                             return (
@@ -481,7 +473,7 @@ export default function TrainingScreen() {
                             <View style={styles.videoPlaceholderContainer}>
                               <MaterialIcons
                                 name="play-circle-filled"
-                                size={80}
+                                size={64}
                                 color={pillars.find((p) => p.name === drill.pillar)?.color || colors.primary}
                               />
                               <Text style={styles.videoPlaceholderText}>Video Tutorial</Text>
@@ -573,22 +565,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.xs,
   },
-  performanceHubBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.xs,
-    backgroundColor: colors.primary + '15',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.full,
-    borderWidth: 1,
-    borderColor: colors.primary + '40',
-  },
-  performanceHubText: {
-    ...typography.caption,
-    color: colors.primary,
-    fontWeight: '700',
-  },
+
   tabsContainer: {
     flexDirection: 'row',
     backgroundColor: colors.surface,

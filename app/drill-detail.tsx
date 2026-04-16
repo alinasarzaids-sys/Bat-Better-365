@@ -298,19 +298,17 @@ export default function DrillDetailScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTop}>
+          <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={22} color={colors.text} />
+          </Pressable>
           <View style={[styles.pillarBadge, { backgroundColor: pillarColor + '20' }]}>
             <MaterialIcons name={getPillarIcon(drill.pillar)} size={14} color={pillarColor} />
             <Text style={[styles.pillarBadgeText, { color: pillarColor }]}>{drill.pillar}</Text>
           </View>
-          
           <View style={styles.durationBadge}>
             <MaterialIcons name="access-time" size={14} color={colors.textSecondary} />
-            <Text style={styles.durationBadgeText}>{drill.duration_minutes} min default</Text>
+            <Text style={styles.durationBadgeText}>{drill.duration_minutes} min</Text>
           </View>
-          
-          <Pressable onPress={() => router.back()} style={styles.closeButton}>
-            <MaterialIcons name="close" size={24} color={colors.text} />
-          </Pressable>
         </View>
 
         <Text style={styles.drillTitle}>{drill.name}</Text>
@@ -772,6 +770,10 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     fontSize: 11,
+  },
+  backBtn: {
+    width: 36, height: 36, justifyContent: 'center', alignItems: 'center',
+    backgroundColor: colors.background, borderRadius: 18, borderWidth: 1, borderColor: colors.border,
   },
   closeButton: {
     marginLeft: 'auto',

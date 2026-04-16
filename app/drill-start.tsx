@@ -246,6 +246,14 @@ Please provide ONLY the required run rate as a decimal number (e.g., 10.5). No e
 
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        {/* Back button in execution view */}
+        <View style={styles.execHeader}>
+          <Pressable onPress={() => { setScenarioStarted(false); setIsTimerRunning(false); }} style={styles.backButtonGeneric} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={24} color={colors.text} />
+          </Pressable>
+          <Text style={styles.execHeaderTitle}>{drill.name}</Text>
+          <View style={{ width: 40 }} />
+        </View>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.executionScrollContent}
@@ -445,6 +453,13 @@ Please provide ONLY the required run rate as a decimal number (e.g., 10.5). No e
   if (isTacticalDrill() && fieldDiagram && scenarioDescription) {
     return (
       <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+        <View style={styles.execHeader}>
+          <Pressable onPress={() => router.back()} style={styles.backButtonGeneric} hitSlop={8}>
+            <MaterialIcons name="arrow-back" size={24} color={colors.text} />
+          </Pressable>
+          <Text style={styles.execHeaderTitle} numberOfLines={1}>{drill.name}</Text>
+          <View style={{ width: 40 }} />
+        </View>
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
@@ -867,6 +882,15 @@ Please provide ONLY the required run rate as a decimal number (e.g., 10.5). No e
 }
 
 const styles = StyleSheet.create({
+  execHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: '#E0E0E0',
+  },
+  execHeaderTitle: {
+    flex: 1, fontSize: 15, fontWeight: '700', color: colors.text,
+    textAlign: 'center', paddingHorizontal: spacing.sm,
+  },
   container: {
     flex: 1,
     backgroundColor: '#FAFAFA',
