@@ -61,8 +61,8 @@ export default function RootScreen() {
     );
   }
 
-  // Step 1: Show onboarding if not completed
-  if (!onboardingCompleted) {
+  // Step 1: Show onboarding only for unauthenticated first-time visitors
+  if (!onboardingCompleted && !user) {
     return <Redirect href="/onboarding" />;
   }
 
