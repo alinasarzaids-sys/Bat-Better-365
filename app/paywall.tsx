@@ -66,6 +66,27 @@ export default function PaywallScreen() {
   const [discountApplied, setDiscountApplied] = useState(false);
   const [showCodeInput, setShowCodeInput] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [existingSub, setExistingSub] = useState<{ product_id: string; expires_at: string } | null>(null);
+  const [checkingExisting, setCheckingExisting] = useState(true);
+
+  React.useEffect(() => {
+    checkExistingSubscription();
+  }, [user?.id]);
+
+  const checkExistingSubscription = async () => {
+    if (!user?.id) { setCheckingExisting(false); return; }
+    const supabase = getSupabaseClient();
+    const { data: sub } = await supabase
+      .from('user_subscriptions')
+      .select('product_id, expires_at')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (sub && new Date(sub.expires_at) > new Date()) {
+      setExistingSub(sub);
+    }
+    setCheckingExisting(false);
+  };
 
   const applyDiscount = () => {
     if (discountCode.trim().toUpperCase() === DISCOUNT_CODE) {
@@ -147,7 +168,56 @@ export default function PaywallScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Header */}
+        {/* Back button */}
+        {router.canGoBack() && (
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <MaterialIcons name="arrow-back" size={20} color={colors.textSecondary} />
+            <Text style={styles.backBtnText}>Back</Text>
+          </Pressable>
+        )}
+
+        {/* Loading check */}
+        {checkingExisting && (
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: 80 }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        )}
+
+        {/* Already subscribed */}
+        {!checkingExisting && existingSub && (
+          <View style={styles.alreadySubCard}>
+            <View style={styles.alreadySubIcon}>
+              <MaterialIcons name="check-circle" size={48} color="#22C55E" />
+            </View>
+            <Text style={styles.alreadySubTitle}>You are Already Subscribed!</Text>
+            <Text style={styles.alreadySubSub}>
+              Your <Text style={{ fontWeight: '800', color: colors.primary }}>{existingSub.product_id.replace('bat_better_', '').replace('_', ' ')}</Text> plan is active until{' '}
+              <Text style={{ fontWeight: '700' }}>
+                {new Date(existingSub.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+              </Text>.
+            </Text>
+            <View style={styles.planFeatures}>
+              {FEATURES.map((f, i) => (
+                <View key={i} style={styles.featureRow}>
+                  <View style={styles.featureIcon}>
+                    <MaterialIcons name={f.icon as any} size={16} color="#22C55E" />
+                  </View>
+                  <Text style={styles.featureText}>{f.text}</Text>
+                </View>
+              ))}
+            </View>
+            <Pressable style={[styles.subscribeBtn, { backgroundColor: '#22C55E' }]} onPress={() => router.replace('/(tabs)' as any)}>
+              <MaterialIcons name="home" size={20} color="#fff" />
+              <Text style={styles.subscribeBtnText}>Go to Dashboard</Text>
+            </Pressable>
+            <Pressable style={styles.changePlanBtn} onPress={() => setExistingSub(null)}>
+              <Text style={styles.changePlanText}>Want to change your plan?</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Full paywall */}
+        {!checkingExisting && !existingSub && (<>
         <View style={styles.header}>
           <View style={styles.badgePill}>
             <MaterialIcons name="sports-cricket" size={14} color="#fff" />
@@ -274,6 +344,8 @@ export default function PaywallScreen() {
           </Text>
         </View>
 
+        </>)}
+
       </ScrollView>
     </SafeAreaView>
   );
@@ -369,4 +441,21 @@ const styles = StyleSheet.create({
   restoreBtn: { paddingVertical: spacing.sm },
   restoreText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   legal: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 15 },
+
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.md },
+  backBtnText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+
+  alreadySubCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl,
+    borderWidth: 2, borderColor: '#22C55E40', alignItems: 'center', gap: spacing.md,
+  },
+  alreadySubIcon: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: '#22C55E15', justifyContent: 'center', alignItems: 'center',
+  },
+  alreadySubTitle: { fontSize: 22, fontWeight: '900', color: colors.text, textAlign: 'center' },
+  alreadySubSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22 },
+  planFeatures: { width: '100%', gap: spacing.sm, marginTop: spacing.sm },
+  changePlanBtn: { paddingVertical: spacing.sm },
+  changePlanText: { color: colors.textSecondary, fontSize: 13, textDecorationLine: 'underline' },
 });

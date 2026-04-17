@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -36,6 +36,43 @@ export default function SettingsScreen() {
   const [passwordOTP, setPasswordOTP] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Subscription state
+  const [subStatus, setSubStatus] = useState<'loading' | 'active' | 'inactive' | 'academy'>('loading');
+  const [subExpiry, setSubExpiry] = useState<string | null>(null);
+  const [appMode, setAppMode] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadSubStatus();
+  }, [user?.id]);
+
+  const loadSubStatus = async () => {
+    if (!user?.id) return;
+    const supabase = getSupabaseClient();
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('app_mode')
+      .eq('id', user.id)
+      .single();
+    const mode = profile?.app_mode;
+    setAppMode(mode);
+    if (mode === 'admin' || mode === 'academy') {
+      setSubStatus('academy');
+      return;
+    }
+    const { data: sub } = await supabase
+      .from('user_subscriptions')
+      .select('status, expires_at')
+      .eq('user_id', user.id)
+      .eq('status', 'active')
+      .maybeSingle();
+    if (sub && new Date(sub.expires_at) > new Date()) {
+      setSubStatus('active');
+      setSubExpiry(new Date(sub.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }));
+    } else {
+      setSubStatus('inactive');
+    }
+  };
   
 
 
@@ -254,6 +291,54 @@ export default function SettingsScreen() {
         <View style={styles.userInfoCard}>
           <MaterialIcons name="account-circle" size={64} color={colors.primary} />
           <Text style={styles.userEmail}>Logged in as {user?.email || 'User'}</Text>
+        </View>
+
+        {/* Subscription Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>SUBSCRIPTION</Text>
+          <View style={styles.subCard}>
+            {subStatus === 'loading' && (
+              <ActivityIndicator color={colors.primary} size="small" />
+            )}
+            {subStatus === 'academy' && (
+              <View style={styles.subStatusRow}>
+                <View style={[styles.subBadge, { backgroundColor: colors.primary + '20' }]}>
+                  <MaterialIcons name="shield" size={16} color={colors.primary} />
+                  <Text style={[styles.subBadgeText, { color: colors.primary }]}>Academy Member</Text>
+                </View>
+                <Text style={styles.subNote}>Your academy covers your subscription. Enjoy full access!</Text>
+              </View>
+            )}
+            {subStatus === 'active' && (
+              <View style={styles.subStatusRow}>
+                <View style={[styles.subBadge, { backgroundColor: '#22C55E20' }]}>
+                  <MaterialIcons name="check-circle" size={16} color="#22C55E" />
+                  <Text style={[styles.subBadgeText, { color: '#22C55E' }]}>Active Premium</Text>
+                </View>
+                {subExpiry && <Text style={styles.subNote}>Renews {subExpiry}</Text>}
+                <Pressable style={styles.subManageBtn} onPress={() => router.push('/paywall' as any)}>
+                  <Text style={styles.subManageText}>Manage Plan</Text>
+                  <MaterialIcons name="chevron-right" size={16} color={colors.primary} />
+                </Pressable>
+              </View>
+            )}
+            {subStatus === 'inactive' && (
+              <View style={styles.subStatusRow}>
+                <View style={[styles.subBadge, { backgroundColor: colors.error + '20' }]}>
+                  <MaterialIcons name="lock" size={16} color={colors.error} />
+                  <Text style={[styles.subBadgeText, { color: colors.error }]}>No Active Plan</Text>
+                </View>
+                <Text style={styles.subNote}>Subscribe to unlock all drills, AI coaching, and analytics.</Text>
+                <Pressable
+                  style={[styles.subManageBtn, { backgroundColor: colors.primary, borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 }]}
+                  onPress={() => router.push('/paywall' as any)}
+                >
+                  <MaterialIcons name="lock-open" size={16} color="#fff" />
+                  <Text style={[styles.subManageText, { color: '#fff', fontWeight: '800' }]}>View Plans</Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
         </View>
 
         {/* General Section */}
@@ -524,6 +609,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xl,
   },
+  subCard: {
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  subStatusRow: { gap: spacing.sm },
+  subBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20,
+    alignSelf: 'flex-start',
+  },
+  subBadgeText: { fontSize: 13, fontWeight: '800' },
+  subNote: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
+  subManageBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    alignSelf: 'flex-start', paddingVertical: 4,
+  },
+  subManageText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
