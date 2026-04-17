@@ -50,7 +50,7 @@ export default function LoginScreen() {
   // MAIN CONTINUE HANDLER
   // ─────────────────────────────────────────────────────────────────────────────
   const handleContinue = async () => {
-    const val = identifier.trim().toUpperCase();
+    const val = identifier.trim().length === 6 && !identifier.includes('@') ? identifier.trim().toUpperCase() : identifier.trim();
     if (!val) { showAlert('Required', 'Please enter your email or academy code.'); return; }
     if (!password) { showAlert('Required', 'Please enter your password.'); return; }
 
@@ -312,7 +312,7 @@ export default function LoginScreen() {
               <TextInput
                 style={styles.input}
                 value={identifier}
-                onChangeText={t => setIdentifier(t.toUpperCase())}
+                onChangeText={setIdentifier}
                 placeholder="e.g. john@email.com or ABC123"
                 placeholderTextColor={colors.textSecondary}
                 autoCapitalize="none"
