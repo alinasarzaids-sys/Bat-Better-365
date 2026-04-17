@@ -12,67 +12,20 @@ interface StatsRowProps {
   progress: UserProgress | null;
 }
 
-// Weekly minutes: sum time_elapsed (seconds) from all drill logs + duration_minutes from completed sessions this week
-async function fetchWeeklyMinutes(userId: string): Promise<number> {
+// Total balls hit: sum runs_scored (balls hit) and balls_faced from academy_training_logs
+async function fetchTotalBalls(userId: string): Promise<{ faced: number; hit: number }> {
   const supabase = getSupabaseClient();
-  const now = new Date();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
-  monday.setHours(0, 0, 0, 0);
-  const startStr = monday.toISOString();
-
-  let totalSeconds = 0;
-
-  // Technical drill logs
-  const { data: techLogs } = await supabase
-    .from('technical_drill_logs')
-    .select('time_elapsed')
-    .eq('user_id', userId)
-    .gte('created_at', startStr);
-  (techLogs || []).forEach((l: any) => { totalSeconds += l.time_elapsed || 0; });
-
-  // Mental drill logs
-  const { data: mentalLogs } = await supabase
-    .from('mental_drill_logs')
-    .select('time_elapsed')
-    .eq('user_id', userId)
-    .gte('created_at', startStr);
-  (mentalLogs || []).forEach((l: any) => { totalSeconds += l.time_elapsed || 0; });
-
-  // Workout/Physical drill logs
-  const { data: workoutLogs } = await supabase
-    .from('workout_drill_logs')
-    .select('time_elapsed')
-    .eq('user_id', userId)
-    .gte('created_at', startStr);
-  (workoutLogs || []).forEach((l: any) => { totalSeconds += l.time_elapsed || 0; });
-
-  // Tactical drill logs
-  const { data: tacticalLogs } = await supabase
-    .from('tactical_drill_logs')
-    .select('time_elapsed')
-    .eq('user_id', userId)
-    .gte('created_at', startStr);
-  (tacticalLogs || []).forEach((l: any) => { totalSeconds += l.time_elapsed || 0; });
-
-  // Completed sessions (freestyle + drill-based) this week
-  const { data: sessions } = await supabase
-    .from('sessions')
-    .select('duration_minutes')
-    .eq('user_id', userId)
-    .eq('status', 'completed')
-    .gte('completed_at', startStr);
-  (sessions || []).forEach((s: any) => { totalSeconds += (s.duration_minutes || 0) * 60; });
-
-  // Academy training logs this week
-  const { data: academyLogs } = await supabase
+  const { data } = await supabase
     .from('academy_training_logs')
-    .select('duration_minutes')
-    .eq('user_id', userId)
-    .gte('log_date', monday.toISOString().split('T')[0]);
-  (academyLogs || []).forEach((l: any) => { totalSeconds += (l.duration_minutes || 0) * 60; });
-
-  return Math.round(totalSeconds / 60);
+    .select('balls_faced, runs_scored')
+    .eq('user_id', userId);
+  let faced = 0;
+  let hit = 0;
+  (data || []).forEach((l: any) => {
+    faced += l.balls_faced || 0;
+    hit += l.runs_scored || 0;
+  });
+  return { faced, hit };
 }
 
 const WEEKLY_GOAL = 300;
@@ -117,16 +70,16 @@ const LEVELS = [
 
 export function StatsRow({ progress }: StatsRowProps) {
   const { user } = useAuth();
-  const [weeklyMins, setWeeklyMins] = useState<number>(0);
-  const [weeklyLoading, setWeeklyLoading] = useState(false);
+  const [totalBalls, setTotalBalls] = useState<{ faced: number; hit: number }>({ faced: 0, hit: 0 });
+  const [ballsLoading, setBallsLoading] = useState(false);
   const [showPointsModal, setShowPointsModal] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
-    setWeeklyLoading(true);
-    fetchWeeklyMinutes(user.id)
-      .then(setWeeklyMins)
-      .finally(() => setWeeklyLoading(false));
+    setBallsLoading(true);
+    fetchTotalBalls(user.id)
+      .then(setTotalBalls)
+      .finally(() => setBallsLoading(false));
   }, [user?.id, progress]);
 
   const totalXP = progress
@@ -142,8 +95,7 @@ export function StatsRow({ progress }: StatsRowProps) {
     ? Math.min(100, Math.round(((totalXP - prevThreshold) / (nextThreshold - prevThreshold)) * 100))
     : 100;
 
-  const remaining = Math.max(0, WEEKLY_GOAL - weeklyMins);
-  const weeklyPct = Math.min(100, Math.round((weeklyMins / WEEKLY_GOAL) * 100));
+  const ballsPct = totalBalls.faced > 0 ? Math.min(100, Math.round((totalBalls.hit / totalBalls.faced) * 100)) : 0;
 
   return (
     <>
@@ -159,23 +111,25 @@ export function StatsRow({ progress }: StatsRowProps) {
           </View>
         </Card>
 
-        {/* Weekly Minutes */}
+        {/* Total Balls Hit */}
         <Card style={styles.statCard}>
           <View style={styles.iconContainer}>
-            <MaterialIcons name="timer" size={24} color={colors.primary} />
+            <MaterialIcons name="sports-cricket" size={24} color={colors.technical || '#2196F3'} />
           </View>
           <View style={styles.statContent}>
-            {weeklyLoading ? (
+            {ballsLoading ? (
               <Text style={[styles.statValue, { fontSize: 16 }]}>...</Text>
             ) : (
-              <Text style={styles.statValue}>{weeklyMins}<Text style={styles.statValueSuffix}>m</Text></Text>
+              <Text style={[styles.statValue, { color: colors.technical || '#2196F3' }]}>
+                {totalBalls.hit}<Text style={styles.statValueSuffix}> hit</Text>
+              </Text>
             )}
-            <Text style={styles.statLabel}>Weekly Mins</Text>
+            <Text style={styles.statLabel}>Total Balls Hit</Text>
             <View style={styles.miniBarTrack}>
-              <View style={[styles.miniBarFill, { width: `${weeklyPct}%`, backgroundColor: weeklyPct >= 100 ? colors.success : colors.primary }]} />
+              <View style={[styles.miniBarFill, { width: `${ballsPct}%`, backgroundColor: ballsPct >= 70 ? colors.success : ballsPct >= 40 ? colors.warning : colors.error }]} />
             </View>
             <Text style={styles.statSubtext}>
-              {weeklyPct >= 100 ? 'Goal reached! 🎉' : `${remaining}m to ${WEEKLY_GOAL}m goal`}
+              {totalBalls.faced > 0 ? `${ballsPct}% of ${totalBalls.faced} faced` : 'No balls logged yet'}
             </Text>
           </View>
         </Card>
