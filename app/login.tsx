@@ -15,7 +15,7 @@ type Mode = 'login' | 'signup' | 'otp' | 'forgot' | 'reset-otp' | 'academy-join'
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, operationLoading } = useAuth();
+  const { user: authUser, signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, operationLoading } = useAuth();
   const { showAlert } = useAlert();
 
   const [mode, setMode] = useState<Mode>('signup');
@@ -147,16 +147,18 @@ export default function LoginScreen() {
       else setCodeSigninRole('player');
       setCodeSigninAcademyName(academy.name);
 
-      // If user is already authenticated, skip email step — auto-join and redirect
-      const { data: authData } = await supabase.auth.getUser();
-      const uid = authData?.user?.id;
+      // If user is already authenticated (via hook state OR supabase session), skip email — auto-join and redirect
+      const uid = authUser?.id || (await supabase.auth.getUser()).data?.user?.id;
       if (uid) {
-        // Check if already a member
-        const { data: existing } = await supabase.from('academy_members').select('id').eq('academy_id', academy.id).eq('user_id', uid).maybeSingle();
-        if (!existing) {
-          const defaultName = authData.user?.email?.split('@')[0]?.replace(/[._]/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Player';
+        // If using admin code and already a member, upgrade role to admin
+        const { data: existing } = await supabase.from('academy_members').select('id, role').eq('academy_id', academy.id).eq('user_id', uid).maybeSingle();
+        if (existing && byAdmin) {
+          // Upgrade existing member to admin role
+          await supabase.from('academy_members').update({ role: 'admin' }).eq('id', existing.id);
+        } else if (!existing) {
+          const defaultName = authUser?.email?.split('@')[0]?.replace(/[._]/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Player';
           const { academyService } = await import('@/services/academyService');
-          await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
+          await academyService.joinAcademy(code, uid, defaultName, byAdmin ? 'Admin' : byCoach ? 'Coach' : 'Batsman', '', undefined, undefined);
           await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
         }
         // Mark profile setup so they skip profile questions
@@ -177,27 +179,30 @@ export default function LoginScreen() {
   const handleCodeSigninSubmit = async () => {
     if (!codeSigninEmail || !codeSigninPassword) { showAlert('Error', 'Please enter email and password'); return; }
     setCodeSigninLoading(true);
+    const code = codeSigninCode.trim().toUpperCase();
     // Try sign in first (existing account)
     const { error: loginErr } = await signInWithPassword(codeSigninEmail, codeSigninPassword);
     if (!loginErr) {
-      // Existing user: auto-join the academy silently, then go straight to app
+      // Existing user: auto-join / upgrade role, then go straight to app
       try {
         const { getSupabaseClient } = await import('@/template');
         const supabase = getSupabaseClient();
         const { data: authData } = await supabase.auth.getUser();
         const uid = authData?.user?.id;
         if (uid) {
-          const code = codeSigninCode.trim().toUpperCase();
           const { data: byPlayer } = await supabase.from('academies').select('id').eq('player_code', code).maybeSingle();
           const { data: byCoach } = await supabase.from('academies').select('id').eq('coach_code', code).maybeSingle();
           const { data: byAdmin } = await supabase.from('academies').select('id').eq('admin_code', code).maybeSingle();
           const acad = byPlayer || byCoach || byAdmin;
           if (acad) {
-            const { data: existing } = await supabase.from('academy_members').select('id').eq('academy_id', acad.id).eq('user_id', uid).maybeSingle();
-            if (!existing) {
+            const { data: existing } = await supabase.from('academy_members').select('id, role').eq('academy_id', acad.id).eq('user_id', uid).maybeSingle();
+            if (existing && byAdmin) {
+              // Upgrade to admin
+              await supabase.from('academy_members').update({ role: 'admin' }).eq('id', existing.id);
+            } else if (!existing) {
               const defaultName = codeSigninEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
               const { academyService } = await import('@/services/academyService');
-              await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
+              await academyService.joinAcademy(code, uid, defaultName, byAdmin ? 'Admin' : 'Batsman', '', undefined, undefined);
               await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
             }
           }
@@ -210,13 +215,13 @@ export default function LoginScreen() {
       router.replace('/');
       return;
     }
-    // Not signed in — new user: send OTP
+    // Not signed in — new user: send OTP to verify email then create account
     const { error: otpErr } = await sendOTP(codeSigninEmail);
     if (otpErr) { showAlert('Error', otpErr); setCodeSigninLoading(false); return; }
     setEmail(codeSigninEmail);
     setPassword(codeSigninPassword);
     setConfirmPassword(codeSigninPassword);
-    setAcademyCode(codeSigninCode.trim().toUpperCase());
+    setAcademyCode(code);
     setCodeSigninLoading(false);
     setMode('otp');
     showAlert('Verify Email', `A 4-digit code was sent to ${codeSigninEmail}`);

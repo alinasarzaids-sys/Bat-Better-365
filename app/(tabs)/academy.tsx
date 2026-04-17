@@ -596,6 +596,19 @@ export default function AcademyScreen() {
         .maybeSingle();
 
       if (existingMember) {
+        // If they're using the admin code and aren't already admin, upgrade their role
+        if (byAdmin && existingMember.role !== 'admin') {
+          await supabaseClient
+            .from('academy_members')
+            .update({ role: 'admin' })
+            .eq('id', existingMember.id);
+          setJoinCodeLoading(false);
+          setShowJoinModal(false);
+          resetJoinModal();
+          showAlert('Role Upgraded', `You now have Admin access to ${academy.name}. Pull down to refresh.`);
+          load();
+          return;
+        }
         setJoinCodeLoading(false);
         setShowJoinModal(false);
         resetJoinModal();
