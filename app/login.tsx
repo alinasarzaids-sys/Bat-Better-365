@@ -83,11 +83,27 @@ export default function LoginScreen() {
 
   const handleVerifyOTP = async () => {
     if (!otp) { showAlert('Error', 'Please enter the verification code'); return; }
-    const { error } = await verifyOTPAndLogin(email, otp, { password });
+    const { error, user: newUser } = await verifyOTPAndLogin(email, otp, { password });
     if (error) { showAlert('Verification Failed', error); return; }
     await new Promise(r => setTimeout(r, 500));
     if (academyCode.trim()) {
-      router.replace({ pathname: '/mode-selection', params: { prefillCode: academyCode.trim().toUpperCase() } } as any);
+      // New user joining via academy code — auto-join and skip profile questions
+      try {
+        const { getSupabaseClient } = await import('@/template');
+        const supabase = getSupabaseClient();
+        const { data: authData } = await supabase.auth.getUser();
+        const uid = authData?.user?.id;
+        if (uid) {
+          const code = academyCode.trim().toUpperCase();
+          const defaultName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          const { academyService } = await import('@/services/academyService');
+          await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
+          await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
+        }
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
+      } catch (_) {}
+      router.replace('/');
     } else {
       router.replace('/mode-selection');
     }
@@ -126,10 +142,31 @@ export default function LoginScreen() {
         showAlert('Code Not Found', 'This code does not match any academy. Please check and try again.');
         return;
       }
-      if (byAdmin) setCodeSigninRole('coach'); // admin sees coach view by default
+      if (byAdmin) setCodeSigninRole('coach');
       else if (byCoach) setCodeSigninRole('coach');
       else setCodeSigninRole('player');
       setCodeSigninAcademyName(academy.name);
+
+      // If user is already authenticated, skip email step — auto-join and redirect
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData?.user?.id;
+      if (uid) {
+        // Check if already a member
+        const { data: existing } = await supabase.from('academy_members').select('id').eq('academy_id', academy.id).eq('user_id', uid).maybeSingle();
+        if (!existing) {
+          const defaultName = authData.user?.email?.split('@')[0]?.replace(/[._]/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Player';
+          const { academyService } = await import('@/services/academyService');
+          await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
+          await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
+        }
+        // Mark profile setup so they skip profile questions
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
+        setCodeSigninLoading(false);
+        router.replace('/');
+        return;
+      }
+
       setCodeSigninStep('auth');
     } catch (e: any) {
       showAlert('Error', e.message || 'Failed to verify code');
@@ -151,7 +188,6 @@ export default function LoginScreen() {
         const uid = authData?.user?.id;
         if (uid) {
           const code = codeSigninCode.trim().toUpperCase();
-          // Check if already a member of any academy with this code
           const { data: byPlayer } = await supabase.from('academies').select('id').eq('player_code', code).maybeSingle();
           const { data: byCoach } = await supabase.from('academies').select('id').eq('coach_code', code).maybeSingle();
           const { data: byAdmin } = await supabase.from('academies').select('id').eq('admin_code', code).maybeSingle();
@@ -159,24 +195,24 @@ export default function LoginScreen() {
           if (acad) {
             const { data: existing } = await supabase.from('academy_members').select('id').eq('academy_id', acad.id).eq('user_id', uid).maybeSingle();
             if (!existing) {
-              // Join with defaults (name from email, Batsman position)
-              const defaultName = codeSigninEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              const defaultName = codeSigninEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
               const { academyService } = await import('@/services/academyService');
               await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
-              // Set app_mode to academy
               await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
             }
           }
         }
+        // Mark profile setup complete so existing users bypass profile questions
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
       } catch (_) {}
       setCodeSigninLoading(false);
       router.replace('/');
       return;
     }
-    // Not signed in — new user: send OTP, then go through intro questions
+    // Not signed in — new user: send OTP
     const { error: otpErr } = await sendOTP(codeSigninEmail);
     if (otpErr) { showAlert('Error', otpErr); setCodeSigninLoading(false); return; }
-    // Pass data into the main OTP flow → will redirect to mode-selection with prefillCode (shows intro)
     setEmail(codeSigninEmail);
     setPassword(codeSigninPassword);
     setConfirmPassword(codeSigninPassword);
