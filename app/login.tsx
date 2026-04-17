@@ -143,14 +143,40 @@ export default function LoginScreen() {
     // Try sign in first (existing account)
     const { error: loginErr } = await signInWithPassword(codeSigninEmail, codeSigninPassword);
     if (!loginErr) {
+      // Existing user: auto-join the academy silently, then go straight to app
+      try {
+        const { getSupabaseClient } = await import('@/template');
+        const supabase = getSupabaseClient();
+        const { data: authData } = await supabase.auth.getUser();
+        const uid = authData?.user?.id;
+        if (uid) {
+          const code = codeSigninCode.trim().toUpperCase();
+          // Check if already a member of any academy with this code
+          const { data: byPlayer } = await supabase.from('academies').select('id').eq('player_code', code).maybeSingle();
+          const { data: byCoach } = await supabase.from('academies').select('id').eq('coach_code', code).maybeSingle();
+          const { data: byAdmin } = await supabase.from('academies').select('id').eq('admin_code', code).maybeSingle();
+          const acad = byPlayer || byCoach || byAdmin;
+          if (acad) {
+            const { data: existing } = await supabase.from('academy_members').select('id').eq('academy_id', acad.id).eq('user_id', uid).maybeSingle();
+            if (!existing) {
+              // Join with defaults (name from email, Batsman position)
+              const defaultName = codeSigninEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              const { academyService } = await import('@/services/academyService');
+              await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
+              // Set app_mode to academy
+              await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
+            }
+          }
+        }
+      } catch (_) {}
       setCodeSigninLoading(false);
-      router.replace({ pathname: '/mode-selection', params: { prefillCode: codeSigninCode.trim().toUpperCase() } } as any);
+      router.replace('/');
       return;
     }
-    // Not signed in — try creating account via OTP
+    // Not signed in — new user: send OTP, then go through intro questions
     const { error: otpErr } = await sendOTP(codeSigninEmail);
     if (otpErr) { showAlert('Error', otpErr); setCodeSigninLoading(false); return; }
-    // Pass data into the main OTP flow
+    // Pass data into the main OTP flow → will redirect to mode-selection with prefillCode (shows intro)
     setEmail(codeSigninEmail);
     setPassword(codeSigninPassword);
     setConfirmPassword(codeSigninPassword);
