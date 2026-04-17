@@ -8,501 +8,531 @@ import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
-import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-type Mode = 'login' | 'signup' | 'otp' | 'forgot' | 'reset-otp' | 'academy-join' | 'code-signin';
+// Detect if identifier is an academy code (6 chars, no @)
+function isAcademyCode(val: string): boolean {
+  return val.length === 6 && !val.includes('@');
+}
+
+type Step = 'main' | 'otp' | 'code-needs-email' | 'forgot';
 
 export default function LoginScreen() {
   const router = useRouter();
   const { user: authUser, signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, operationLoading } = useAuth();
   const { showAlert } = useAlert();
 
-  const [mode, setMode] = useState<Mode>('signup');
-  const [email, setEmail] = useState('');
+  const [step, setStep] = useState<Step>('main');
+
+  // Main step state
+  const [identifier, setIdentifier] = useState('');   // email OR academy code
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // OTP step state
   const [otp, setOtp] = useState('');
-  const [academyCode, setAcademyCode] = useState('');
+  const [otpEmail, setOtpEmail] = useState('');
+  const [otpPassword, setOtpPassword] = useState('');
+  const [pendingAcademyCode, setPendingAcademyCode] = useState('');
 
-  // Code sign-in flow state
-  const [codeSigninStep, setCodeSigninStep] = useState<'code' | 'auth'>('code');
-  const [codeSigninCode, setCodeSigninCode] = useState('');
-  const [codeSigninRole, setCodeSigninRole] = useState<'player' | 'coach' | null>(null);
-  const [codeSigninEmail, setCodeSigninEmail] = useState('');
-  const [codeSigninPassword, setCodeSigninPassword] = useState('');
-  const [codeSigninAcademyName, setCodeSigninAcademyName] = useState('');
-  const [codeSigninLoading, setCodeSigninLoading] = useState(false);
+  // Code-needs-email step (new user joining with code)
+  const [codeEmail, setCodeEmail] = useState('');
+  const [verifiedCode, setVerifiedCode] = useState('');
+  const [verifiedAcademyName, setVerifiedAcademyName] = useState('');
 
-  const handleLogin = async () => {
-    if (!email || !password) { showAlert('Error', 'Please fill in all fields'); return; }
-    const { error } = await signInWithPassword(email, password);
-    if (error) {
-      let msg = error;
-      if (error.toLowerCase().includes('invalid') || error.toLowerCase().includes('credentials')) {
-        msg = 'Invalid email or password. Please check your credentials and try again.';
-      } else if (error.toLowerCase().includes('not found') || error.toLowerCase().includes('user')) {
-        msg = "Account not found. Please sign up first or check your email address.";
-      } else if (error.toLowerCase().includes('email') && error.toLowerCase().includes('confirm')) {
-        msg = 'Please verify your email before logging in. Check your inbox.';
-      }
-      showAlert('Login Failed', msg);
-    } else {
-      router.replace('/');
-    }
-  };
+  // Forgot password
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotPassword, setForgotPassword] = useState('');
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp'>('email');
 
-  const handleSignup = async () => {
-    if (!email || !password) { showAlert('Error', 'Please fill in all fields'); return; }
-    if (password !== confirmPassword) { showAlert('Error', 'Passwords do not match'); return; }
-    if (password.length < 6) { showAlert('Error', 'Password must be at least 6 characters long'); return; }
-    const { error } = await sendOTP(email);
-    if (error) {
-      let msg = error;
-      if (error.toLowerCase().includes('already') || error.toLowerCase().includes('exist')) {
-        msg = 'This email is already registered. Please sign in instead.';
-      }
-      showAlert('Sign Up Failed', msg);
-      return;
-    }
-    showAlert('Success', `Verification code sent to ${email}`);
-    setMode('otp');
-  };
+  // ─────────────────────────────────────────────────────────────────────────────
+  // MAIN CONTINUE HANDLER
+  // ─────────────────────────────────────────────────────────────────────────────
+  const handleContinue = async () => {
+    const val = identifier.trim().toUpperCase();
+    if (!val) { showAlert('Required', 'Please enter your email or academy code.'); return; }
+    if (!password) { showAlert('Required', 'Please enter your password.'); return; }
 
-  // Sign up via academy code
-  const handleAcademySignup = async () => {
-    if (!email || !password) { showAlert('Error', 'Please fill in your email and password'); return; }
-    if (password !== confirmPassword) { showAlert('Error', 'Passwords do not match'); return; }
-    if (password.length < 6) { showAlert('Error', 'Password must be at least 6 characters long'); return; }
-    if (!academyCode.trim()) { showAlert('Error', 'Please enter your academy code'); return; }
-    const { error } = await sendOTP(email);
-    if (error) { showAlert('Error', error); return; }
-    showAlert('Success', `Verification code sent to ${email}`);
-    setMode('otp');
-  };
+    setLoading(true);
 
-  const handleVerifyOTP = async () => {
-    if (!otp) { showAlert('Error', 'Please enter the verification code'); return; }
-    const { error, user: newUser } = await verifyOTPAndLogin(email, otp, { password });
-    if (error) { showAlert('Verification Failed', error); return; }
-    await new Promise(r => setTimeout(r, 500));
-    if (academyCode.trim()) {
-      // New user joining via academy code — auto-join and skip profile questions
+    if (isAcademyCode(val)) {
+      // ── Academy Code Flow ──────────────────────────────────────────────────
       try {
         const { getSupabaseClient } = await import('@/template');
         const supabase = getSupabaseClient();
-        const { data: authData } = await supabase.auth.getUser();
-        const uid = authData?.user?.id;
+
+        // Look up academy by any code type
+        const [{ data: byPlayer }, { data: byCoach }, { data: byAdmin }] = await Promise.all([
+          supabase.from('academies').select('id, name').eq('player_code', val).maybeSingle(),
+          supabase.from('academies').select('id, name').eq('coach_code', val).maybeSingle(),
+          supabase.from('academies').select('id, name').eq('admin_code', val).maybeSingle(),
+        ]);
+        const academy = byPlayer || byCoach || byAdmin;
+
+        if (!academy) {
+          setLoading(false);
+          showAlert('Code Not Found', 'This code does not match any academy. Please check with your coach.');
+          return;
+        }
+
+        // If user already signed in (persistent session) — just join & go
+        const uid = authUser?.id || (await supabase.auth.getUser()).data?.user?.id;
         if (uid) {
-          const code = academyCode.trim().toUpperCase();
-          const defaultName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
-          const { academyService } = await import('@/services/academyService');
-          await academyService.joinAcademy(code, uid, defaultName, 'Batsman', '', undefined, undefined);
-          await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
+          const { data: existing } = await supabase
+            .from('academy_members').select('id, role').eq('academy_id', academy.id).eq('user_id', uid).maybeSingle();
+
+          if (existing && byAdmin && existing.role !== 'admin') {
+            await supabase.from('academy_members').update({ role: 'admin' }).eq('id', existing.id);
+          } else if (!existing) {
+            const defaultName = authUser?.email?.split('@')[0]?.replace(/[._]/g, ' ')
+              ?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Player';
+            const { academyService } = await import('@/services/academyService');
+            const role = byAdmin ? 'admin' : byCoach ? 'coach' : 'player';
+            await academyService.joinAcademy(val, uid, defaultName, role === 'coach' ? 'Coach' : 'Batsman', '', undefined, undefined);
+            await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
+          }
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
+          setLoading(false);
+          router.replace('/');
+          return;
         }
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
-      } catch (_) {}
-      router.replace('/');
-    } else {
-      router.replace('/mode-selection');
-    }
-  };
 
-  const handleForgotPassword = async () => {
-    if (!email) { showAlert('Error', 'Please enter your email address'); return; }
-    const { error } = await sendOTP(email);
-    if (error) { showAlert('Error', error); return; }
-    showAlert('Success', 'Verification code sent to your email');
-    setMode('reset-otp');
-  };
-
-  const handleResetPassword = async () => {
-    if (!otp || !password || !confirmPassword) { showAlert('Error', 'Please fill in all fields'); return; }
-    if (password !== confirmPassword) { showAlert('Error', 'Passwords do not match'); return; }
-    const { error } = await verifyOTPAndLogin(email, otp, { password });
-    if (error) { showAlert('Error', error); }
-    else { showAlert('Success', 'Password reset successfully!'); router.replace('/'); }
-  };
-
-  // Code-based sign-in: verify academy code first
-  const handleVerifyJoinCode = async () => {
-    const code = codeSigninCode.trim().toUpperCase();
-    if (code.length < 6) { showAlert('Invalid Code', 'Please enter a valid 6-character code.'); return; }
-    setCodeSigninLoading(true);
-    try {
-      const { getSupabaseClient } = await import('@/template');
-      const supabase = getSupabaseClient();
-      const { data: byPlayer } = await supabase.from('academies').select('id, name').eq('player_code', code).maybeSingle();
-      const { data: byCoach } = await supabase.from('academies').select('id, name').eq('coach_code', code).maybeSingle();
-      const { data: byAdmin } = await supabase.from('academies').select('id, name').eq('admin_code', code).maybeSingle();
-      const academy = byPlayer || byCoach || byAdmin;
-      if (!academy) {
-        setCodeSigninLoading(false);
-        showAlert('Code Not Found', 'This code does not match any academy. Please check and try again.');
-        return;
+        // Not signed in — try password sign-in with email we don't have yet
+        // We need to collect email first → go to code-needs-email step
+        setVerifiedCode(val);
+        setVerifiedAcademyName(academy.name);
+        setLoading(false);
+        setStep('code-needs-email');
+      } catch (e: any) {
+        setLoading(false);
+        showAlert('Error', e.message || 'Something went wrong. Please try again.');
       }
-      if (byAdmin) setCodeSigninRole('coach');
-      else if (byCoach) setCodeSigninRole('coach');
-      else setCodeSigninRole('player');
-      setCodeSigninAcademyName(academy.name);
+    } else {
+      // ── Email Flow ─────────────────────────────────────────────────────────
+      const email = identifier.trim().toLowerCase();
 
-      // If user is already authenticated (via hook state OR supabase session), skip email — auto-join and redirect
-      const uid = authUser?.id || (await supabase.auth.getUser()).data?.user?.id;
-      if (uid) {
-        // If using admin code and already a member, upgrade role to admin
-        const { data: existing } = await supabase.from('academy_members').select('id, role').eq('academy_id', academy.id).eq('user_id', uid).maybeSingle();
-        if (existing && byAdmin) {
-          // Upgrade existing member to admin role
-          await supabase.from('academy_members').update({ role: 'admin' }).eq('id', existing.id);
-        } else if (!existing) {
-          const defaultName = authUser?.email?.split('@')[0]?.replace(/[._]/g, ' ')?.replace(/\b\w/g, (c: string) => c.toUpperCase()) || 'Player';
-          const { academyService } = await import('@/services/academyService');
-          await academyService.joinAcademy(code, uid, defaultName, byAdmin ? 'Admin' : byCoach ? 'Coach' : 'Batsman', '', undefined, undefined);
-          await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
-        }
-        // Mark profile setup so they skip profile questions
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
-        setCodeSigninLoading(false);
+      // Try sign in first (existing user)
+      const { error: loginErr } = await signInWithPassword(email, password);
+      if (!loginErr) {
+        // Existing user → mark profile setup, go to app
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
+        } catch (_) {}
+        setLoading(false);
         router.replace('/');
         return;
       }
 
-      setCodeSigninStep('auth');
-    } catch (e: any) {
-      showAlert('Error', e.message || 'Failed to verify code');
+      // Sign-in failed — check if it's a wrong password vs non-existent account
+      const isWrongPassword = loginErr.toLowerCase().includes('invalid') ||
+        loginErr.toLowerCase().includes('credentials') ||
+        loginErr.toLowerCase().includes('password');
+
+      if (isWrongPassword) {
+        setLoading(false);
+        showAlert('Incorrect Password', 'The password you entered is wrong. Please try again or use Forgot Password.');
+        return;
+      }
+
+      // Account doesn't exist → create new account via OTP
+      const { error: otpErr } = await sendOTP(email);
+      if (otpErr) {
+        setLoading(false);
+        let msg = otpErr;
+        if (otpErr.toLowerCase().includes('already')) {
+          msg = 'An account with this email already exists. Please check your password.';
+        }
+        showAlert('Error', msg);
+        return;
+      }
+
+      // Show OTP verification screen
+      setOtpEmail(email);
+      setOtpPassword(password);
+      setPendingAcademyCode('');
+      setOtp('');
+      setLoading(false);
+      setStep('otp');
     }
-    setCodeSigninLoading(false);
   };
 
-  const handleCodeSigninSubmit = async () => {
-    if (!codeSigninEmail || !codeSigninPassword) { showAlert('Error', 'Please enter email and password'); return; }
-    setCodeSigninLoading(true);
-    const code = codeSigninCode.trim().toUpperCase();
-    // Try sign in first (existing account)
-    const { error: loginErr } = await signInWithPassword(codeSigninEmail, codeSigninPassword);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // CODE-NEEDS-EMAIL STEP: user entered a code but isn't logged in
+  // ─────────────────────────────────────────────────────────────────────────────
+  const handleCodeEmailContinue = async () => {
+    const email = codeEmail.trim().toLowerCase();
+    if (!email || !email.includes('@')) { showAlert('Required', 'Please enter a valid email address.'); return; }
+
+    setLoading(true);
+
+    // Try sign in with the existing password
+    const { error: loginErr } = await signInWithPassword(email, password);
     if (!loginErr) {
-      // Existing user: auto-join / upgrade role, then go straight to app
+      // Existing user — join academy and go to app
       try {
         const { getSupabaseClient } = await import('@/template');
         const supabase = getSupabaseClient();
         const { data: authData } = await supabase.auth.getUser();
         const uid = authData?.user?.id;
         if (uid) {
-          const { data: byPlayer } = await supabase.from('academies').select('id').eq('player_code', code).maybeSingle();
-          const { data: byCoach } = await supabase.from('academies').select('id').eq('coach_code', code).maybeSingle();
-          const { data: byAdmin } = await supabase.from('academies').select('id').eq('admin_code', code).maybeSingle();
+          const [{ data: byPlayer }, { data: byCoach }, { data: byAdmin }] = await Promise.all([
+            supabase.from('academies').select('id, name').eq('player_code', verifiedCode).maybeSingle(),
+            supabase.from('academies').select('id, name').eq('coach_code', verifiedCode).maybeSingle(),
+            supabase.from('academies').select('id, name').eq('admin_code', verifiedCode).maybeSingle(),
+          ]);
           const acad = byPlayer || byCoach || byAdmin;
           if (acad) {
-            const { data: existing } = await supabase.from('academy_members').select('id, role').eq('academy_id', acad.id).eq('user_id', uid).maybeSingle();
-            if (existing && byAdmin) {
-              // Upgrade to admin
+            const { data: existing } = await supabase
+              .from('academy_members').select('id, role').eq('academy_id', acad.id).eq('user_id', uid).maybeSingle();
+            if (existing && byAdmin && existing.role !== 'admin') {
               await supabase.from('academy_members').update({ role: 'admin' }).eq('id', existing.id);
             } else if (!existing) {
-              const defaultName = codeSigninEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+              const defaultName = email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
               const { academyService } = await import('@/services/academyService');
-              await academyService.joinAcademy(code, uid, defaultName, byAdmin ? 'Admin' : 'Batsman', '', undefined, undefined);
+              await academyService.joinAcademy(verifiedCode, uid, defaultName, byAdmin ? 'Admin' : byCoach ? 'Coach' : 'Batsman', '', undefined, undefined);
               await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
             }
           }
         }
-        // Mark profile setup complete so existing users bypass profile questions
         const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
         await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
       } catch (_) {}
-      setCodeSigninLoading(false);
+      setLoading(false);
       router.replace('/');
       return;
     }
-    // Not signed in — new user: send OTP to verify email then create account
-    const { error: otpErr } = await sendOTP(codeSigninEmail);
-    if (otpErr) { showAlert('Error', otpErr); setCodeSigninLoading(false); return; }
-    setEmail(codeSigninEmail);
-    setPassword(codeSigninPassword);
-    setConfirmPassword(codeSigninPassword);
-    setAcademyCode(code);
-    setCodeSigninLoading(false);
-    setMode('otp');
-    showAlert('Verify Email', `A 4-digit code was sent to ${codeSigninEmail}`);
+
+    // Not signed in → new account, send OTP
+    const { error: otpErr } = await sendOTP(email);
+    if (otpErr) {
+      setLoading(false);
+      showAlert('Error', otpErr);
+      return;
+    }
+
+    setOtpEmail(email);
+    setOtpPassword(password);
+    setPendingAcademyCode(verifiedCode);
+    setOtp('');
+    setLoading(false);
+    setStep('otp');
   };
 
-  const resetCodeSignin = () => {
-    setCodeSigninStep('code');
-    setCodeSigninCode('');
-    setCodeSigninEmail('');
-    setCodeSigninPassword('');
-    setCodeSigninAcademyName('');
-    setCodeSigninRole(null);
+  // ─────────────────────────────────────────────────────────────────────────────
+  // OTP VERIFY
+  // ─────────────────────────────────────────────────────────────────────────────
+  const handleVerifyOTP = async () => {
+    if (!otp || otp.length < 4) { showAlert('Error', 'Please enter the verification code.'); return; }
+
+    const { error, user: newUser } = await verifyOTPAndLogin(otpEmail, otp, { password: otpPassword });
+    if (error) { showAlert('Verification Failed', error); return; }
+
+    await new Promise(r => setTimeout(r, 500));
+
+    try {
+      const { getSupabaseClient } = await import('@/template');
+      const supabase = getSupabaseClient();
+      const { data: authData } = await supabase.auth.getUser();
+      const uid = authData?.user?.id;
+
+      if (uid && pendingAcademyCode) {
+        // Auto-join academy for new user who signed up via code
+        const [{ data: byPlayer }, { data: byCoach }, { data: byAdmin }] = await Promise.all([
+          supabase.from('academies').select('id, name').eq('player_code', pendingAcademyCode).maybeSingle(),
+          supabase.from('academies').select('id, name').eq('coach_code', pendingAcademyCode).maybeSingle(),
+          supabase.from('academies').select('id, name').eq('admin_code', pendingAcademyCode).maybeSingle(),
+        ]);
+        const acad = byPlayer || byCoach || byAdmin;
+        if (acad) {
+          const defaultName = otpEmail.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase());
+          const { academyService } = await import('@/services/academyService');
+          await academyService.joinAcademy(pendingAcademyCode, uid, defaultName, byAdmin ? 'Admin' : byCoach ? 'Coach' : 'Batsman', '', undefined, undefined);
+          await supabase.from('user_profiles').update({ app_mode: 'academy' }).eq('id', uid);
+        }
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        await AsyncStorage.setItem('@bat_better_profile_setup_completed', 'true');
+        router.replace('/');
+      } else {
+        // New individual user → intro questions
+        router.replace('/mode-selection');
+      }
+    } catch (_) {
+      router.replace('/mode-selection');
+    }
   };
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // FORGOT PASSWORD
+  // ─────────────────────────────────────────────────────────────────────────────
+  const handleForgotSend = async () => {
+    if (!forgotEmail.trim()) { showAlert('Required', 'Please enter your email address.'); return; }
+    setLoading(true);
+    const { error } = await sendOTP(forgotEmail.trim().toLowerCase());
+    setLoading(false);
+    if (error) { showAlert('Error', error); return; }
+    setForgotStep('otp');
+  };
+
+  const handleForgotReset = async () => {
+    if (!forgotOtp || !forgotPassword) { showAlert('Required', 'Please fill in all fields.'); return; }
+    if (forgotPassword.length < 6) { showAlert('Error', 'Password must be at least 6 characters.'); return; }
+    setLoading(true);
+    const { error } = await verifyOTPAndLogin(forgotEmail.trim().toLowerCase(), forgotOtp, { password: forgotPassword });
+    setLoading(false);
+    if (error) { showAlert('Error', error); return; }
+    showAlert('Done', 'Password reset successfully! You are now logged in.');
+    router.replace('/');
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
 
-          <View style={styles.header}>
+          {/* Logo */}
+          <View style={styles.logoBlock}>
             <Image source={require('@/assets/logo.png')} style={styles.logo} contentFit="contain" transition={200} />
             <Text style={styles.appName}>Bat Better 365</Text>
             <Text style={styles.tagline}>Your Complete Batting Training System</Text>
           </View>
 
-          <View style={styles.form}>
+          {/* ── MAIN STEP ───────────────────────────────────────────────────── */}
+          {step === 'main' && (
+            <View style={styles.card}>
+              <Text style={styles.cardTitle}>Welcome</Text>
+              <Text style={styles.cardSubtitle}>Enter your email or academy code to continue</Text>
 
-            {/* ── Reset OTP ── */}
-            {mode === 'reset-otp' && (
-              <>
-                <Text style={styles.formTitle}>Reset Password</Text>
-                <Text style={styles.formSubtitle}>Enter the 4-digit code sent to {email} and your new password</Text>
-                <TextInput style={styles.input} placeholder="4-digit code" placeholderTextColor="#9CA3AF" value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} autoFocus />
-                <TextInput style={styles.input} placeholder="New Password (min 6 chars)" placeholderTextColor="#9CA3AF" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
-                <TextInput style={styles.input} placeholder="Confirm New Password" placeholderTextColor="#9CA3AF" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" />
-                <Button title="Reset Password" onPress={handleResetPassword} loading={operationLoading} fullWidth style={styles.button} />
-                <Pressable onPress={() => setMode('forgot')}><Text style={styles.linkText}>Back</Text></Pressable>
-              </>
-            )}
+              <Text style={styles.fieldLabel}>Email or Academy Code</Text>
+              <TextInput
+                style={styles.input}
+                value={identifier}
+                onChangeText={t => setIdentifier(t.toUpperCase())}
+                placeholder="e.g. john@email.com or ABC123"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="email-address"
+              />
 
-            {/* ── Forgot Password ── */}
-            {mode === 'forgot' && (
-              <>
-                <Text style={styles.formTitle}>Reset Password</Text>
-                <Text style={styles.formSubtitle}>Enter your email and we will send you a verification code</Text>
-                <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#9CA3AF" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoFocus />
-                <Button title="Send Verification Code" onPress={handleForgotPassword} loading={operationLoading} fullWidth style={styles.button} />
-                <Pressable onPress={() => setMode('login')}><Text style={styles.linkText}>Back to login</Text></Pressable>
-              </>
-            )}
+              <Text style={styles.fieldLabel}>Password</Text>
+              <TextInput
+                style={styles.input}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Password (min 6 characters)"
+                placeholderTextColor={colors.textSecondary}
+                secureTextEntry
+                autoCapitalize="none"
+              />
 
-            {/* ── OTP Verification ── */}
-            {mode === 'otp' && (
-              <>
-                <Text style={styles.formTitle}>Enter Verification Code</Text>
-                <Text style={styles.formSubtitle}>We sent a 4-digit code to {email}</Text>
-                <TextInput style={styles.input} placeholder="4-digit code" placeholderTextColor="#9CA3AF" value={otp} onChangeText={setOtp} keyboardType="number-pad" maxLength={4} autoFocus />
-                <Button title="Verify & Create Account" onPress={handleVerifyOTP} loading={operationLoading} fullWidth style={styles.button} />
-                <Pressable onPress={() => setMode(academyCode ? 'academy-join' : 'signup')}><Text style={styles.linkText}>Back</Text></Pressable>
-              </>
-            )}
+              <Pressable
+                style={[styles.continueBtn, (loading || operationLoading) && styles.continueBtnDisabled]}
+                onPress={handleContinue}
+                disabled={loading || operationLoading}
+              >
+                {loading || operationLoading
+                  ? <ActivityIndicator color={colors.textLight} />
+                  : (
+                    <>
+                      <Text style={styles.continueBtnText}>Continue</Text>
+                      <MaterialIcons name="arrow-forward" size={20} color={colors.textLight} />
+                    </>
+                  )}
+              </Pressable>
 
-            {/* ── Academy Join (Signup with code) ── */}
-            {mode === 'academy-join' && (
-              <>
-                <Pressable style={styles.backRow} onPress={() => setMode('signup')}>
-                  <MaterialIcons name="arrow-back" size={18} color={colors.textSecondary} />
-                  <Text style={styles.backText}>Back</Text>
-                </Pressable>
-                <View style={styles.academyJoinHeader}>
-                  <View style={styles.academyJoinIcon}>
-                    <MaterialIcons name="shield" size={28} color={colors.warning} />
-                  </View>
-                  <Text style={styles.formTitle}>Join Your Academy</Text>
-                  <Text style={styles.formSubtitle}>Create your account with the code provided by your coach</Text>
-                </View>
+              <Pressable onPress={() => { setForgotEmail(''); setForgotOtp(''); setForgotPassword(''); setForgotStep('email'); setStep('forgot'); }} style={styles.forgotLink}>
+                <Text style={styles.forgotLinkText}>Forgot password?</Text>
+              </Pressable>
 
-                <Text style={styles.fieldLabel}>Academy Code from Coach *</Text>
-                <TextInput
-                  style={[styles.input, styles.codeInput]}
-                  placeholder="e.g. ABC123"
-                  placeholderTextColor="#9CA3AF"
-                  value={academyCode}
-                  onChangeText={v => setAcademyCode(v.toUpperCase())}
-                  autoCapitalize="characters"
-                  maxLength={6}
-                  autoFocus
-                />
+              <View style={styles.hintCard}>
+                <MaterialIcons name="info-outline" size={16} color={colors.primary} />
+                <Text style={styles.hintText}>
+                  New here? Just enter your email + a new password and we will set up your account automatically.
+                  Have an academy code? Enter the code + a password.
+                </Text>
+              </View>
+            </View>
+          )}
 
-                <Text style={styles.fieldLabel}>Email *</Text>
-                <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#9CA3AF" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+          {/* ── OTP STEP ────────────────────────────────────────────────────── */}
+          {step === 'otp' && (
+            <View style={styles.card}>
+              <Pressable style={styles.backRow} onPress={() => setStep('main')}>
+                <MaterialIcons name="arrow-back" size={18} color={colors.textSecondary} />
+                <Text style={styles.backText}>Back</Text>
+              </Pressable>
 
-                <Text style={styles.fieldLabel}>Password *</Text>
-                <TextInput style={styles.input} placeholder="Password (min 6 chars)" placeholderTextColor="#9CA3AF" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
+              <View style={styles.otpIconCircle}>
+                <MaterialIcons name="mark-email-read" size={32} color={colors.primary} />
+              </View>
+              <Text style={styles.cardTitle}>Check Your Email</Text>
+              <Text style={styles.cardSubtitle}>
+                We sent a 4-digit code to{'\n'}<Text style={{ fontWeight: '700', color: colors.text }}>{otpEmail}</Text>
+              </Text>
 
-                <Text style={styles.fieldLabel}>Confirm Password *</Text>
-                <TextInput style={styles.input} placeholder="Confirm Password" placeholderTextColor="#9CA3AF" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" />
+              <Text style={styles.fieldLabel}>Verification Code</Text>
+              <TextInput
+                style={[styles.input, styles.otpInput]}
+                value={otp}
+                onChangeText={setOtp}
+                placeholder="0000"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="number-pad"
+                maxLength={6}
+                autoFocus
+              />
 
-                <Button title="Continue with Academy Code" onPress={handleAcademySignup} loading={operationLoading} fullWidth style={styles.button} />
+              <Pressable
+                style={[styles.continueBtn, operationLoading && styles.continueBtnDisabled]}
+                onPress={handleVerifyOTP}
+                disabled={operationLoading}
+              >
+                {operationLoading
+                  ? <ActivityIndicator color={colors.textLight} />
+                  : <Text style={styles.continueBtnText}>Verify & Continue</Text>}
+              </Pressable>
 
-                <Pressable style={styles.switchModeButton} onPress={() => { setMode('login'); setAcademyCode(''); }}>
-                  <Text style={styles.linkText}>Already have an account? Sign in</Text>
-                </Pressable>
-              </>
-            )}
+              <Pressable onPress={async () => {
+                const { error } = await sendOTP(otpEmail);
+                if (!error) showAlert('Sent', 'A new code was sent to your email.');
+              }} style={styles.forgotLink}>
+                <Text style={styles.forgotLinkText}>Resend code</Text>
+              </Pressable>
+            </View>
+          )}
 
-            {/* ── Sign in with Code ── */}
-            {mode === 'code-signin' && (
-              <>
-                <Pressable style={styles.backRow} onPress={() => { setMode('login'); resetCodeSignin(); }}>
-                  <MaterialIcons name="arrow-back" size={18} color={colors.textSecondary} />
-                  <Text style={styles.backText}>Back</Text>
-                </Pressable>
+          {/* ── CODE-NEEDS-EMAIL STEP ────────────────────────────────────────── */}
+          {step === 'code-needs-email' && (
+            <View style={styles.card}>
+              <Pressable style={styles.backRow} onPress={() => setStep('main')}>
+                <MaterialIcons name="arrow-back" size={18} color={colors.textSecondary} />
+                <Text style={styles.backText}>Back</Text>
+              </Pressable>
 
-                <View style={styles.academyJoinHeader}>
-                  <View style={[styles.academyJoinIcon, { backgroundColor: colors.primary + '20' }]}>
-                    <MaterialIcons name="vpn-key" size={28} color={colors.primary} />
-                  </View>
-                  <Text style={styles.formTitle}>Sign in with Code</Text>
-                  <Text style={styles.formSubtitle}>
-                    {codeSigninStep === 'code'
-                      ? 'Enter the Player Code or Coach Code from your academy'
-                      : `You are joining ${codeSigninAcademyName} as a ${codeSigninRole === 'coach' ? 'Coach' : 'Player'}`}
-                  </Text>
-                </View>
+              <View style={[styles.otpIconCircle, { backgroundColor: colors.primary + '15' }]}>
+                <MaterialIcons name="shield" size={32} color={colors.primary} />
+              </View>
+              <Text style={styles.cardTitle}>One More Step</Text>
+              <Text style={styles.cardSubtitle}>
+                You are joining{' '}
+                <Text style={{ fontWeight: '800', color: colors.primary }}>{verifiedAcademyName}</Text>
+                {'\n'}Enter your email to link your account.
+              </Text>
 
-                {codeSigninStep === 'code' && (
-                  <>
-                    <Text style={styles.fieldLabel}>Academy Code *</Text>
-                    <TextInput
-                      style={[styles.input, styles.codeInput]}
-                      placeholder="e.g. ABC123"
-                      placeholderTextColor="#9CA3AF"
-                      value={codeSigninCode}
-                      onChangeText={v => setCodeSigninCode(v.toUpperCase())}
-                      autoCapitalize="characters"
-                      maxLength={6}
-                      autoFocus
-                    />
-                    <Text style={styles.codeHint}>
-                      Your coach will give you a 6-character Player Code or Coach Code
-                    </Text>
-                    <Pressable
-                      style={[styles.primaryActionBtn, codeSigninLoading || codeSigninCode.length < 6 ? styles.primaryActionBtnDisabled : null]}
-                      onPress={handleVerifyJoinCode}
-                      disabled={codeSigninLoading || codeSigninCode.length < 6}
-                    >
-                      {codeSigninLoading
-                        ? <ActivityIndicator color={colors.textLight} />
-                        : (
-                          <>
-                            <MaterialIcons name="arrow-forward" size={18} color={colors.textLight} />
-                            <Text style={styles.primaryActionBtnText}>Verify Code</Text>
-                          </>
-                        )}
-                    </Pressable>
-                  </>
-                )}
+              <Text style={styles.fieldLabel}>Your Email</Text>
+              <TextInput
+                style={styles.input}
+                value={codeEmail}
+                onChangeText={setCodeEmail}
+                placeholder="e.g. john@email.com"
+                placeholderTextColor={colors.textSecondary}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoFocus
+              />
 
-                {codeSigninStep === 'auth' && (
-                  <>
-                    {/* Academy confirmation banner */}
-                    <View style={styles.academyBanner}>
-                      <MaterialIcons name={codeSigninRole === 'coach' ? 'school' : 'sports-cricket'} size={18} color={colors.primary} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.academyBannerName}>{codeSigninAcademyName}</Text>
-                        <Text style={styles.academyBannerRole}>Joining as {codeSigninRole === 'coach' ? 'Coach' : 'Player'} · Code: {codeSigninCode}</Text>
-                      </View>
-                    </View>
+              <Pressable
+                style={[styles.continueBtn, (loading || operationLoading) && styles.continueBtnDisabled]}
+                onPress={handleCodeEmailContinue}
+                disabled={loading || operationLoading}
+              >
+                {loading || operationLoading
+                  ? <ActivityIndicator color={colors.textLight} />
+                  : (
+                    <>
+                      <Text style={styles.continueBtnText}>Join Academy</Text>
+                      <MaterialIcons name="login" size={20} color={colors.textLight} />
+                    </>
+                  )}
+              </Pressable>
+            </View>
+          )}
 
-                    <Text style={styles.fieldLabel}>Email *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Email"
-                      placeholderTextColor="#9CA3AF"
-                      value={codeSigninEmail}
-                      onChangeText={setCodeSigninEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoFocus
-                    />
-                    <Text style={styles.fieldLabel}>Password *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Password (min 6 chars)"
-                      placeholderTextColor="#9CA3AF"
-                      value={codeSigninPassword}
-                      onChangeText={setCodeSigninPassword}
-                      secureTextEntry
-                      autoCapitalize="none"
-                    />
-                    <Text style={styles.codeHint}>
-                      Already have an account? Just sign in. New here? Enter a password to create your account automatically.
-                    </Text>
-                    <Pressable
-                      style={[styles.primaryActionBtn, codeSigninLoading ? styles.primaryActionBtnDisabled : null]}
-                      onPress={handleCodeSigninSubmit}
-                      disabled={codeSigninLoading}
-                    >
-                      {codeSigninLoading
-                        ? <ActivityIndicator color={colors.textLight} />
-                        : (
-                          <>
-                            <MaterialIcons name="login" size={18} color={colors.textLight} />
-                            <Text style={styles.primaryActionBtnText}>Continue</Text>
-                          </>
-                        )}
-                    </Pressable>
-                    <Pressable style={{ marginTop: spacing.sm }} onPress={() => setCodeSigninStep('code')}>
-                      <Text style={[styles.linkText, { fontSize: 13 }]}>Wrong code? Change it</Text>
-                    </Pressable>
-                  </>
-                )}
-              </>
-            )}
+          {/* ── FORGOT PASSWORD ──────────────────────────────────────────────── */}
+          {step === 'forgot' && (
+            <View style={styles.card}>
+              <Pressable style={styles.backRow} onPress={() => setStep('main')}>
+                <MaterialIcons name="arrow-back" size={18} color={colors.textSecondary} />
+                <Text style={styles.backText}>Back to Login</Text>
+              </Pressable>
 
-            {/* ── Login / Signup ── */}
-            {(mode === 'login' || mode === 'signup') && (
-              <>
-                <Text style={styles.formTitle}>{mode === 'login' ? 'Welcome Back' : 'Get Started'}</Text>
+              <Text style={styles.cardTitle}>Reset Password</Text>
 
-                <TextInput style={styles.input} placeholder="Email" placeholderTextColor="#9CA3AF" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email" />
-                <TextInput style={styles.input} placeholder="Password (min 6 characters)" placeholderTextColor="#9CA3AF" value={password} onChangeText={setPassword} secureTextEntry autoCapitalize="none" />
-                {mode === 'signup' && (
-                  <TextInput style={styles.input} placeholder="Confirm Password" placeholderTextColor="#9CA3AF" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry autoCapitalize="none" />
-                )}
-
-                <Button
-                  title={mode === 'login' ? 'Sign In' : 'Sign Up'}
-                  onPress={mode === 'login' ? handleLogin : handleSignup}
-                  loading={operationLoading}
-                  fullWidth
-                  style={styles.button}
-                />
-
-                {mode === 'login' && (
-                  <Pressable onPress={() => setMode('forgot')} style={styles.forgotButton}>
-                    <Text style={styles.linkText}>Forgot password?</Text>
+              {forgotStep === 'email' && (
+                <>
+                  <Text style={styles.cardSubtitle}>Enter your email and we will send a reset code.</Text>
+                  <Text style={styles.fieldLabel}>Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={forgotEmail}
+                    onChangeText={setForgotEmail}
+                    placeholder="your@email.com"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoFocus
+                  />
+                  <Pressable
+                    style={[styles.continueBtn, loading && styles.continueBtnDisabled]}
+                    onPress={handleForgotSend}
+                    disabled={loading}
+                  >
+                    {loading
+                      ? <ActivityIndicator color={colors.textLight} />
+                      : <Text style={styles.continueBtnText}>Send Reset Code</Text>}
                   </Pressable>
-                )}
+                </>
+              )}
 
-                {/* Sign in with Code */}
-                <View style={styles.dividerContainer}>
-                  <View style={styles.divider} />
-                  <Text style={styles.dividerText}>OR</Text>
-                  <View style={styles.divider} />
-                </View>
-
-                <Pressable
-                  style={styles.codeSigninBtn}
-                  onPress={() => { resetCodeSignin(); setMode('code-signin'); }}
-                >
-                  <MaterialIcons name="vpn-key" size={18} color={colors.primary} />
-                  <Text style={styles.codeSigninBtnText}>Sign in with Academy Code</Text>
-                  <MaterialIcons name="chevron-right" size={16} color={colors.primary} />
-                </Pressable>
-
-                {/* Demo shortcut */}
-                <Pressable
-                  style={styles.demoBtn}
-                  onPress={async () => {
-                    setEmail('james.mitchell@demo.com');
-                    setPassword('demo1234');
-                    const { error } = await signInWithPassword('james.mitchell@demo.com', 'demo1234');
-                    if (error) showAlert('Demo Login', 'Set the demo account password first in Supabase Dashboard, or use your own credentials.');
-                    else router.replace('/');
-                  }}
-                >
-                  <MaterialIcons name="sports-cricket" size={15} color={colors.success} />
-                  <Text style={styles.demoBtnText}>Demo: Riverside Cricket Academy (Coach)</Text>
-                </Pressable>
-
-                <Pressable onPress={() => setMode(mode === 'login' ? 'signup' : 'login')} style={styles.switchModeButton}>
-                  <Text style={styles.linkText}>
-                    {mode === 'login' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
+              {forgotStep === 'otp' && (
+                <>
+                  <Text style={styles.cardSubtitle}>
+                    Enter the code sent to{' '}
+                    <Text style={{ fontWeight: '700' }}>{forgotEmail}</Text>
+                    {' '}and your new password.
                   </Text>
-                </Pressable>
-              </>
-            )}
+                  <Text style={styles.fieldLabel}>Reset Code</Text>
+                  <TextInput
+                    style={[styles.input, styles.otpInput]}
+                    value={forgotOtp}
+                    onChangeText={setForgotOtp}
+                    placeholder="0000"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    autoFocus
+                  />
+                  <Text style={styles.fieldLabel}>New Password</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={forgotPassword}
+                    onChangeText={setForgotPassword}
+                    placeholder="New password (min 6 chars)"
+                    placeholderTextColor={colors.textSecondary}
+                    secureTextEntry
+                    autoCapitalize="none"
+                  />
+                  <Pressable
+                    style={[styles.continueBtn, loading && styles.continueBtnDisabled]}
+                    onPress={handleForgotReset}
+                    disabled={loading}
+                  >
+                    {loading
+                      ? <ActivityIndicator color={colors.textLight} />
+                      : <Text style={styles.continueBtnText}>Reset Password</Text>}
+                  </Pressable>
+                </>
+              )}
+            </View>
+          )}
 
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -510,71 +540,63 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-  scrollContent: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center' },
-  header: { alignItems: 'center', marginBottom: spacing.xl },
-  logo: { width: 120, height: 120 },
-  appName: { ...typography.h1, color: colors.text, marginTop: spacing.md },
-  tagline: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs, textAlign: 'center' },
-  form: { width: '100%' },
-  formTitle: { ...typography.h2, color: colors.text, marginBottom: spacing.sm, textAlign: 'center' },
-  formSubtitle: { ...typography.body, color: colors.textSecondary, marginBottom: spacing.lg, textAlign: 'center', lineHeight: 22 },
-  fieldLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '600', marginBottom: spacing.xs, marginTop: 4 },
+  safe: { flex: 1, backgroundColor: colors.background },
+  scroll: { flexGrow: 1, padding: spacing.lg, justifyContent: 'center', paddingBottom: 40 },
+
+  logoBlock: { alignItems: 'center', marginBottom: spacing.xl },
+  logo: { width: 100, height: 100 },
+  appName: { ...typography.h2, color: colors.text, fontWeight: '800', marginTop: spacing.md },
+  tagline: { ...typography.bodySmall, color: colors.textSecondary, marginTop: 4, textAlign: 'center' },
+
+  card: {
+    backgroundColor: colors.surface, borderRadius: 20, padding: spacing.lg,
+    borderWidth: 1, borderColor: colors.border,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.07, shadowRadius: 12, elevation: 4,
+  },
+  cardTitle: { ...typography.h3, color: colors.text, fontWeight: '800', textAlign: 'center', marginBottom: 6 },
+  cardSubtitle: { ...typography.bodySmall, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: spacing.lg },
+
+  fieldLabel: { fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: 6, marginTop: spacing.sm },
   input: {
-    backgroundColor: '#FFFFFF', borderWidth: 1.5, borderColor: '#D1D5DB',
-    borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md,
-    ...typography.body, color: colors.text, fontSize: 16,
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.md + 2,
+    fontSize: 16, color: colors.text,
+    marginBottom: spacing.xs,
   },
-  codeInput: {
-    letterSpacing: 4, fontSize: 22, fontWeight: '800',
-    textAlign: 'center', color: colors.primary, borderColor: colors.primary + '60',
-    backgroundColor: colors.primary + '08',
+  otpInput: {
+    textAlign: 'center', letterSpacing: 8, fontSize: 24,
+    fontWeight: '800', color: colors.primary,
+    borderColor: colors.primary + '60', backgroundColor: colors.primary + '08',
   },
-  button: { marginTop: spacing.md, marginBottom: spacing.lg },
-  linkText: { ...typography.body, color: colors.primary, textAlign: 'center' },
-  forgotButton: { marginBottom: spacing.md },
-  switchModeButton: { marginTop: spacing.sm },
-  backRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: spacing.md },
-  backText: { ...typography.bodySmall, color: colors.textSecondary },
-  academyJoinHeader: { alignItems: 'center', marginBottom: spacing.md },
-  academyJoinIcon: {
-    width: 60, height: 60, borderRadius: 30,
-    backgroundColor: colors.warning + '20', justifyContent: 'center', alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.md },
-  divider: { flex: 1, height: 1, backgroundColor: colors.border },
-  dividerText: { ...typography.bodySmall, color: colors.textSecondary, marginHorizontal: spacing.md, fontWeight: '600' },
-  codeSigninBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    backgroundColor: colors.primary + '12', borderWidth: 1.5, borderColor: colors.primary + '40',
-    borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md,
-  },
-  codeSigninBtnText: { flex: 1, fontSize: 15, color: colors.primary, fontWeight: '700' },
-  demoBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    backgroundColor: colors.success + '12', borderWidth: 1, borderColor: colors.success + '35',
-    borderRadius: borderRadius.md, paddingVertical: spacing.sm, paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  demoBtnText: { fontSize: 12, color: colors.success, fontWeight: '700' },
-  codeHint: {
-    fontSize: 12, color: colors.textSecondary, textAlign: 'center',
-    marginBottom: spacing.md, lineHeight: 18,
-  },
-  primaryActionBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+
+  continueBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     backgroundColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.md + 2, marginBottom: spacing.md,
+    paddingVertical: spacing.md + 4, marginTop: spacing.lg,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
-  primaryActionBtnDisabled: { opacity: 0.5 },
-  primaryActionBtnText: { color: colors.textLight, fontWeight: '700', fontSize: 16 },
-  academyBanner: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
-    padding: spacing.md, marginBottom: spacing.md,
-    borderWidth: 1, borderColor: colors.primary + '30',
+  continueBtnDisabled: { opacity: 0.55, shadowOpacity: 0 },
+  continueBtnText: { color: colors.textLight, fontSize: 17, fontWeight: '800' },
+
+  forgotLink: { alignItems: 'center', marginTop: spacing.md },
+  forgotLinkText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
+
+  hintCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: colors.primary + '0C', borderRadius: borderRadius.md,
+    padding: spacing.md, marginTop: spacing.lg,
+    borderWidth: 1, borderColor: colors.primary + '25',
   },
-  academyBannerName: { fontSize: 14, fontWeight: '800', color: colors.primary },
-  academyBannerRole: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  hintText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
+
+  backRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.md },
+  backText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+
+  otpIconCircle: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+    alignSelf: 'center', marginBottom: spacing.md,
+  },
 });

@@ -71,7 +71,7 @@ export default function RootScreen() {
     return <Redirect href="/login" />;
   }
 
-  // Step 3: Check mode selection (only needed for logged-in users without mode yet)
+  // Step 3: Check mode selection
   if (modeSelected === null) {
     return (
       <View style={styles.container}>
@@ -84,12 +84,8 @@ export default function RootScreen() {
     return <Redirect href="/mode-selection" />;
   }
 
-  // Step 4: Check profile setup
-  if (!profileSetupCompleted) {
-    return <Redirect href="/profile-setup" />;
-  }
-
-  // Step 5: User is authenticated and profile complete - show app
+  // Step 4: User has a mode — go straight to app
+  // (Profile setup is optional; academy users bypass it entirely)
   return <Redirect href="/(tabs)" />;
 }
 
