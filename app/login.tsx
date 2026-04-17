@@ -11,11 +11,11 @@ import { useAuth, useAlert } from '@/template';
 import { Button } from '@/components/ui/Button';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-type Mode = 'login' | 'signup' | 'otp' | 'forgot' | 'reset-otp' | 'academy-join';
+type Mode = 'login' | 'signup' | 'otp' | 'forgot' | 'reset-otp' | 'academy-join' | 'code-signin';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, signInWithGoogle, operationLoading } = useAuth();
+  const { signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, operationLoading } = useAuth();
   const { showAlert } = useAlert();
 
   const [mode, setMode] = useState<Mode>('signup');
@@ -24,7 +24,15 @@ export default function LoginScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [academyCode, setAcademyCode] = useState('');
-  const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Code sign-in flow state
+  const [codeSigninStep, setCodeSigninStep] = useState<'code' | 'auth'>('code');
+  const [codeSigninCode, setCodeSigninCode] = useState('');
+  const [codeSigninRole, setCodeSigninRole] = useState<'player' | 'coach' | null>(null);
+  const [codeSigninEmail, setCodeSigninEmail] = useState('');
+  const [codeSigninPassword, setCodeSigninPassword] = useState('');
+  const [codeSigninAcademyName, setCodeSigninAcademyName] = useState('');
+  const [codeSigninLoading, setCodeSigninLoading] = useState(false);
 
   const handleLogin = async () => {
     if (!email || !password) { showAlert('Error', 'Please fill in all fields'); return; }
@@ -61,17 +69,14 @@ export default function LoginScreen() {
     setMode('otp');
   };
 
-  // Sign up via academy code — still sends OTP but carries code through
+  // Sign up via academy code
   const handleAcademySignup = async () => {
     if (!email || !password) { showAlert('Error', 'Please fill in your email and password'); return; }
     if (password !== confirmPassword) { showAlert('Error', 'Passwords do not match'); return; }
     if (password.length < 6) { showAlert('Error', 'Password must be at least 6 characters long'); return; }
     if (!academyCode.trim()) { showAlert('Error', 'Please enter your academy code'); return; }
     const { error } = await sendOTP(email);
-    if (error) {
-      showAlert('Error', error);
-      return;
-    }
+    if (error) { showAlert('Error', error); return; }
     showAlert('Success', `Verification code sent to ${email}`);
     setMode('otp');
   };
@@ -81,7 +86,6 @@ export default function LoginScreen() {
     const { error } = await verifyOTPAndLogin(email, otp, { password });
     if (error) { showAlert('Verification Failed', error); return; }
     await new Promise(r => setTimeout(r, 500));
-    // If they came from academy-join, pass code to mode-selection
     if (academyCode.trim()) {
       router.replace({ pathname: '/mode-selection', params: { prefillCode: academyCode.trim().toUpperCase() } } as any);
     } else {
@@ -105,11 +109,62 @@ export default function LoginScreen() {
     else { showAlert('Success', 'Password reset successfully!'); router.replace('/'); }
   };
 
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    const { error } = await signInWithGoogle();
-    setGoogleLoading(false);
-    if (error) showAlert('Google Sign-In Failed', error);
+  // Code-based sign-in: verify academy code first
+  const handleVerifyJoinCode = async () => {
+    const code = codeSigninCode.trim().toUpperCase();
+    if (code.length < 6) { showAlert('Invalid Code', 'Please enter a valid 6-character code.'); return; }
+    setCodeSigninLoading(true);
+    try {
+      const { getSupabaseClient } = await import('@/template');
+      const supabase = getSupabaseClient();
+      const { data: byPlayer } = await supabase.from('academies').select('id, name').eq('player_code', code).maybeSingle();
+      const { data: byCoach } = await supabase.from('academies').select('id, name').eq('coach_code', code).maybeSingle();
+      const academy = byPlayer || byCoach;
+      if (!academy) {
+        setCodeSigninLoading(false);
+        showAlert('Code Not Found', 'This code does not match any academy. Please check and try again.');
+        return;
+      }
+      if (byCoach) setCodeSigninRole('coach');
+      else setCodeSigninRole('player');
+      setCodeSigninAcademyName(academy.name);
+      setCodeSigninStep('auth');
+    } catch (e: any) {
+      showAlert('Error', e.message || 'Failed to verify code');
+    }
+    setCodeSigninLoading(false);
+  };
+
+  const handleCodeSigninSubmit = async () => {
+    if (!codeSigninEmail || !codeSigninPassword) { showAlert('Error', 'Please enter email and password'); return; }
+    setCodeSigninLoading(true);
+    // Try sign in first (existing account)
+    const { error: loginErr } = await signInWithPassword(codeSigninEmail, codeSigninPassword);
+    if (!loginErr) {
+      setCodeSigninLoading(false);
+      router.replace({ pathname: '/mode-selection', params: { prefillCode: codeSigninCode.trim().toUpperCase() } } as any);
+      return;
+    }
+    // Not signed in — try creating account via OTP
+    const { error: otpErr } = await sendOTP(codeSigninEmail);
+    if (otpErr) { showAlert('Error', otpErr); setCodeSigninLoading(false); return; }
+    // Pass data into the main OTP flow
+    setEmail(codeSigninEmail);
+    setPassword(codeSigninPassword);
+    setConfirmPassword(codeSigninPassword);
+    setAcademyCode(codeSigninCode.trim().toUpperCase());
+    setCodeSigninLoading(false);
+    setMode('otp');
+    showAlert('Verify Email', `A 4-digit code was sent to ${codeSigninEmail}`);
+  };
+
+  const resetCodeSignin = () => {
+    setCodeSigninStep('code');
+    setCodeSigninCode('');
+    setCodeSigninEmail('');
+    setCodeSigninPassword('');
+    setCodeSigninAcademyName('');
+    setCodeSigninRole(null);
   };
 
   return (
@@ -204,6 +259,116 @@ export default function LoginScreen() {
               </>
             )}
 
+            {/* ── Sign in with Code ── */}
+            {mode === 'code-signin' && (
+              <>
+                <Pressable style={styles.backRow} onPress={() => { setMode('login'); resetCodeSignin(); }}>
+                  <MaterialIcons name="arrow-back" size={18} color={colors.textSecondary} />
+                  <Text style={styles.backText}>Back</Text>
+                </Pressable>
+
+                <View style={styles.academyJoinHeader}>
+                  <View style={[styles.academyJoinIcon, { backgroundColor: colors.primary + '20' }]}>
+                    <MaterialIcons name="vpn-key" size={28} color={colors.primary} />
+                  </View>
+                  <Text style={styles.formTitle}>Sign in with Code</Text>
+                  <Text style={styles.formSubtitle}>
+                    {codeSigninStep === 'code'
+                      ? 'Enter the Player Code or Coach Code from your academy'
+                      : `You are joining ${codeSigninAcademyName} as a ${codeSigninRole === 'coach' ? 'Coach' : 'Player'}`}
+                  </Text>
+                </View>
+
+                {codeSigninStep === 'code' && (
+                  <>
+                    <Text style={styles.fieldLabel}>Academy Code *</Text>
+                    <TextInput
+                      style={[styles.input, styles.codeInput]}
+                      placeholder="e.g. ABC123"
+                      placeholderTextColor="#9CA3AF"
+                      value={codeSigninCode}
+                      onChangeText={v => setCodeSigninCode(v.toUpperCase())}
+                      autoCapitalize="characters"
+                      maxLength={6}
+                      autoFocus
+                    />
+                    <Text style={styles.codeHint}>
+                      Your coach will give you a 6-character Player Code or Coach Code
+                    </Text>
+                    <Pressable
+                      style={[styles.primaryActionBtn, codeSigninLoading || codeSigninCode.length < 6 ? styles.primaryActionBtnDisabled : null]}
+                      onPress={handleVerifyJoinCode}
+                      disabled={codeSigninLoading || codeSigninCode.length < 6}
+                    >
+                      {codeSigninLoading
+                        ? <ActivityIndicator color={colors.textLight} />
+                        : (
+                          <>
+                            <MaterialIcons name="arrow-forward" size={18} color={colors.textLight} />
+                            <Text style={styles.primaryActionBtnText}>Verify Code</Text>
+                          </>
+                        )}
+                    </Pressable>
+                  </>
+                )}
+
+                {codeSigninStep === 'auth' && (
+                  <>
+                    {/* Academy confirmation banner */}
+                    <View style={styles.academyBanner}>
+                      <MaterialIcons name={codeSigninRole === 'coach' ? 'school' : 'sports-cricket'} size={18} color={colors.primary} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.academyBannerName}>{codeSigninAcademyName}</Text>
+                        <Text style={styles.academyBannerRole}>Joining as {codeSigninRole === 'coach' ? 'Coach' : 'Player'} · Code: {codeSigninCode}</Text>
+                      </View>
+                    </View>
+
+                    <Text style={styles.fieldLabel}>Email *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Email"
+                      placeholderTextColor="#9CA3AF"
+                      value={codeSigninEmail}
+                      onChangeText={setCodeSigninEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoFocus
+                    />
+                    <Text style={styles.fieldLabel}>Password *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Password (min 6 chars)"
+                      placeholderTextColor="#9CA3AF"
+                      value={codeSigninPassword}
+                      onChangeText={setCodeSigninPassword}
+                      secureTextEntry
+                      autoCapitalize="none"
+                    />
+                    <Text style={styles.codeHint}>
+                      Already have an account? Just sign in. New here? Enter a password to create your account automatically.
+                    </Text>
+                    <Pressable
+                      style={[styles.primaryActionBtn, codeSigninLoading ? styles.primaryActionBtnDisabled : null]}
+                      onPress={handleCodeSigninSubmit}
+                      disabled={codeSigninLoading}
+                    >
+                      {codeSigninLoading
+                        ? <ActivityIndicator color={colors.textLight} />
+                        : (
+                          <>
+                            <MaterialIcons name="login" size={18} color={colors.textLight} />
+                            <Text style={styles.primaryActionBtnText}>Continue</Text>
+                          </>
+                        )}
+                    </Pressable>
+                    <Pressable style={{ marginTop: spacing.sm }} onPress={() => setCodeSigninStep('code')}>
+                      <Text style={[styles.linkText, { fontSize: 13 }]}>Wrong code? Change it</Text>
+                    </Pressable>
+                  </>
+                )}
+              </>
+            )}
+
             {/* ── Login / Signup ── */}
             {(mode === 'login' || mode === 'signup') && (
               <>
@@ -229,19 +394,7 @@ export default function LoginScreen() {
                   </Pressable>
                 )}
 
-                {/* Academy Code shortcut */}
-                <Pressable
-                  style={styles.academyCodeBtn}
-                  onPress={() => { setAcademyCode(''); setMode('academy-join'); }}
-                >
-                  <MaterialIcons name="vpn-key" size={16} color={colors.warning} />
-                  <Text style={styles.academyCodeBtnText}>
-                    {mode === 'login' ? 'Have an academy code? Sign up with it' : 'Have an academy code from your coach?'}
-                  </Text>
-                  <MaterialIcons name="chevron-right" size={16} color={colors.warning} />
-                </Pressable>
-
-                {/* Google Sign-In */}
+                {/* Sign in with Code */}
                 <View style={styles.dividerContainer}>
                   <View style={styles.divider} />
                   <Text style={styles.dividerText}>OR</Text>
@@ -249,18 +402,12 @@ export default function LoginScreen() {
                 </View>
 
                 <Pressable
-                  style={styles.googleButton}
-                  onPress={handleGoogleSignIn}
-                  disabled={googleLoading || operationLoading}
+                  style={styles.codeSigninBtn}
+                  onPress={() => { resetCodeSignin(); setMode('code-signin'); }}
                 >
-                  {googleLoading ? (
-                    <ActivityIndicator size="small" color={colors.text} />
-                  ) : (
-                    <>
-                      <MaterialIcons name="g-mobiledata" size={26} color="#4285F4" />
-                      <Text style={styles.googleButtonText}>Continue with Google</Text>
-                    </>
-                  )}
+                  <MaterialIcons name="vpn-key" size={18} color={colors.primary} />
+                  <Text style={styles.codeSigninBtnText}>Sign in with Academy Code</Text>
+                  <MaterialIcons name="chevron-right" size={16} color={colors.primary} />
                 </Pressable>
 
                 {/* Demo shortcut */}
@@ -311,8 +458,8 @@ const styles = StyleSheet.create({
   },
   codeInput: {
     letterSpacing: 4, fontSize: 22, fontWeight: '800',
-    textAlign: 'center', color: colors.warning, borderColor: colors.warning + '60',
-    backgroundColor: colors.warning + '08',
+    textAlign: 'center', color: colors.primary, borderColor: colors.primary + '60',
+    backgroundColor: colors.primary + '08',
   },
   button: { marginTop: spacing.md, marginBottom: spacing.lg },
   linkText: { ...typography.body, color: colors.primary, textAlign: 'center' },
@@ -326,22 +473,15 @@ const styles = StyleSheet.create({
     backgroundColor: colors.warning + '20', justifyContent: 'center', alignItems: 'center',
     marginBottom: spacing.sm,
   },
-  academyCodeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
-    backgroundColor: colors.warning + '12', borderWidth: 1, borderColor: colors.warning + '35',
-    borderRadius: borderRadius.md, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md,
-    marginBottom: spacing.md,
-  },
-  academyCodeBtnText: { flex: 1, fontSize: 13, color: colors.warning, fontWeight: '600' },
   dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: spacing.md },
   divider: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { ...typography.bodySmall, color: colors.textSecondary, marginHorizontal: spacing.md, fontWeight: '600' },
-  googleButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.surface, borderWidth: 1.5, borderColor: colors.border,
-    borderRadius: borderRadius.md, padding: spacing.md, gap: spacing.sm, marginBottom: spacing.lg,
+  codeSigninBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.primary + '12', borderWidth: 1.5, borderColor: colors.primary + '40',
+    borderRadius: borderRadius.md, padding: spacing.md, marginBottom: spacing.md,
   },
-  googleButtonText: { ...typography.body, color: colors.text, fontWeight: '600' },
+  codeSigninBtnText: { flex: 1, fontSize: 15, color: colors.primary, fontWeight: '700' },
   demoBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: colors.success + '12', borderWidth: 1, borderColor: colors.success + '35',
@@ -349,4 +489,23 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   demoBtnText: { fontSize: 12, color: colors.success, fontWeight: '700' },
+  codeHint: {
+    fontSize: 12, color: colors.textSecondary, textAlign: 'center',
+    marginBottom: spacing.md, lineHeight: 18,
+  },
+  primaryActionBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: colors.primary, borderRadius: borderRadius.md,
+    paddingVertical: spacing.md + 2, marginBottom: spacing.md,
+  },
+  primaryActionBtnDisabled: { opacity: 0.5 },
+  primaryActionBtnText: { color: colors.textLight, fontWeight: '700', fontSize: 16 },
+  academyBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
+    padding: spacing.md, marginBottom: spacing.md,
+    borderWidth: 1, borderColor: colors.primary + '30',
+  },
+  academyBannerName: { fontSize: 14, fontWeight: '800', color: colors.primary },
+  academyBannerRole: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
 });
