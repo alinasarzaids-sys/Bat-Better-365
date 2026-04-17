@@ -33,10 +33,23 @@ export default function AcademyHistoryScreen() {
   const load = useCallback(async () => {
     if (!user) return;
     if (isCoach) {
-      const { data } = await academyService.getAcademyLogs(academyId, 365);
+      // Coach/Admin: load ALL logs for the academy (no days limit)
+      const supabase = (await import('@/template')).getSupabaseClient();
+      const { data, error } = await supabase
+        .from('academy_training_logs')
+        .select('*, user_profiles(username, email, full_name)')
+        .eq('academy_id', academyId)
+        .order('log_date', { ascending: false });
       setLogs((data || []) as LogWithProfile[]);
     } else {
-      const { data } = await academyService.getMyLogs(user.id, academyId, 365);
+      // Player: load own logs (no days limit)
+      const supabase = (await import('@/template')).getSupabaseClient();
+      const { data } = await supabase
+        .from('academy_training_logs')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('academy_id', academyId)
+        .order('log_date', { ascending: false });
       setLogs(data || []);
     }
     setLoading(false);
@@ -93,13 +106,18 @@ export default function AcademyHistoryScreen() {
         ) : (
           <>
             <Text style={styles.sectionLabel}>{logs.length} sessions{isCoach ? ' across all players' : ' — tap delete to remove'}</Text>
-            {logs.map(log => ( // Added return statement here
+            {logs.map(log => (
               <View key={log.id} style={styles.logCard}>
                 <View style={[styles.intensityStripe, { backgroundColor: getIntensityColor(log.intensity) }]} />
                 <View style={styles.logContent}>
                   <View style={styles.logTop}>
                     <View style={{ flex: 1 }}>
                       <Text style={styles.logType}>{log.session_type}</Text>
+                      {isCoach && log.user_profiles && (
+                        <Text style={styles.logPlayerName}>
+                          {log.user_profiles.full_name || log.user_profiles.username || log.user_profiles.email?.split('@')[0] || 'Player'}
+                        </Text>
+                      )}
                       <Text style={styles.logDate}>{log.log_date}</Text>
                     </View>
                     <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(log.intensity) + '20' }]}>
@@ -198,6 +216,7 @@ const styles = StyleSheet.create({
   logTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.xs },
   logType: { ...typography.bodySmall, color: colors.text, fontWeight: '700' },
   logDate: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  logPlayerName: { fontSize: 12, color: colors.primary, fontWeight: '700', marginTop: 1 },
   intensityBadge: { paddingHorizontal: spacing.xs + 2, paddingVertical: 3, borderRadius: borderRadius.sm },
   intensityText: { fontSize: 11, fontWeight: '800' },
   deleteBtn: { padding: 4 },
