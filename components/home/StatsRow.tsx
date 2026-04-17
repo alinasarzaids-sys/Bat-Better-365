@@ -64,6 +64,14 @@ async function fetchWeeklyMinutes(userId: string): Promise<number> {
     .gte('completed_at', startStr);
   (sessions || []).forEach((s: any) => { totalSeconds += (s.duration_minutes || 0) * 60; });
 
+  // Academy training logs this week
+  const { data: academyLogs } = await supabase
+    .from('academy_training_logs')
+    .select('duration_minutes')
+    .eq('user_id', userId)
+    .gte('log_date', monday.toISOString().split('T')[0]);
+  (academyLogs || []).forEach((l: any) => { totalSeconds += (l.duration_minutes || 0) * 60; });
+
   return Math.round(totalSeconds / 60);
 }
 
@@ -223,7 +231,7 @@ export function StatsRow({ progress }: StatsRowProps) {
               </Pressable>
             </View>
 
-            <ScrollView showsVerticalScrollIndicator={false}>
+            <ScrollView showsVerticalScrollIndicator={true} style={styles.modalScroll} nestedScrollEnabled>
               {/* Current XP */}
               <View style={styles.xpSummaryBox}>
                 <Text style={styles.xpSummaryLabel}>Your Total XP</Text>
@@ -336,7 +344,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: spacing.lg, paddingBottom: 40,
-    maxHeight: '85%',
+    maxHeight: '88%',
+    flex: 0,
+  },
+  modalScroll: {
+    flexGrow: 0,
   },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
