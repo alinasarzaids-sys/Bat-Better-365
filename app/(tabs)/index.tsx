@@ -94,9 +94,11 @@ export default function HomeScreen() {
       }
       
       // Load leaderboard (top 5)
-      const { data: leaderboardData } = await leaderboardService.getLeaderboard('overall', 5);
+      const { data: leaderboardData, error: lbErr } = await leaderboardService.getLeaderboard('overall', 5);
       if (leaderboardData) {
         setLeaderboard(leaderboardData);
+      } else {
+        console.log('Leaderboard fetch issue:', lbErr);
       }
 
     } catch (error) {
@@ -181,8 +183,11 @@ export default function HomeScreen() {
   const handleStartSession = (session: SessionWithDrill) => {
     if (session.drill && session.drill.id) {
       router.push(`/drill-start?id=${session.drill.id}` as any);
-    } else if (session.session_type === 'Freestyle') {
-      router.push(`/session-freestyle?sessionId=${session.id}` as any);
+    } else if (session.session_type === 'Freestyle' || session.session_type === 'Structured') {
+      router.push('/session-freestyle' as any);
+    } else {
+      // Fallback: open freestyle session
+      router.push('/session-freestyle' as any);
     }
   };
 
@@ -267,7 +272,8 @@ ${sessionData.session_notes ? `Notes: ${sessionData.session_notes}` : ''}`;
   };
 
   const nextSession = upcomingSessions[0] || null;
-  const otherSessions = [...upcomingSessions.slice(1), ...completedSessions];
+  const otherUpcoming = upcomingSessions.slice(1, 4);
+  const otherSessions = [...otherUpcoming, ...completedSessions.slice(0, 2)];
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -323,8 +329,9 @@ ${sessionData.session_notes ? `Notes: ${sessionData.session_notes}` : ''}`;
             </View>
           ) : leaderboard.length === 0 ? (
             <View style={styles.emptyStateCard}>
-              <MaterialIcons name="leaderboard" size={40} color={colors.border} />
-              <Text style={styles.emptyStateText}>No leaderboard data yet</Text>
+              <MaterialIcons name="emoji-events" size={40} color={colors.border} />
+              <Text style={styles.emptyStateText}>Be the first on the board!</Text>
+              <Text style={[styles.emptyStateText, { fontSize: 12, marginTop: -spacing.sm }]}>Complete drills to earn XP</Text>
             </View>
           ) : (
             <>
@@ -391,7 +398,7 @@ ${sessionData.session_notes ? `Notes: ${sessionData.session_notes}` : ''}`;
         {/* Today & Upcoming Section */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <MaterialIcons name="calendar-today" size={24} color={colors.primary} />
+            <MaterialIcons name="event" size={24} color={colors.primary} />
             <Text style={styles.sectionTitle}>Today & Upcoming</Text>
           </View>
 
@@ -573,7 +580,7 @@ ${sessionData.session_notes ? `Notes: ${sessionData.session_notes}` : ''}`;
             </View>
 
             <Pressable style={styles.addEventButton} onPress={handleAddEvent}>
-              <MaterialIcons name="event" size={20} color={colors.textLight} />
+              <MaterialIcons name="calendar-today" size={20} color={colors.textLight} />
               <Text style={styles.addEventButtonText}>Add Club Training or Match Event</Text>
             </Pressable>
 
