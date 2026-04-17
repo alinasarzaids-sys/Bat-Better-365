@@ -4,6 +4,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform, View, Text, Pressable, StyleSheet } from 'react-native';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 import { useActiveSession } from '@/hooks/useActiveSession';
+import { useAuth } from '@/template';
+import { getSupabaseClient } from '@/template';
+import { useEffect, useState } from 'react';
 
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
@@ -139,6 +142,23 @@ function MiniSessionBar() {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
+  const [showAcademy, setShowAcademy] = useState(true); // default show, hide once loaded
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const supabase = getSupabaseClient();
+    supabase
+      .from('user_profiles')
+      .select('app_mode')
+      .eq('id', user.id)
+      .single()
+      .then(({ data }) => {
+        const mode = data?.app_mode;
+        // Hide academy tab only for individual mode
+        setShowAcademy(mode !== 'individual');
+      });
+  }, [user?.id]);
 
   const tabBarStyle = {
     height: Platform.select({
@@ -225,6 +245,7 @@ export default function TabLayout() {
           name="academy"
           options={{
             title: 'Academy',
+            href: showAcademy ? undefined : null,
             tabBarIcon: ({ color, size }) => (
               <MaterialIcons name="shield" size={size} color={color} />
             ),

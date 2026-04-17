@@ -58,7 +58,8 @@ export default function ModeSelectionScreen() {
     setLoading(true);
     await saveMode('individual');
     setLoading(false);
-    router.replace('/profile-setup');
+    // Individual players go to paywall — they need to subscribe
+    router.replace('/paywall' as any);
   };
 
   const handleAcademyNext = () => {
@@ -93,7 +94,7 @@ export default function ModeSelectionScreen() {
       'Joined!',
       `You have joined ${data!.academy.name} as ${role}.`,
     );
-    router.replace('/profile-setup');
+    router.replace('/' as any);
   };
 
   if (step === 'academy-code') {

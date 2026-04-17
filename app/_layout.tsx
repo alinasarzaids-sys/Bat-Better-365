@@ -184,6 +184,14 @@ export default function RootLayout() {
               }} 
             />
             <Stack.Screen 
+              name="paywall" 
+              options={{ 
+                headerShown: false,
+                animation: 'fade',
+                presentation: 'card'
+              }} 
+            />
+            <Stack.Screen 
               name="mode-selection" 
               options={{ 
                 headerShown: false,

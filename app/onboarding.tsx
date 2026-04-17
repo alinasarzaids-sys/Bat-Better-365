@@ -6,16 +6,14 @@ import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { Image } from 'expo-image';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
 
-const ONBOARDING_KEY = '@bat_better_onboarding_completed';
+const INTRO_SEEN_KEY = '@bb365_intro_seen';
 
 export default function OnboardingScreen() {
   const router = useRouter();
 
   const handleGetStarted = async () => {
-    // Mark onboarding as completed
-    await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
-    // Navigate to login screen
-    router.push('/login' as any);
+    await AsyncStorage.setItem(INTRO_SEEN_KEY, 'true');
+    router.replace('/login' as any);
   };
 
   const features = [
