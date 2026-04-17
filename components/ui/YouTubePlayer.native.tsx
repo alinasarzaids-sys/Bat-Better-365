@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Image, Text } from 'react-native';
+import { View, StyleSheet, Pressable, Text } from 'react-native';
+import { Image } from 'expo-image';
+import WebView from 'react-native-webview';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
-import YoutubePlayer from 'react-native-youtube-iframe';
 
 interface YouTubePlayerProps {
   videoId: string;
@@ -12,16 +13,16 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
   const [showPlayer, setShowPlayer] = useState(false);
 
   if (!showPlayer) {
-    // Show thumbnail until user clicks to play
     return (
-      <Pressable 
+      <Pressable
         style={[styles.container, { height }]}
         onPress={() => setShowPlayer(true)}
       >
         <Image
           source={{ uri: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` }}
           style={styles.thumbnail}
-          resizeMode="cover"
+          contentFit="cover"
+          transition={200}
         />
         <View style={styles.playButtonOverlay}>
           <View style={styles.playButton}>
@@ -32,19 +33,38 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
     );
   }
 
+  // Use a plain WebView iframe embed — no expo-video / SimpleCache involved
+  const embedHtml = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; background: #000; }
+      iframe { width: 100%; height: 100vh; border: none; display: block; }
+    </style>
+  </head>
+  <body>
+    <iframe
+      src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1"
+      allow="autoplay; encrypted-media; fullscreen"
+      allowfullscreen
+    ></iframe>
+  </body>
+</html>
+`;
+
   return (
     <View style={[styles.playerContainer, { height }]}>
-      <YoutubePlayer
-        height={height}
-        videoId={videoId}
-        play={true}
-        webViewStyle={styles.player}
-        initialPlayerParams={{
-          controls: true,
-          modestbranding: true,
-          preventFullScreen: false,
-          rel: false,
-        }}
+      <WebView
+        source={{ html: embedHtml }}
+        style={styles.player}
+        allowsFullscreenVideo
+        mediaPlaybackRequiresUserAction={false}
+        javaScriptEnabled
+        domStorageEnabled
+        allowsInlineMediaPlayback
+        startInLoadingState
       />
     </View>
   );
@@ -61,7 +81,7 @@ const styles = StyleSheet.create({
     width: '100%',
     borderRadius: 8,
     overflow: 'hidden',
-    backgroundColor: 'transparent',
+    backgroundColor: '#000',
   },
   thumbnail: {
     width: '100%',
@@ -91,6 +111,7 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   player: {
-    opacity: 0.99,
+    flex: 1,
+    backgroundColor: '#000',
   },
 });
