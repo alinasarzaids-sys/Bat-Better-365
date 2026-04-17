@@ -160,22 +160,85 @@ export default function JournalScreen() {
   }, [timeBlocks]);
 
   const checkOnboardingStatus = async () => {
-    if (!user) return;
-    const supabase = getSupabaseClient();
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('journal_onboarding_completed')
-      .eq('id', user.id)
-      .single();
-    if (!data?.journal_onboarding_completed) {
-      setShowOnboarding(true);
-      setLoading(false);
-    }
+    // PROMO: skip onboarding for demo video
+    return;
   };
 
   const loadEntry = async () => {
     if (!user) return;
     setLoading(true);
+
+    // ── PROMO DEMO DATA ───────────────────────────────────────────────────────
+    const today = new Date().toISOString().split('T')[0];
+    if (selectedDate === today) {
+      const demoEntry: JournalEntry = {
+        id: 'demo-journal-today',
+        user_id: user.id,
+        entry_date: today,
+        mindset_goals: [
+          'Score 50+ in the upcoming club match',
+          'Master the cover drive off back foot',
+          'Maintain 70%+ middle rate in every practice session',
+          'Improve reaction speed to short-pitch deliveries',
+          'Build a consistent pre-ball routine at the crease',
+        ],
+        my_purpose: 'To represent my country and inspire the next generation of cricketers from my city.',
+        my_values: 'Discipline, Resilience, Teamwork, Continuous Improvement.',
+        my_vision: 'Playing Test cricket for Pakistan by 25 — technically sound, mentally unbreakable.',
+        message_to_younger_self: 'Trust the process. Every ball in the nets is an investment. Show up every day even when no one is watching.',
+        top_3_tasks: [
+          'Complete 200-ball batting session at the academy',
+          'Watch opponent\'s bowling footage for 30 minutes',
+          'Evening gym — core and lower body strength',
+        ],
+        grateful_for: [
+          'Having a coach who believes in me',
+          'My family\'s support through every match',
+          'Access to quality training facilities',
+          'The ability to do what I love every day',
+        ],
+        wellness_yoga: true,
+        wellness_meditate: true,
+        wellness_visualise: true,
+        wellness_cold_therapy: false,
+        nutrition_breakfast: 'Oats with banana, boiled eggs x2, green tea',
+        nutrition_lunch: 'Grilled chicken with brown rice and salad',
+        nutrition_dinner: 'Lentil soup, whole wheat roti, yoghurt',
+        nutrition_snacks: 'Almonds, apple, protein shake post-training',
+        performance_goals: [
+          'Hit 15+ boundaries in today\'s session',
+          'Zero soft dismissals — make them earn every wicket',
+          'Stay fully focused for the entire 75-minute block',
+        ],
+        todays_wins: [
+          'Faced 180 balls and hit a personal-best 74% middle rate',
+          'Cover drive clicked perfectly — coach noticed the improvement',
+          'Stayed composed under short-pitch pressure drill',
+        ],
+        things_to_improve: [
+          'Get front foot further forward when driving on the up',
+          'Call better between wickets during running drills',
+          'Stay more relaxed in the shoulders at the start of each session',
+        ],
+        daily_notes: 'Today felt like a breakthrough session. The mental work from the past few weeks is clearly starting to show. Coach said my foot movement was the best he has seen. Staying process-focused — one ball at a time.',
+        hourly_6am: JSON.stringify([
+          { id: '1', fromTime: '5:00am', toTime: '6:00am', activity: 'Morning meditation & visualisation (20 min) + light stretch' },
+          { id: '2', fromTime: '6:00am', toTime: '8:00am', activity: 'Academy batting session — 175 balls, focus on cover drives' },
+          { id: '3', fromTime: '9:00am', toTime: '10:00am', activity: 'Recovery: ice bath + protein breakfast' },
+          { id: '4', fromTime: '11:00am', toTime: '12:00pm', activity: 'Video analysis — studying opposition fast bowler\'s variations' },
+          { id: '5', fromTime: '3:00pm', toTime: '4:30pm', activity: 'Gym: lower body strength + core circuit' },
+          { id: '6', fromTime: '7:00pm', toTime: '8:00pm', activity: 'Journal + review tomorrow\'s match plan' },
+        ]),
+        is_completed: false,
+        points_awarded: 0,
+      };
+      setEntry(demoEntry);
+      setTimeBlocks(parseTimeBlocks(demoEntry.hourly_6am));
+      setLoading(false);
+      return;
+    }
+    // ── END PROMO DATA ───────────────────────────────────────────────────────
+
     const supabase = getSupabaseClient();
 
     const { data, error } = await supabase
