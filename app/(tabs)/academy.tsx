@@ -101,6 +101,11 @@ function InviteModal({ visible, academy, onClose }: {
     title: `Coach Code — ${academy.name}`,
   });
 
+  const shareAdminCode = () => Share.share({
+    message: `Join ${academy.name} on Bat Better 365 as an Admin!\n\nAdmin Code: ${(academy as any).admin_code}\n\nThis gives full access to both coach and player portals.`,
+    title: `Admin Code — ${academy.name}`,
+  });
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={inviteModalStyles.overlay} onPress={onClose}>
@@ -108,6 +113,22 @@ function InviteModal({ visible, academy, onClose }: {
           <View style={inviteModalStyles.handle} />
           <Text style={inviteModalStyles.title}>Invite to {academy.name}</Text>
           <Text style={inviteModalStyles.subtitle}>Share the relevant code with your squad members</Text>
+
+          {/* Admin Code — full access */}
+          <View style={[inviteModalStyles.codeBlock, { borderColor: colors.error + '40', backgroundColor: colors.error + '06' }]}>
+            <View style={[inviteModalStyles.codeIconCircle, { backgroundColor: colors.error + '15' }]}>
+              <MaterialIcons name="admin-panel-settings" size={22} color={colors.error} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={inviteModalStyles.codeRoleLabel}>ADMIN CODE (Full Access)</Text>
+              <Text style={[inviteModalStyles.codeValue, { color: colors.error }]}>{(academy as any).admin_code}</Text>
+              <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>Views both coach and player portals</Text>
+            </View>
+            <Pressable style={[inviteModalStyles.shareBtn, { backgroundColor: colors.error }]} onPress={shareAdminCode}>
+              <MaterialIcons name="share" size={16} color={colors.textLight} />
+              <Text style={inviteModalStyles.shareBtnText}>Share</Text>
+            </Pressable>
+          </View>
 
           <View style={[inviteModalStyles.codeBlock, { borderColor: colors.primary + '40' }]}>
             <View style={[inviteModalStyles.codeIconCircle, { backgroundColor: colors.primary + '15' }]}>
@@ -482,7 +503,10 @@ export default function AcademyScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const currentMembership = memberships[selectedIdx] || null;
-  const isCoach = currentMembership?.member.role === 'coach' && !previewAsPlayer;
+  const memberRole = currentMembership?.member.role;
+  const isAdmin = memberRole === 'admin';
+  // Admin can toggle between views; coach is coach-only; player is player-only
+  const isCoach = (memberRole === 'coach' || isAdmin) && !previewAsPlayer;
 
   const loadCoachData = useCallback(async (academyId: string) => {
     const [logsRes, membersRes, squadsRes] = await Promise.all([
@@ -552,7 +576,8 @@ export default function AcademyScreen() {
     const supabase = (await import('@/template')).getSupabaseClient();
     const { data: byPlayer } = await supabase.from('academies').select('id, name').eq('player_code', upper).maybeSingle();
     const { data: byCoach } = await supabase.from('academies').select('id, name').eq('coach_code', upper).maybeSingle();
-    const academy = byPlayer || byCoach;
+    const { data: byAdmin } = await supabase.from('academies').select('id, name').eq('admin_code', upper).maybeSingle();
+    const academy = byPlayer || byCoach || byAdmin;
 
     if (!academy) {
       setJoinCodeLoading(false);
@@ -611,7 +636,8 @@ export default function AcademyScreen() {
     setShowJoinModal(false);
     resetJoinModal();
     await load();
-    showAlert('Joined!', `You are now part of ${data!.academy.name} as ${data!.role === 'coach' ? 'Coach' : 'Player'}.`);
+    const roleLabel = data!.role === 'admin' ? 'Admin' : data!.role === 'coach' ? 'Coach' : 'Player';
+    showAlert('Joined!', `You are now part of ${data!.academy.name} as ${roleLabel}.`);
   };
 
   const resetJoinModal = () => {
@@ -690,7 +716,7 @@ export default function AcademyScreen() {
           {memberships.length > 1 && <Text style={styles.headerSub}>{memberships.length} academies</Text>}
         </View>
         <View style={styles.headerActions}>
-          {currentMembership?.member.role === 'coach' && (
+          {isAdmin && (
             <Pressable
               style={[styles.previewToggleBtn, previewAsPlayer && styles.previewToggleBtnActive]}
               onPress={() => setPreviewAsPlayer(p => !p)}
@@ -767,7 +793,7 @@ export default function AcademyScreen() {
             {currentMembership!.academy.description ? (
               <Text style={styles.academyStripDesc} numberOfLines={1}>{currentMembership!.academy.description}</Text>
             ) : null}
-            {!isCoach && currentMembership!.member.position ? (
+            {!isCoach && memberRole !== 'admin' && currentMembership!.member.position ? (
               <Text style={[styles.academyStripSub, { color: getPositionColor(currentMembership!.member.position) }]}>
                 {currentMembership!.member.position}
                 {currentMembership!.member.jersey_number ? ` · #${currentMembership!.member.jersey_number}` : ''}
@@ -779,9 +805,9 @@ export default function AcademyScreen() {
               <MaterialIcons name="edit" size={15} color={colors.warning} />
             </Pressable>
           )}
-          <View style={[styles.roleChip, { backgroundColor: (isCoach ? colors.warning : colors.primary) + '18' }]}>
-            <Text style={[styles.roleChipText, { color: isCoach ? colors.warning : colors.primary }]}>
-              {isCoach ? 'Coach' : 'Player'}
+          <View style={[styles.roleChip, { backgroundColor: (memberRole === 'admin' ? colors.error : isCoach ? colors.warning : colors.primary) + '18' }]}>
+            <Text style={[styles.roleChipText, { color: memberRole === 'admin' ? colors.error : isCoach ? colors.warning : colors.primary }]}>
+              {memberRole === 'admin' ? 'Admin' : isCoach ? 'Coach' : 'Player'}
             </Text>
           </View>
         </View>

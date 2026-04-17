@@ -7,6 +7,7 @@ export interface Academy {
   sport: string;
   player_code: string;
   coach_code: string;
+  admin_code: string;
   created_by: string;
   created_at: string;
 }
@@ -15,7 +16,7 @@ export interface AcademyMember {
   id: string;
   academy_id: string;
   user_id: string;
-  role: 'player' | 'coach';
+  role: 'player' | 'coach' | 'admin';
   position: string;
   display_name?: string;
   jersey_number?: string;
@@ -121,7 +122,7 @@ export const academyService = {
     return { data, error: null };
   },
 
-  async joinAcademy(code: string, userId: string, displayName: string, position: string, jerseyNumber: string, deviceId?: string, squadId?: string): Promise<{ data: { academy: Academy; role: 'player' | 'coach' } | null; error: string | null }> {
+  async joinAcademy(code: string, userId: string, displayName: string, position: string, jerseyNumber: string, deviceId?: string, squadId?: string): Promise<{ data: { academy: Academy; role: 'player' | 'coach' | 'admin' } | null; error: string | null }> {
     const supabase = getSupabaseClient();
     const upperCode = code.trim().toUpperCase();
 
@@ -139,10 +140,17 @@ export const academyService = {
       .eq('coach_code', upperCode)
       .single();
 
-    const academy = byPlayer || byCoach;
+    // Check admin code
+    const { data: byAdmin } = await supabase
+      .from('academies')
+      .select('*')
+      .eq('admin_code', upperCode)
+      .single();
+
+    const academy = byPlayer || byCoach || byAdmin;
     if (!academy) return { data: null, error: 'Invalid code. Please check and try again.' };
 
-    const role: 'player' | 'coach' = byCoach ? 'coach' : 'player';
+    const role: 'player' | 'coach' | 'admin' = byAdmin ? 'admin' : byCoach ? 'coach' : 'player';
 
     // Check already member
     const { data: existing } = await supabase
@@ -171,7 +179,7 @@ export const academyService = {
       academy_id: academy.id,
       user_id: userId,
       role,
-      position,
+      position: role === 'admin' ? 'Admin' : position,
       display_name: displayName,
       jersey_number: jerseyNumber,
       ...(deviceId ? { device_id: deviceId } : {}),
@@ -180,6 +188,17 @@ export const academyService = {
 
     if (joinError) return { data: null, error: joinError.message };
     return { data: { academy, role }, error: null };
+  },
+
+  async generateAdminCode(academyId: string): Promise<{ data: string | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const newCode = generateCode();
+    const { error } = await supabase
+      .from('academies')
+      .update({ admin_code: newCode })
+      .eq('id', academyId);
+    if (error) return { data: null, error: error.message };
+    return { data: newCode, error: null };
   },
 
   async getMyAcademies(userId: string): Promise<{ data: Array<{ academy: Academy; member: AcademyMember }> | null; error: string | null }> {

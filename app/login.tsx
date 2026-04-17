@@ -119,13 +119,15 @@ export default function LoginScreen() {
       const supabase = getSupabaseClient();
       const { data: byPlayer } = await supabase.from('academies').select('id, name').eq('player_code', code).maybeSingle();
       const { data: byCoach } = await supabase.from('academies').select('id, name').eq('coach_code', code).maybeSingle();
-      const academy = byPlayer || byCoach;
+      const { data: byAdmin } = await supabase.from('academies').select('id, name').eq('admin_code', code).maybeSingle();
+      const academy = byPlayer || byCoach || byAdmin;
       if (!academy) {
         setCodeSigninLoading(false);
         showAlert('Code Not Found', 'This code does not match any academy. Please check and try again.');
         return;
       }
-      if (byCoach) setCodeSigninRole('coach');
+      if (byAdmin) setCodeSigninRole('coach'); // admin sees coach view by default
+      else if (byCoach) setCodeSigninRole('coach');
       else setCodeSigninRole('player');
       setCodeSigninAcademyName(academy.name);
       setCodeSigninStep('auth');
