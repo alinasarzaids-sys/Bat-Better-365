@@ -578,6 +578,10 @@ function SessionCard({
   const color = typeColor(entry.sessionType);
   const isToday = entry.date === today;
   const isPast = entry.date < today;
+  // A past session is "missed" if there is no log for it (we flag via the source/type heuristic used in academy.tsx)
+  // For schedule screen, we treat all past sessions as potentially missed unless marked done by the player
+  const isMissed = isPast && !isCoach;
+  const isDone = isPast && isCoach; // coaches see past sessions as done/archived
   const isAcademy = entry.source === 'academy';
   const isPersonal = entry.source === 'personal';
   const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId);
@@ -586,22 +590,28 @@ function SessionCard({
   const coachNotes = parseCoachNotes(entry.notes);
   const hasPlan = planBlocks.length > 0 || objectives.length > 0 || !!coachNotes;
   const sourceC = SOURCE_COLORS[entry.source];
-  const stripeColor = isPersonal ? colors.success : color;
+  const stripeColor = isMissed ? colors.error : isPersonal ? colors.success : color;
 
   return (
     <Pressable
-      style={[styles.sessionCard, isToday && styles.sessionCardToday, isPast && styles.sessionCardPast]}
+      style={[styles.sessionCard, isToday && styles.sessionCardToday, isMissed && styles.sessionCardMissed, isDone && styles.sessionCardPast]}
       onPress={() => setExpanded(e => !e)}
       activeOpacity={0.85}
     >
-      <View style={[styles.sessionStripe, { backgroundColor: isPast ? colors.border : stripeColor }]} />
+      <View style={[styles.sessionStripe, { backgroundColor: isMissed ? colors.error : isDone ? colors.border : stripeColor }]} />
       <View style={styles.sessionContent}>
         <View style={styles.sessionTop}>
           <View style={{ flex: 1 }}>
             <View style={styles.sessionTitleRow}>
-              <Text style={[styles.sessionTitle, isPast && { color: colors.textSecondary }]}>{entry.title}</Text>
+              <Text style={[styles.sessionTitle, isMissed && { color: colors.error }, isDone && { color: colors.textSecondary }]}>{entry.title}</Text>
               {isToday && <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>}
-              {isPast && (
+              {isMissed && (
+                <View style={styles.missedBadge}>
+                  <MaterialIcons name="cancel" size={12} color={colors.textLight} />
+                  <Text style={styles.missedBadgeText}>MISSED</Text>
+                </View>
+              )}
+              {isDone && (
                 <View style={styles.doneBadge}>
                   <MaterialIcons name="check-circle" size={12} color={colors.success} />
                   <Text style={styles.doneBadgeText}>Done</Text>
@@ -692,6 +702,7 @@ function SessionCard({
           </View>
         )}
 
+        {/* Start button: today/future sessions */}
         {!isCoach && !isPast && (
           <Pressable
             style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
@@ -702,6 +713,19 @@ function SessionCard({
           >
             <MaterialIcons name="play-circle-filled" size={18} color={colors.textLight} />
             <Text style={styles.startSessionBtnText}>Start Session</Text>
+          </Pressable>
+        )}
+        {/* Log Late button: missed sessions (past, not completed, player view) */}
+        {!isCoach && isMissed && (
+          <Pressable
+            style={styles.logLateBtn}
+            onPress={() => router.push({
+              pathname: '/academy-log',
+              params: { academyId, position: memberPosition || 'Batsman' },
+            } as any)}
+          >
+            <MaterialIcons name="edit" size={16} color={colors.textLight} />
+            <Text style={styles.logLateBtnText}>Log Late — Did this session?</Text>
           </Pressable>
         )}
 
@@ -1107,10 +1131,21 @@ export default function AcademyScheduleScreen() {
     ? entries.filter(e => !e.squadId || e.squadId === squadFilter || e.source === 'personal')
     : entries;
 
-  const upcoming = filteredEntries
+  // Visibility window: today - 7 days → today + 30 days
+  const windowStart = new Date();
+  windowStart.setDate(windowStart.getDate() - 7);
+  const windowStartStr = windowStart.toISOString().split('T')[0];
+  const windowEnd = new Date();
+  windowEnd.setDate(windowEnd.getDate() + 30);
+  const windowEndStr = windowEnd.toISOString().split('T')[0];
+
+  const windowedEntries = filteredEntries.filter(e => e.date >= windowStartStr && e.date <= windowEndStr);
+
+  const upcoming = windowedEntries
     .filter(e => e.date >= today)
     .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
-  const past = filteredEntries
+  // Past = within 7-day window (missed sessions stay visible for Log Late)
+  const past = windowedEntries
     .filter(e => e.date < today)
     .sort((a, b) => b.date !== a.date ? b.date.localeCompare(a.date) : b.time.localeCompare(a.time));
 
@@ -1172,18 +1207,24 @@ export default function AcademyScheduleScreen() {
       {!isCoach && (
         <View style={styles.legendBar}>
           <View style={styles.legendItem}>
-            <MaterialIcons name="shield" size={12} color={colors.primary} />
+            <MaterialIcons name="shield" size={11} color={colors.primary} />
             <Text style={[styles.legendText, { color: colors.primary }]}>Academy</Text>
           </View>
           <View style={styles.legendItem}>
-            <MaterialIcons name="person" size={12} color={colors.success} />
+            <MaterialIcons name="person" size={11} color={colors.success} />
             <Text style={[styles.legendText, { color: colors.success }]}>Personal</Text>
           </View>
-          <View style={[styles.legendItem, { marginLeft: 'auto' as any }]}>
-            <MaterialIcons name="check-circle" size={12} color={colors.success} />
+          <View style={styles.legendItem}>
+            <MaterialIcons name="check-circle" size={11} color={colors.success} />
             <Text style={styles.legendText}>Done</Text>
+          </View>
+          <View style={styles.legendItem}>
             <View style={[styles.legendDot, { backgroundColor: colors.primary + '60' }]} />
             <Text style={styles.legendText}>Upcoming</Text>
+          </View>
+          <View style={styles.legendItem}>
+            <MaterialIcons name="cancel" size={11} color={colors.error} />
+            <Text style={[styles.legendText, { color: colors.error }]}>Missed</Text>
           </View>
         </View>
       )}
@@ -1214,7 +1255,7 @@ export default function AcademyScheduleScreen() {
 
         {past.length > 0 && (
           <>
-            <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Past Sessions ({past.length})</Text>
+            <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Recent / Missed ({past.length})</Text>
             {past.map(e => (
               <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
                 memberPosition={memberPosition}
@@ -1359,10 +1400,10 @@ const styles = StyleSheet.create({
   },
   addPersonalBtnText: { fontSize: 12, color: colors.success, fontWeight: '800' },
 
-  legendBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  legendBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, flexWrap: 'wrap' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
-  legendDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 8 },
+  legendDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 4 },
 
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 80, gap: spacing.xs },
@@ -1370,7 +1411,8 @@ const styles = StyleSheet.create({
 
   sessionCard: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.lg, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   sessionCardToday: { borderColor: colors.primary + '80', borderWidth: 2 },
-  sessionCardPast: { opacity: 0.75 },
+  sessionCardPast: { opacity: 0.7 },
+  sessionCardMissed: { borderColor: colors.error + '60', borderWidth: 1.5, backgroundColor: colors.error + '04' },
   sessionStripe: { width: 5 },
   sessionContent: { flex: 1, padding: spacing.md, gap: 4 },
 
@@ -1383,6 +1425,8 @@ const styles = StyleSheet.create({
   todayBadgeText: { fontSize: 9, color: colors.textLight, fontWeight: '800' },
   doneBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.success + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
   doneBadgeText: { fontSize: 9, color: colors.success, fontWeight: '800' },
+  missedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.error, paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
+  missedBadgeText: { fontSize: 9, color: colors.textLight, fontWeight: '900', letterSpacing: 0.4 },
 
   typeBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.sm },
   typeBadgeText: { fontSize: 10, fontWeight: '700' },
@@ -1417,6 +1461,8 @@ const styles = StyleSheet.create({
 
   startSessionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
   startSessionBtnText: { fontSize: 13, fontWeight: '800', color: colors.textLight },
+  logLateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.warning, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
+  logLateBtnText: { fontSize: 13, fontWeight: '800', color: colors.textLight },
 
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
