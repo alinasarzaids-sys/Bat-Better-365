@@ -168,13 +168,11 @@ export default function PaywallScreen() {
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
-        {/* Back button */}
-        {router.canGoBack() && (
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={20} color={colors.textSecondary} />
-            <Text style={styles.backBtnText}>Back</Text>
-          </Pressable>
-        )}
+        {/* Back button — always goes to mode-selection so user can switch to Academy mode */}
+        <Pressable style={styles.backBtn} onPress={() => router.replace('/mode-selection' as any)}>
+          <MaterialIcons name="arrow-back" size={20} color={colors.textSecondary} />
+          <Text style={styles.backBtnText}>Choose Mode</Text>
+        </Pressable>
 
         {/* Loading check */}
         {checkingExisting && (
