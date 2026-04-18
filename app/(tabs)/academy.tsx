@@ -31,6 +31,8 @@ function WeeklyBar({ logs, sessions }: { logs: AcademyTrainingLog[]; sessions: U
   const monday = new Date(today);
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
 
+  const todayDayIdx = (today.getDay() + 6) % 7; // 0=Mon
+
   // Days with a logged training session
   const loggedDays: Set<number> = new Set();
   logs.forEach(log => {
@@ -38,33 +40,44 @@ function WeeklyBar({ logs, sessions }: { logs: AcademyTrainingLog[]; sessions: U
     if (diff >= 0 && diff < 7) loggedDays.add(diff);
   });
 
-  // Days with a scheduled session (upcoming or today)
-  const scheduledDays: Set<number> = new Set();
+  // Scheduled days: split into past-unlogged (missed) vs upcoming
+  const missedDays: Set<number> = new Set();
+  const upcomingDays: Set<number> = new Set();
   sessions.forEach(s => {
     const diff = Math.floor((new Date(s.session_date).getTime() - monday.getTime()) / 86400000);
-    if (diff >= 0 && diff < 7) scheduledDays.add(diff);
+    if (diff < 0 || diff >= 7) return;
+    if (!loggedDays.has(diff) && diff < todayDayIdx) {
+      missedDays.add(diff); // past day, not logged → missed
+    } else if (diff >= todayDayIdx) {
+      upcomingDays.add(diff); // today or future
+    }
   });
-
-  const todayDayIdx = (today.getDay() + 6) % 7; // 0=Mon
 
   return (
     <View style={weekBarStyles.row}>
       {days.map((d, i) => {
         const isLogged = loggedDays.has(i);
-        const isScheduled = scheduledDays.has(i);
+        const isMissed = missedDays.has(i);
+        const isUpcoming = upcomingDays.has(i);
         const isToday = i === todayDayIdx;
         return (
           <View key={i} style={weekBarStyles.dayCol}>
             <View style={[
               weekBarStyles.dot,
               isLogged && weekBarStyles.dotLogged,
-              !isLogged && isScheduled && weekBarStyles.dotScheduled,
-              isToday && weekBarStyles.dotToday,
+              isMissed && weekBarStyles.dotMissed,
+              !isLogged && !isMissed && isUpcoming && weekBarStyles.dotScheduled,
+              isToday && !isLogged && !isMissed && weekBarStyles.dotToday,
             ]}>
               {isLogged && <MaterialIcons name="check" size={14} color={colors.textLight} />}
-              {!isLogged && isScheduled && <MaterialIcons name="event" size={12} color={colors.primary} />}
+              {isMissed && <MaterialIcons name="close" size={13} color={colors.textLight} />}
+              {!isLogged && !isMissed && isUpcoming && <MaterialIcons name="event" size={12} color={colors.primary} />}
             </View>
-            <Text style={[weekBarStyles.dayLabel, isToday && { color: colors.primary, fontWeight: '800' }]}>{d}</Text>
+            <Text style={[
+              weekBarStyles.dayLabel,
+              isToday && { color: colors.primary, fontWeight: '800' },
+              isMissed && { color: colors.error },
+            ]}>{d}</Text>
           </View>
         );
       })}
@@ -76,7 +89,8 @@ const weekBarStyles = StyleSheet.create({
   row: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: spacing.sm },
   dayCol: { alignItems: 'center', gap: 4 },
   dot: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' },
-  dotLogged: { backgroundColor: colors.primary },
+  dotLogged: { backgroundColor: '#22C55E' },
+  dotMissed: { backgroundColor: colors.error },
   dotScheduled: { backgroundColor: colors.primary + '18', borderWidth: 2, borderColor: colors.primary },
   dotToday: { borderWidth: 2.5, borderColor: colors.primary },
   dotCount: { ...typography.caption, color: colors.textLight, fontWeight: '800', fontSize: 10 },
@@ -978,28 +992,63 @@ export default function AcademyScreen() {
                       <Text style={{ fontSize: 11, color: colors.textSecondary, fontWeight: '700', marginBottom: 2 }}>UPCOMING THIS WEEK</Text>
                       {upcomingSessions.map(sess => {
                         const [y, m, d] = sess.session_date.split('-').map(Number);
-                        const dateReadable = new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
+                        const sessDate = new Date(y, m - 1, d);
+                        const dateReadable = sessDate.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
                         const [hh, mm] = (sess.session_time || '10:00').split(':').map(Number);
                         const period = hh >= 12 ? 'PM' : 'AM';
                         const h12 = hh % 12 || 12;
                         const timeStr = `${h12}:${String(mm).padStart(2, '0')} ${period}`;
-                        const isToday = sess.session_date === new Date().toISOString().split('T')[0];
+                        const todayStr2 = new Date().toISOString().split('T')[0];
+                        const isToday = sess.session_date === todayStr2;
+                        const isPast = sess.session_date < todayStr2;
+                        // Check if this session has been logged (any log on that date)
+                        const isCompleted = recentLogs.some(l => l.log_date === sess.session_date);
+                        const isMissed = isPast && !isCompleted;
                         return (
-                          <View key={sess.id} style={[upcomStyles.row, isToday && upcomStyles.rowToday]}>
+                          <View key={sess.id} style={[
+                            upcomStyles.row,
+                            isToday && upcomStyles.rowToday,
+                            isMissed && upcomStyles.rowMissed,
+                          ]}>
                             <View style={{ flex: 1 }}>
                               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
                                 {isToday && <View style={upcomStyles.todayBadge}><Text style={upcomStyles.todayText}>TODAY</Text></View>}
+                                {isMissed && <View style={upcomStyles.missedBadge}><Text style={upcomStyles.missedBadgeText}>MISSED</Text></View>}
+                                {isCompleted && !isMissed && !isToday && <View style={upcomStyles.doneBadge}><Text style={upcomStyles.doneBadgeText}>DONE</Text></View>}
                                 <Text style={upcomStyles.title} numberOfLines={1}>{sess.title}</Text>
                               </View>
                               <Text style={upcomStyles.meta}>{dateReadable} · {timeStr}{sess.location ? ` · ${sess.location}` : ''}</Text>
                             </View>
-                            <Pressable
-                              style={upcomStyles.startBtn}
-                              onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman' } } as any)}
-                            >
-                              <MaterialIcons name="play-arrow" size={14} color={colors.textLight} />
-                              <Text style={upcomStyles.startBtnText}>Start</Text>
-                            </Pressable>
+                            {/* Button state: Start (today/future), Log Late (missed), Done (completed) */}
+                            {isToday && !isCompleted && (
+                              <Pressable
+                                style={upcomStyles.startBtn}
+                                onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman' } } as any)}
+                              >
+                                <MaterialIcons name="play-arrow" size={14} color={colors.textLight} />
+                                <Text style={upcomStyles.startBtnText}>Start</Text>
+                              </Pressable>
+                            )}
+                            {!isToday && !isPast && (
+                              <View style={upcomStyles.upcomingTag}>
+                                <MaterialIcons name="schedule" size={12} color={colors.primary} />
+                                <Text style={upcomStyles.upcomingTagText}>Soon</Text>
+                              </View>
+                            )}
+                            {isMissed && (
+                              <Pressable
+                                style={upcomStyles.logLateBtn}
+                                onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman' } } as any)}
+                              >
+                                <MaterialIcons name="edit" size={13} color={colors.textLight} />
+                                <Text style={upcomStyles.logLateBtnText}>Log Late</Text>
+                              </Pressable>
+                            )}
+                            {isCompleted && (
+                              <View style={upcomStyles.doneTag}>
+                                <MaterialIcons name="check-circle" size={14} color="#22C55E" />
+                              </View>
+                            )}
                           </View>
                         );
                       })}
@@ -1030,34 +1079,21 @@ export default function AcademyScreen() {
               )}
             </View>
 
+            {/* Focused 2-button action row */}
             <View style={styles.actionsGrid}>
-              <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position } } as any)}>
+              <Pressable style={[styles.actionCard, { borderColor: colors.primary + '40' }]} onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position } } as any)}>
                 <View style={[styles.actionIcon, { backgroundColor: colors.primary + '20' }]}>
                   <MaterialIcons name="add-circle" size={28} color={colors.primary} />
                 </View>
-                <Text style={styles.actionTitle}>Log Training</Text>
-                <Text style={styles.actionSub}>Record today's session</Text>
+                <Text style={styles.actionTitle}>+ Log Personal</Text>
+                <Text style={styles.actionSub}>Extra homework session</Text>
               </Pressable>
-              <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-analytics', params: { academyId: currentMembership!.academy.id } } as any)}>
-                <View style={[styles.actionIcon, { backgroundColor: colors.success + '20' }]}>
-                  <MaterialIcons name="insights" size={28} color={colors.success} />
-                </View>
-                <Text style={styles.actionTitle}>My Analytics</Text>
-                <Text style={styles.actionSub}>AI performance report</Text>
-              </Pressable>
-              <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-history', params: { academyId: currentMembership!.academy.id } } as any)}>
-                <View style={[styles.actionIcon, { backgroundColor: colors.warning + '20' }]}>
-                  <MaterialIcons name="history" size={28} color={colors.warning} />
-                </View>
-                <Text style={styles.actionTitle}>My History</Text>
-                <Text style={styles.actionSub}>All past logs</Text>
-              </Pressable>
-              <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: currentMembership!.academy.id, memberPosition: currentMembership!.member.position || 'Batsman' } } as any)}>
+              <Pressable style={[styles.actionCard, { borderColor: colors.mental + '40' }]} onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: currentMembership!.academy.id, memberPosition: currentMembership!.member.position || 'Batsman' } } as any)}>
                 <View style={[styles.actionIcon, { backgroundColor: colors.mental + '20' }]}>
-                  <MaterialIcons name="event" size={28} color={colors.mental} />
+                  <MaterialIcons name="event-note" size={28} color={colors.mental} />
                 </View>
-                <Text style={styles.actionTitle}>Schedule</Text>
-                <Text style={styles.actionSub}>Upcoming sessions</Text>
+                <Text style={styles.actionTitle}>Full Schedule</Text>
+                <Text style={styles.actionSub}>Monthly calendar view</Text>
               </Pressable>
             </View>
 
@@ -1066,26 +1102,52 @@ export default function AcademyScreen() {
                 <View style={styles.cardHeaderRow}>
                   <MaterialIcons name="history" size={18} color={colors.textSecondary} />
                   <Text style={styles.cardTitle}>Recent Logs</Text>
-                </View>
-                {recentLogs.slice(0, 5).map(log => (
-                  <View key={log.id} style={styles.logRow}>
-                    <View style={[styles.logDot, { backgroundColor: log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success }]} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.logTitle}>{log.session_type}</Text>
-                      <Text style={styles.logMeta}>{log.log_date} · {log.duration_minutes}min · Intensity {log.intensity}/10</Text>
-                      {(log.balls_faced || log.balls_bowled || log.catches) ? (
-                        <Text style={styles.logStats}>
-                          {log.balls_faced ? `${log.balls_faced} balls faced ` : ''}
-                          {log.balls_bowled ? `${log.balls_bowled} bowled ` : ''}
-                          {log.catches ? `${log.catches} catches` : ''}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <View style={[styles.intensityBadge, { backgroundColor: (log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success) + '20' }]}>
-                      <Text style={[styles.intensityBadgeText, { color: log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success }]}>{log.intensity}/10</Text>
-                    </View>
+                  <View style={styles.logLegend}>
+                    <MaterialIcons name="shield" size={11} color={colors.primary} />
+                    <Text style={styles.logLegendText}>Academy</Text>
+                    <MaterialIcons name="person" size={11} color={colors.textSecondary} />
+                    <Text style={styles.logLegendText}>Personal</Text>
                   </View>
-                ))}
+                </View>
+                {recentLogs.slice(0, 5).map(log => {
+                  // Determine if this log was tied to a scheduled academy session
+                  const isAcademySession = upcomingSessions.some(s => s.session_date === log.log_date) || log.session_type === 'Batting' || log.session_type === 'Bowling' || log.session_type === 'Fielding';
+                  // Simple heuristic: if there's a scheduled session on same date → academy badge
+                  const hasScheduledOnDate = upcomingSessions.some(s => s.session_date === log.log_date);
+                  return (
+                    <View key={log.id} style={styles.logRow}>
+                      <View style={[styles.logDot, { backgroundColor: log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success }]} />
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
+                          {/* Source badge */}
+                          {hasScheduledOnDate ? (
+                            <View style={styles.srcBadgeAcademy}>
+                              <MaterialIcons name="shield" size={9} color={colors.primary} />
+                              <Text style={[styles.srcBadgeText, { color: colors.primary }]}>Academy</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.srcBadgePersonal}>
+                              <MaterialIcons name="person" size={9} color={colors.textSecondary} />
+                              <Text style={[styles.srcBadgeText, { color: colors.textSecondary }]}>Personal</Text>
+                            </View>
+                          )}
+                          <Text style={styles.logTitle}>{log.session_type}</Text>
+                        </View>
+                        <Text style={styles.logMeta}>{log.log_date} · {log.duration_minutes}min · Intensity {log.intensity}/10</Text>
+                        {(log.balls_faced || log.balls_bowled || log.catches) ? (
+                          <Text style={styles.logStats}>
+                            {log.balls_faced ? `${log.balls_faced} balls faced ` : ''}
+                            {log.balls_bowled ? `${log.balls_bowled} bowled ` : ''}
+                            {log.catches ? `${log.catches} catches` : ''}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={[styles.intensityBadge, { backgroundColor: (log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success) + '20' }]}>
+                        <Text style={[styles.intensityBadgeText, { color: log.intensity >= 7 ? colors.error : log.intensity >= 4 ? colors.warning : colors.success }]}>{log.intensity}/10</Text>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
             )}
           </>
@@ -1309,12 +1371,22 @@ const modalStyles = StyleSheet.create({
 const upcomStyles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary + '0C', borderRadius: borderRadius.md, paddingHorizontal: spacing.sm, paddingVertical: spacing.sm, borderWidth: 1, borderColor: colors.primary + '25' },
   rowToday: { backgroundColor: colors.primary + '18', borderColor: colors.primary + '60' },
+  rowMissed: { backgroundColor: colors.error + '08', borderColor: colors.error + '40' },
   todayBadge: { backgroundColor: colors.primary, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
   todayText: { fontSize: 8, color: colors.textLight, fontWeight: '800', letterSpacing: 0.5 },
+  missedBadge: { backgroundColor: colors.error, paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
+  missedBadgeText: { fontSize: 8, color: colors.textLight, fontWeight: '800', letterSpacing: 0.5 },
+  doneBadge: { backgroundColor: '#22C55E', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 3 },
+  doneBadgeText: { fontSize: 8, color: colors.textLight, fontWeight: '800', letterSpacing: 0.5 },
   title: { fontSize: 13, color: colors.text, fontWeight: '700', flex: 1 },
   meta: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
   startBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.primary, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.sm },
   startBtnText: { fontSize: 12, color: colors.textLight, fontWeight: '800' },
+  logLateBtn: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.warning, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.sm },
+  logLateBtnText: { fontSize: 12, color: colors.textLight, fontWeight: '800' },
+  upcomingTag: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.sm, backgroundColor: colors.primary + '12', borderWidth: 1, borderColor: colors.primary + '30' },
+  upcomingTagText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
+  doneTag: { paddingHorizontal: 6, paddingVertical: 4, justifyContent: 'center', alignItems: 'center' },
 });
 
 const styles = StyleSheet.create({
@@ -1362,7 +1434,12 @@ const styles = StyleSheet.create({
   inviteBtnTitle: { ...typography.bodySmall, color: colors.text, fontWeight: '700' },
   inviteBtnSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
   card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1, borderColor: colors.border },
-  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
+  cardHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md, flexWrap: 'wrap' },
+  logLegend: { flexDirection: 'row', alignItems: 'center', gap: 4, marginLeft: 'auto' },
+  logLegendText: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  srcBadgeAcademy: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primary + '15', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: colors.primary + '30' },
+  srcBadgePersonal: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.textSecondary + '15', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, borderWidth: 1, borderColor: colors.border },
+  srcBadgeText: { fontSize: 9, fontWeight: '700', letterSpacing: 0.2 },
   cardTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
   weekSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
   weekStat: { flex: 1, alignItems: 'center' },
