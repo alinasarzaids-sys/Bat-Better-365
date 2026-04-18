@@ -47,47 +47,81 @@ function WeeklyBar({ logs, sessions }: { logs: AcademyTrainingLog[]; sessions: U
     const diff = Math.floor((new Date(s.session_date).getTime() - monday.getTime()) / 86400000);
     if (diff < 0 || diff >= 7) return;
     if (!loggedDays.has(diff) && diff < todayDayIdx) {
-      missedDays.add(diff); // past day, not logged → missed
+      missedDays.add(diff);
     } else if (diff >= todayDayIdx) {
-      upcomingDays.add(diff); // today or future
+      upcomingDays.add(diff);
     }
   });
 
+  // Calculate the actual date for each day column
+  const dayDates = days.map((_, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return d.getDate(); // just the day number, e.g. 13
+  });
+
   return (
-    <View style={weekBarStyles.row}>
-      {days.map((d, i) => {
-        const isLogged = loggedDays.has(i);
-        const isMissed = missedDays.has(i);
-        const isUpcoming = upcomingDays.has(i);
-        const isToday = i === todayDayIdx;
-        return (
-          <View key={i} style={weekBarStyles.dayCol}>
-            <View style={[
-              weekBarStyles.dot,
-              isLogged && weekBarStyles.dotLogged,
-              isMissed && weekBarStyles.dotMissed,
-              !isLogged && !isMissed && isUpcoming && weekBarStyles.dotScheduled,
-              isToday && !isLogged && !isMissed && weekBarStyles.dotToday,
-            ]}>
-              {isLogged && <MaterialIcons name="check" size={14} color={colors.textLight} />}
-              {isMissed && <MaterialIcons name="close" size={13} color={colors.textLight} />}
-              {!isLogged && !isMissed && isUpcoming && <MaterialIcons name="event" size={12} color={colors.primary} />}
+    <View>
+      {/* Legend */}
+      <View style={weekBarStyles.legend}>
+        <View style={weekBarStyles.legendItem}>
+          <View style={[weekBarStyles.legendDot, { backgroundColor: '#22C55E' }]} />
+          <Text style={weekBarStyles.legendText}>Completed</Text>
+        </View>
+        <View style={weekBarStyles.legendItem}>
+          <View style={[weekBarStyles.legendDot, { backgroundColor: colors.error }]} />
+          <Text style={weekBarStyles.legendText}>Missed</Text>
+        </View>
+        <View style={weekBarStyles.legendItem}>
+          <View style={[weekBarStyles.legendDot, { backgroundColor: colors.border, borderWidth: 2, borderColor: colors.primary }]} />
+          <Text style={weekBarStyles.legendText}>Upcoming</Text>
+        </View>
+      </View>
+
+      <View style={weekBarStyles.row}>
+        {days.map((d, i) => {
+          const isLogged = loggedDays.has(i);
+          const isMissed = missedDays.has(i);
+          const isUpcoming = upcomingDays.has(i);
+          const isToday = i === todayDayIdx;
+          return (
+            <View key={i} style={weekBarStyles.dayCol}>
+              <View style={[
+                weekBarStyles.dot,
+                isLogged && weekBarStyles.dotLogged,
+                isMissed && weekBarStyles.dotMissed,
+                !isLogged && !isMissed && isUpcoming && weekBarStyles.dotScheduled,
+                isToday && !isLogged && !isMissed && weekBarStyles.dotToday,
+              ]}>
+                {isLogged && <MaterialIcons name="check" size={14} color={colors.textLight} />}
+                {isMissed && <MaterialIcons name="close" size={13} color={colors.textLight} />}
+                {!isLogged && !isMissed && isUpcoming && <MaterialIcons name="event" size={12} color={colors.primary} />}
+              </View>
+              <Text style={[
+                weekBarStyles.dayLabel,
+                isToday && { color: colors.primary, fontWeight: '800' },
+                isMissed && { color: colors.error },
+              ]}>{d}</Text>
+              <Text style={[
+                weekBarStyles.dateNum,
+                isToday && { color: colors.primary, fontWeight: '700' },
+                isMissed && { color: colors.error },
+              ]}>{dayDates[i]}</Text>
             </View>
-            <Text style={[
-              weekBarStyles.dayLabel,
-              isToday && { color: colors.primary, fontWeight: '800' },
-              isMissed && { color: colors.error },
-            ]}>{d}</Text>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const weekBarStyles = StyleSheet.create({
-  row: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: spacing.sm },
-  dayCol: { alignItems: 'center', gap: 4 },
+  legend: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, marginBottom: spacing.xs },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 9, height: 9, borderRadius: 4.5, backgroundColor: colors.border },
+  legendText: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  row: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: spacing.xs },
+  dayCol: { alignItems: 'center', gap: 3 },
   dot: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.border, justifyContent: 'center', alignItems: 'center' },
   dotLogged: { backgroundColor: '#22C55E' },
   dotMissed: { backgroundColor: colors.error },
@@ -95,6 +129,7 @@ const weekBarStyles = StyleSheet.create({
   dotToday: { borderWidth: 2.5, borderColor: colors.primary },
   dotCount: { ...typography.caption, color: colors.textLight, fontWeight: '800', fontSize: 10 },
   dayLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  dateNum: { fontSize: 9, color: colors.textSecondary, fontWeight: '500' },
 });
 
 // ─── Invite Modal ─────────────────────────────────────────────────────────────
