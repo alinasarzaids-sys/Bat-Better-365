@@ -708,7 +708,7 @@ function SessionCard({
             style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
             onPress={() => router.push({
               pathname: '/academy-log',
-              params: { academyId, position: memberPosition || 'Batsman' },
+              params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' },
             } as any)}
           >
             <MaterialIcons name="play-circle-filled" size={18} color={colors.textLight} />
@@ -721,7 +721,7 @@ function SessionCard({
             style={styles.logLateBtn}
             onPress={() => router.push({
               pathname: '/academy-log',
-              params: { academyId, position: memberPosition || 'Batsman' },
+              params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' },
             } as any)}
           >
             <MaterialIcons name="edit" size={16} color={colors.textLight} />

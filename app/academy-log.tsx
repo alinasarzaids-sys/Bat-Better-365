@@ -221,6 +221,12 @@ export default function AcademyLogScreen() {
 
   const academyId = params.academyId as string;
   const isResuming = params.resume === '1';
+  // Academy members get full access (Batting, Bowling, Fielding, Fitness)
+  // Independent players (no academy) only get Batting + Fitness
+  const isAcademyMember = params.isAcademyMember !== 'false';
+  const availableConfigs = isAcademyMember
+    ? SESSION_CONFIGS
+    : SESSION_CONFIGS.filter(c => c.kind === 'Batting' || c.kind === 'Fitness');
   const logDate = new Date().toISOString().split('T')[0];
 
   // ── Steps: 0=Pick Type, 1=Objectives, 2=Live, 3=Closing, 4=Summary
@@ -324,8 +330,24 @@ export default function AcademyLogScreen() {
         <Text style={styles.heroTitle}>What are you training today?</Text>
         <Text style={styles.heroSub}>Select a session type to begin</Text>
       </View>
+      {!isAcademyMember && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+          backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
+          padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '30',
+          marginBottom: spacing.md,
+        }}>
+          <MaterialIcons name="shield" size={18} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>Academy Exclusive</Text>
+            <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginTop: 2 }}>
+              Bowling and Fielding tracking are unlocked when you join an academy with a coach code.
+            </Text>
+          </View>
+        </View>
+      )}
       <View style={styles.typeGrid}>
-        {SESSION_CONFIGS.map(c => (
+        {availableConfigs.map(c => (
           <Pressable
             key={c.kind}
             style={({ pressed }) => [styles.typeCard, { borderColor: c.color }, pressed && { opacity: 0.8 }]}

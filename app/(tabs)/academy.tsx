@@ -1058,7 +1058,7 @@ export default function AcademyScreen() {
                             {isToday && !isCompleted && (
                               <Pressable
                                 style={upcomStyles.startBtn}
-                                onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman' } } as any)}
+                                onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman', isAcademyMember: 'true' } } as any)}
                               >
                                 <MaterialIcons name="play-arrow" size={14} color={colors.textLight} />
                                 <Text style={upcomStyles.startBtnText}>Start</Text>
@@ -1073,7 +1073,7 @@ export default function AcademyScreen() {
                             {isMissed && (
                               <Pressable
                                 style={upcomStyles.logLateBtn}
-                                onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman' } } as any)}
+                                onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position || 'Batsman', isAcademyMember: 'true' } } as any)}
                               >
                                 <MaterialIcons name="edit" size={13} color={colors.textLight} />
                                 <Text style={upcomStyles.logLateBtnText}>Log Late</Text>
@@ -1116,7 +1116,7 @@ export default function AcademyScreen() {
 
             {/* Focused 2-button action row */}
             <View style={styles.actionsGrid}>
-              <Pressable style={[styles.actionCard, { borderColor: colors.primary + '40' }]} onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position } } as any)}>
+              <Pressable style={[styles.actionCard, { borderColor: colors.primary + '40' }]} onPress={() => router.push({ pathname: '/academy-log', params: { academyId: currentMembership!.academy.id, position: currentMembership!.member.position, isAcademyMember: 'true' } } as any)}>
                 <View style={[styles.actionIcon, { backgroundColor: colors.primary + '20' }]}>
                   <MaterialIcons name="add-circle" size={28} color={colors.primary} />
                 </View>

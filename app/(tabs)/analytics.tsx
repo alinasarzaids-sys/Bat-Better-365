@@ -519,11 +519,46 @@ const editStyles = StyleSheet.create({
 });
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Data Source Toggle ───────────────────────────────────────────────────────
+type DataFilter = 'all' | 'academy' | 'personal';
+
+function DataFilterBar({ value, onChange }: { value: DataFilter; onChange: (v: DataFilter) => void }) {
+  const opts: { key: DataFilter; label: string; icon: string }[] = [
+    { key: 'all', label: 'All Data', icon: 'analytics' },
+    { key: 'academy', label: 'Academy Assigned', icon: 'shield' },
+    { key: 'personal', label: 'Personal', icon: 'person' },
+  ];
+  return (
+    <View style={dfStyles.bar}>
+      {opts.map(o => (
+        <Pressable
+          key={o.key}
+          style={[dfStyles.chip, value === o.key && dfStyles.chipActive]}
+          onPress={() => onChange(o.key)}
+        >
+          <MaterialIcons name={o.icon as any} size={12} color={value === o.key ? colors.textLight : colors.textSecondary} />
+          <Text style={[dfStyles.chipText, value === o.key && dfStyles.chipTextActive]}>{o.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+const dfStyles = StyleSheet.create({
+  bar: { flexDirection: 'row', gap: 5, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  chip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 7, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
+  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  chipText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  chipTextActive: { color: colors.textLight },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AnalyticsScreen() {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<FreestyleSession[]>([]);
+  const [academySessions, setAcademySessions] = useState<FreestyleSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'latest' | 'history' | 'trends'>('latest');
+  const [dataFilter, setDataFilter] = useState<DataFilter>('all');
   const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
   const [editingSession, setEditingSession] = useState<FreestyleSession | null>(null);
 
@@ -647,13 +682,51 @@ export default function AnalyticsScreen() {
     setLoading(false);
   }, [user]);
 
-  useFocusEffect(useCallback(() => { loadSessions(); }, [loadSessions]));
+  const loadAcademySessions = useCallback(async () => {
+    if (!user) return;
+    const supabase = getSupabaseClient();
+    const { data } = await supabase
+      .from('academy_training_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('log_date', { ascending: false })
+      .limit(50);
+    const mapped: FreestyleSession[] = (data || []).map((l: any) => ({
+      id: `acad_${l.id}`,
+      title: `Academy · ${l.session_type}`,
+      scheduled_date: l.log_date,
+      completed_at: l.created_at || l.log_date,
+      duration_minutes: l.duration_minutes || 0,
+      notes: l.notes || '',
+      status: 'completed',
+      ballsFaced: l.balls_faced || 0,
+      ballsMiddled: l.runs_scored || 0,
+      middlePercent: (l.balls_faced || 0) > 0 ? Math.round(((l.runs_scored || 0) / l.balls_faced) * 100) : 0,
+      sessionNotes: l.notes || '',
+      technicalRating: l.technical_rating || 0,
+      physicalRating: l.fitness_rating || 0,
+      mentalRating: 0,
+      tacticalRating: 0,
+    }));
+    setAcademySessions(mapped);
+  }, [user]);
+
+  useFocusEffect(useCallback(() => { loadSessions(); loadAcademySessions(); }, [loadSessions, loadAcademySessions]));
 
   const handleSessionSaved = (updated: FreestyleSession) => {
     setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
   };
 
-  const latest = sessions[0] || null;
+  // Apply data source filter
+  const filteredSessions: FreestyleSession[] = dataFilter === 'academy'
+    ? academySessions
+    : dataFilter === 'personal'
+    ? sessions
+    : [...sessions, ...academySessions].sort((a, b) =>
+        new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
+      );
+
+  const latest = filteredSessions[0] || null;
   const latestTechnical = avgOf([latest?.shotExecution, latest?.footwork, latest?.timing]) || latest?.technicalRating || 0;
   const latestMental = avgOf([latest?.focus, latest?.confidence, latest?.pressureHandling]) || latest?.mentalRating || 0;
   const latestPhysical = avgOf([latest?.energyLevel, latest?.reactionSpeed]) || latest?.physicalRating || 0;
@@ -662,18 +735,18 @@ export default function AnalyticsScreen() {
   const latestMiddlePct = latest?.middlePercent || (latest?.ballsFaced && latest?.ballsMiddled && (latest.ballsFaced || 0) > 0
     ? Math.round(((latest.ballsMiddled || 0) / (latest.ballsFaced || 1)) * 100) : null);
 
-  const trendSessions = sessions.slice(0, 10).reverse();
+  const trendSessions = filteredSessions.slice(0, 10).reverse();
 
   const avgAcrossSessions = (key: keyof FreestyleSession) => {
-    const vals = sessions.map(s => (s[key] as number) || 0).filter(v => v > 0);
+    const vals = filteredSessions.map(s => (s[key] as number) || 0).filter(v => v > 0);
     if (!vals.length) return 0;
     return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
   };
 
-  const totalBallsFaced = sessions.reduce((a, s) => a + (s.ballsFaced || 0), 0);
-  const totalBoundaries = sessions.reduce((a, s) => a + (s.boundariesHit || 0), 0);
+  const totalBallsFaced = filteredSessions.reduce((a, s) => a + (s.ballsFaced || 0), 0);
+  const totalBoundaries = filteredSessions.reduce((a, s) => a + (s.boundariesHit || 0), 0);
   const avgMiddlePct = (() => {
-    const sessWithPct = sessions.filter(s => (s.middlePercent || 0) > 0);
+    const sessWithPct = filteredSessions.filter(s => (s.middlePercent || 0) > 0);
     if (!sessWithPct.length) return null;
     return Math.round(sessWithPct.reduce((a, s) => a + (s.middlePercent || 0), 0) / sessWithPct.length);
   })();
@@ -697,13 +770,16 @@ export default function AnalyticsScreen() {
       <View style={styles.headerBar}>
         <View>
           <Text style={styles.headerTitle}>Performance Hub</Text>
-          <Text style={styles.headerSub}>{sessions.length} freestyle sessions tracked</Text>
+          <Text style={styles.headerSub}>{filteredSessions.length} sessions · {dataFilter === 'all' ? 'All Data' : dataFilter === 'academy' ? 'Academy Only' : 'Personal Only'}</Text>
         </View>
         <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
           <MaterialIcons name="analytics" size={18} color={colors.primary} />
           <Text style={[styles.badgeText, { color: colors.primary }]}>Live Data</Text>
         </View>
       </View>
+
+      {/* Data Source Toggle */}
+      <DataFilterBar value={dataFilter} onChange={setDataFilter} />
 
       {/* Sub-tabs */}
       <View style={styles.tabBar}>
@@ -941,7 +1017,7 @@ export default function AnalyticsScreen() {
         {/* ─── HISTORY ─── */}
         {activeTab === 'history' && (
           <>
-            {sessions.length === 0 ? (
+            {filteredSessions.length === 0 ? (
               <View style={styles.emptyState}>
                 <MaterialIcons name="history" size={72} color={colors.border} />
                 <Text style={styles.emptyTitle}>No history yet</Text>
@@ -949,8 +1025,8 @@ export default function AnalyticsScreen() {
               </View>
             ) : (
               <>
-                <Text style={styles.sectionLabel}>{sessions.length} sessions recorded — tap a card to expand</Text>
-                {sessions.map((s, idx) => {
+                <Text style={styles.sectionLabel}>{filteredSessions.length} sessions recorded — tap a card to expand</Text>
+                {filteredSessions.map((s, idx) => {
                   const sessionKey = s.id || String(idx);
                   const isExpanded = expandedSessionId === sessionKey;
                   const tech = avgOf([s.shotExecution, s.footwork, s.timing]) || s.technicalRating || 0;
@@ -1103,7 +1179,7 @@ export default function AnalyticsScreen() {
         {/* ─── TRENDS ─── */}
         {activeTab === 'trends' && (
           <>
-            {sessions.length < 2 ? (
+            {filteredSessions.length < 2 ? (
               <View style={styles.emptyState}>
                 <MaterialIcons name="show-chart" size={72} color={colors.border} />
                 <Text style={styles.emptyTitle}>Not enough data</Text>
@@ -1116,7 +1192,7 @@ export default function AnalyticsScreen() {
                   <View style={styles.careerGrid}>
                     <View style={styles.careerStat}>
                       <MaterialIcons name="event" size={20} color={colors.primary} />
-                      <Text style={styles.careerVal}>{sessions.length}</Text>
+                      <Text style={styles.careerVal}>{filteredSessions.length}</Text>
                       <Text style={styles.careerLabel}>Sessions</Text>
                     </View>
                     <View style={styles.careerStat}>
@@ -1148,7 +1224,7 @@ export default function AnalyticsScreen() {
 
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>All-Time Averages</Text>
-                  <Text style={styles.cardSubtitle}>Across {sessions.length} sessions</Text>
+                  <Text style={styles.cardSubtitle}>Across {filteredSessions.length} sessions</Text>
                   {[
                     { label: 'Shot Execution', key: 'shotExecution' as const, color: colors.technical },
                     { label: 'Footwork', key: 'footwork' as const, color: colors.technical },

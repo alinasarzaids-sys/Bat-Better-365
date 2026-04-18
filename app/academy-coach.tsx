@@ -960,11 +960,30 @@ export default function AcademyCoachScreen() {
                     )}
 
                     <Text style={modalStyles.recentLabel}>Recent Sessions</Text>
-                    {playerLogs.slice(0, 8).map(log => (
+                    {/* Source legend */}
+                    <View style={{ flexDirection: 'row', gap: spacing.md, alignItems: 'center', marginBottom: spacing.sm }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <MaterialIcons name="shield" size={11} color={colors.primary} />
+                        <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600' }}>Academy</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                        <MaterialIcons name="person" size={11} color={colors.success} />
+                        <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600' }}>Personal</Text>
+                      </View>
+                    </View>
+                    {playerLogs.slice(0, 8).map(log => {
+                      const isAcademyLog = !!(log as any).academy_id;
+                      return (
                       <View key={log.id} style={modalStyles.logRow}>
                         <View style={[modalStyles.logDot, { backgroundColor: getIntensityColor(log.intensity) }]} />
                         <View style={{ flex: 1 }}>
-                          <Text style={modalStyles.logType}>{log.session_type}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2, flexWrap: 'wrap' }}>
+                            <View style={[{ flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, borderWidth: 1 }, isAcademyLog ? { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' } : { backgroundColor: colors.success + '15', borderColor: colors.success + '30' }]}>
+                              <MaterialIcons name={isAcademyLog ? 'shield' : 'person'} size={9} color={isAcademyLog ? colors.primary : colors.success} />
+                              <Text style={{ fontSize: 9, fontWeight: '700', color: isAcademyLog ? colors.primary : colors.success }}>{isAcademyLog ? 'Academy' : 'Personal'}</Text>
+                            </View>
+                            <Text style={modalStyles.logType}>{log.session_type}</Text>
+                          </View>
                           <Text style={modalStyles.logMeta}>
                             {log.log_date} · {log.duration_minutes}min · Intensity {log.intensity}/10
                           </Text>
@@ -982,7 +1001,8 @@ export default function AcademyCoachScreen() {
                           <Text style={[modalStyles.intensityBadgeText, { color: getIntensityColor(log.intensity) }]}>{log.intensity}/10</Text>
                         </View>
                       </View>
-                    ))}
+                      );
+                    })}
                   </>
                 )}
               </ScrollView>
