@@ -221,6 +221,35 @@ export default function SettingsScreen() {
     setDeleteLoading(false);
   };
 
+  // Handle Reset & Start Over
+  const handleResetApp = async () => {
+    Alert.alert(
+      'Reset App',
+      'This will log you out and take you back to the intro screen, just like a fresh install. Use this to test the full sign-up flow.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await AsyncStorage.multiRemove([
+                '@bat_better_onboarding_completed',
+                '@bat_better_profile_setup_completed',
+                '@bb365_intro_seen',
+              ]);
+              const supabase = getSupabaseClient();
+              await supabase.auth.signOut();
+              router.replace('/onboarding' as any);
+            } catch {
+              router.replace('/onboarding' as any);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Handle Logout
   const handleLogout = async () => {
     Alert.alert(
@@ -363,6 +392,7 @@ export default function SettingsScreen() {
         {/* Actions Section */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>ACTIONS</Text>
+          {renderSettingItem('refresh', 'Reset & Start Over', handleResetApp, colors.warning)}
           {renderSettingItem('logout', 'Logout', handleLogout, colors.error)}
         </View>
 
