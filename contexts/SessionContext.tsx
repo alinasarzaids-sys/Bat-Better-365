@@ -18,18 +18,15 @@ export interface DrillSessionState {
 export interface AcademySessionState {
   isActive: boolean;
   isMinimized: boolean;
-  kind: string;          // Batting | Bowling | Fielding | Keeping | Fitness
+  kind: string;          // Batting | Bowling | Fielding | Fitness
   color: string;
   elapsedSeconds: number;
   isPaused: boolean;
-  counter1: number;
-  counter2: number;
-  objective1: string;
-  objective2: string;
+  counters: number[];    // up to 3 counters depending on session type
+  objective: string;     // single focused objective
   // Closing state
   step: number;          // which step the user was on when minimized
-  obj1Done: boolean | null;
-  obj2Done: boolean | null;
+  objectiveDone: boolean | null;
   answers: Record<string, number>;
   academyId: string;
 }
@@ -79,8 +76,8 @@ interface SessionContextType extends ActiveSessionState {
   setDrillIsPaused: (val: boolean) => void;
 
   // Academy session
-  startAcademySession: (kind: string, color: string, objective1: string, objective2: string, academyId: string) => void;
-  minimizeAcademySession: (step: number, counter1: number, counter2: number, obj1Done: boolean | null, obj2Done: boolean | null, answers: Record<string, number>) => void;
+  startAcademySession: (kind: string, color: string, objective: string, academyId: string) => void;
+  minimizeAcademySession: (step: number, counters: number[], objectiveDone: boolean | null, answers: Record<string, number>) => void;
   maximizeAcademySession: () => void;
   updateAcademySessionStep: (step: number) => void;
   setAcademyIsPaused: (val: boolean) => void;
@@ -139,13 +136,10 @@ const defaultAcademySession: AcademySessionState = {
   color: '',
   elapsedSeconds: 0,
   isPaused: false,
-  counter1: 0,
-  counter2: 0,
-  objective1: '',
-  objective2: '',
+  counters: [0, 0, 0],
+  objective: '',
   step: 2,
-  obj1Done: null,
-  obj2Done: null,
+  objectiveDone: null,
   answers: {},
   academyId: '',
 };
@@ -253,12 +247,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const setDrillIsPaused = useCallback((val: boolean) => setDrillSession(prev => ({ ...prev, isPaused: val })), []);
 
   // ── Academy session actions ──────────────────────────────────────────────────
-  const startAcademySession = useCallback((kind: string, color: string, objective1: string, objective2: string, academyId: string) => {
-    setAcademySession({ ...defaultAcademySession, isActive: true, isMinimized: false, kind, color, objective1, objective2, academyId });
+  const startAcademySession = useCallback((kind: string, color: string, objective: string, academyId: string) => {
+    setAcademySession({ ...defaultAcademySession, isActive: true, isMinimized: false, kind, color, objective, academyId });
   }, []);
 
-  const minimizeAcademySession = useCallback((step: number, counter1: number, counter2: number, obj1Done: boolean | null, obj2Done: boolean | null, answers: Record<string, number>) => {
-    setAcademySession(prev => ({ ...prev, isMinimized: true, step, counter1, counter2, obj1Done, obj2Done, answers }));
+  const minimizeAcademySession = useCallback((step: number, counters: number[], objectiveDone: boolean | null, answers: Record<string, number>) => {
+    setAcademySession(prev => ({ ...prev, isMinimized: true, step, counters, objectiveDone, answers }));
   }, []);
 
   const maximizeAcademySession = useCallback(() => {

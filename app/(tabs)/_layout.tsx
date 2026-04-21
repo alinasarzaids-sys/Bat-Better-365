@@ -42,10 +42,12 @@ function MiniSessionBar() {
 
   if (showAcademy) {
     const ac = academySession;
-    const successRate = ac.counter1 > 0 ? Math.round((ac.counter2 / ac.counter1) * 100) : 0;
+    const [c1, c2] = ac.counters;
+    const accuracyRate = c1 > 0 && c2 !== undefined ? Math.round((c2 / c1) * 100) : 0;
     const m = Math.floor(ac.elapsedSeconds / 60);
     const s = ac.elapsedSeconds % 60;
     const timeStr = `${m}:${s.toString().padStart(2, '0')}`;
+    const hasCounters = ac.counters.some(v => v > 0);
     return (
       <Pressable
         style={[styles.miniBar, { bottom: barBottom, backgroundColor: ac.color || '#2563EB' }]}
@@ -59,7 +61,7 @@ function MiniSessionBar() {
           <View>
             <Text style={styles.miniBarTitle} numberOfLines={1}>{ac.kind} Session</Text>
             <Text style={styles.miniBarSub}>
-              {ac.isPaused ? 'Paused' : 'Live'} · {ac.counter1} / {ac.counter2}{successRate > 0 ? ` · ${successRate}%` : ''}
+              {ac.isPaused ? 'Paused' : 'Live'}{hasCounters ? ` · ${c1} faced / ${c2} quality${accuracyRate > 0 ? ` · ${accuracyRate}%` : ''}` : ''}
             </Text>
           </View>
         </View>

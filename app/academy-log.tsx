@@ -14,23 +14,16 @@ import { useActiveSession } from '@/hooks/useActiveSession';
 // ─── Session Type Config ──────────────────────────────────────────────────────
 type SessionKind = 'Batting' | 'Bowling' | 'Fielding' | 'Fitness';
 
+interface CounterDef {
+  label: string;
+  sub: string;
+}
+
 interface SessionConfig {
   kind: SessionKind;
   icon: string;
   color: string;
-  counter1Label: string;
-  counter1Sub: string;
-  counter2Label: string;
-  counter2Sub: string;
-  closingQuestions: ClosingQuestion[];
-}
-
-interface ClosingQuestion {
-  id: string;
-  text: string;
-  type: 'stars' | 'number';
-  suffix?: string;
-  hint?: string;  // e.g. scale description shown below the question
+  counters: CounterDef[];   // 0, 2 or 3 counters depending on session type
 }
 
 const SESSION_CONFIGS: SessionConfig[] = [
@@ -38,61 +31,62 @@ const SESSION_CONFIGS: SessionConfig[] = [
     kind: 'Batting',
     icon: 'sports-cricket',
     color: colors.technical,
-    counter1Label: 'Balls Faced',
-    counter1Sub: 'Total deliveries received',
-    counter2Label: 'Successful Shots',
-    counter2Sub: 'Clean, well-timed contact',
-    closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'technique', text: 'How clean and correct was your technique?', type: 'stars' },
-      { id: 'focus', text: 'How focused were you throughout?', type: 'stars' },
-      { id: 'confidence', text: 'How confident did you feel?', type: 'stars' },
+    counters: [
+      { label: 'Balls Faced', sub: 'Total deliveries received' },
+      { label: 'Quality Contacts', sub: 'Middle of the bat' },
+      { label: 'Times Beaten', sub: 'Beaten or dismissed' },
     ],
   },
   {
     kind: 'Bowling',
     icon: 'sports-cricket',
     color: colors.physical,
-    counter1Label: 'Balls Bowled',
-    counter1Sub: 'Total deliveries sent down',
-    counter2Label: 'Good Balls',
-    counter2Sub: 'On target / wicket-taking deliveries',
-    closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'rhythm', text: 'How was your run-up rhythm and action?', type: 'stars' },
-      { id: 'confidence', text: 'How confident did you feel while bowling?', type: 'stars' },
-      { id: 'focus', text: 'How focused were you throughout the session?', type: 'stars' },
+    counters: [
+      { label: 'Balls Bowled', sub: 'Total deliveries sent down' },
+      { label: 'Balls on Target', sub: 'Good length & line' },
+      { label: 'Extras', sub: 'Wides & no-balls' },
     ],
   },
   {
     kind: 'Fielding',
     icon: 'sports-handball',
     color: colors.tactical,
-    counter1Label: 'Chances',
-    counter1Sub: 'Total opportunities in the field',
-    counter2Label: 'Clean Takes',
-    counter2Sub: 'Catches / stops / throws completed',
-    closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'confidence', text: 'How confident were you in the field?', type: 'stars' },
-      { id: 'focus', text: 'How focused were you throughout?', type: 'stars' },
+    counters: [
+      { label: 'Chances', sub: 'Total opportunities in the field' },
+      { label: 'Clean Takes', sub: 'Catches / stops / throws completed' },
     ],
   },
   {
     kind: 'Fitness',
     icon: 'fitness-center',
     color: colors.success,
-    counter1Label: 'Sets Done',
-    counter1Sub: 'Total sets completed',
-    counter2Label: 'Reps Done',
-    counter2Sub: 'Total repetitions completed',
-    closingQuestions: [
-      { id: 'body', text: 'How is your body feeling after the session?', type: 'stars', hint: '1★ Body really sore  ·  5★ Feeling great' },
-      { id: 'energy', text: 'How was your energy throughout?', type: 'stars' },
-      { id: 'effort', text: 'Rate your effort and intensity today', type: 'stars' },
-      { id: 'recovery', text: 'How was your recovery between sets?', type: 'stars' },
-      { id: 'exercises', text: 'How many different exercises did you complete?', type: 'number', suffix: 'exercises' },
-    ],
+    counters: [],  // No counters — timer only
+  },
+];
+
+// ─── Standard 3-Question Post-Session Reflection ──────────────────────────────
+// Applies to every session type
+const REFLECTION_QUESTIONS = [
+  {
+    id: 'rpe',
+    label: 'Physical',
+    text: 'Session Intensity (RPE)?',
+    hint: 'Rate of Perceived Exertion  ·  1 = Very easy  ·  10 = Maximum effort',
+    type: 'rpe' as const,   // 1–10 horizontal picker
+  },
+  {
+    id: 'focus',
+    label: 'Mental',
+    text: 'Focus & Concentration?',
+    hint: '1★ Completely distracted  ·  5★ Fully in the zone',
+    type: 'stars' as const,
+  },
+  {
+    id: 'objective_execution',
+    label: 'Technical',
+    text: 'Objective Execution?',
+    hint: 'How well did you execute the objective you set before this session?',
+    type: 'stars' as const,
   },
 ];
 
@@ -179,28 +173,72 @@ function BigCounter({ label, sub, value, color, onInc, onDec, onEdit }: {
   );
 }
 const bc = StyleSheet.create({
-  card: { flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg, alignItems: 'center', gap: spacing.xs, borderWidth: 1.5, borderColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 4 },
-  label: { fontSize: 13, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center' },
-  sub: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 14 },
+  card: { flex: 1, backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, alignItems: 'center', gap: spacing.xs, borderWidth: 1.5, borderColor: colors.border, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 4 },
+  label: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5, textTransform: 'uppercase', textAlign: 'center' },
+  sub: { fontSize: 9, color: colors.textSecondary, textAlign: 'center', lineHeight: 12 },
   valueWrap: { alignItems: 'center' },
-  value: { fontSize: 68, fontWeight: '900', letterSpacing: -2, lineHeight: 76, textAlign: 'center', minWidth: 80 },
-  editHint: { position: 'absolute', right: -18, bottom: 10, backgroundColor: colors.background, borderRadius: 8, padding: 3 },
-  btnRow: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.xs },
-  btn: { width: 52, height: 52, borderRadius: 26, justifyContent: 'center', alignItems: 'center' },
+  value: { fontSize: 56, fontWeight: '900', letterSpacing: -2, lineHeight: 64, textAlign: 'center', minWidth: 70 },
+  editHint: { position: 'absolute', right: -18, bottom: 8, backgroundColor: colors.background, borderRadius: 8, padding: 3 },
+  btnRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  btn: { width: 46, height: 46, borderRadius: 23, justifyContent: 'center', alignItems: 'center' },
 });
 
 // ─── Star Row ─────────────────────────────────────────────────────────────────
 function StarRow({ value, onChange, color }: { value: number; onChange: (v: number) => void; color: string }) {
   return (
-    <View style={{ flexDirection: 'row', gap: spacing.xs }}>
+    <View style={{ flexDirection: 'row', gap: spacing.sm }}>
       {[1, 2, 3, 4, 5].map(n => (
         <Pressable key={n} onPress={() => onChange(n)} hitSlop={4}>
-          <MaterialIcons name={n <= value ? 'star' : 'star-border'} size={34} color={n <= value ? color : colors.border} />
+          <MaterialIcons name={n <= value ? 'star' : 'star-border'} size={36} color={n <= value ? color : colors.border} />
         </Pressable>
       ))}
     </View>
   );
 }
+
+// ─── RPE Picker (1–10) ────────────────────────────────────────────────────────
+function RPEPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const rpeColors: Record<number, string> = {
+    1: '#4CAF50', 2: '#66BB6A', 3: '#8BC34A', 4: '#CDDC39',
+    5: '#FFEB3B', 6: '#FFC107', 7: '#FF9800', 8: '#FF5722', 9: '#F44336', 10: '#B71C1C',
+  };
+  const rpeLabel: Record<number, string> = {
+    1: 'Very easy', 2: 'Easy', 3: 'Light', 4: 'Moderate', 5: 'Somewhat hard',
+    6: 'Hard', 7: 'Very hard', 8: 'Very very hard', 9: 'Max effort', 10: 'All out',
+  };
+  return (
+    <View style={{ gap: spacing.sm }}>
+      <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
+        {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => {
+          const selected = n === value;
+          const c = rpeColors[n];
+          return (
+            <Pressable
+              key={n}
+              onPress={() => onChange(n)}
+              style={[rpe.btn, { borderColor: c, backgroundColor: selected ? c : c + '18' }]}
+            >
+              <Text style={[rpe.btnNum, { color: selected ? '#fff' : c }]}>{n}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {value > 0 && (
+        <View style={[rpe.labelChip, { backgroundColor: rpeColors[value] + '20' }]}>
+          <View style={[rpe.labelDot, { backgroundColor: rpeColors[value] }]} />
+          <Text style={[rpe.labelText, { color: rpeColors[value] }]}>{value}/10 — {rpeLabel[value]}</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+const rpe = StyleSheet.create({
+  btn: { width: 40, height: 40, borderRadius: 20, borderWidth: 2, justifyContent: 'center', alignItems: 'center' },
+  btnNum: { fontSize: 15, fontWeight: '900' },
+  labelChip: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: borderRadius.sm, paddingHorizontal: 10, paddingVertical: 5, alignSelf: 'flex-start' },
+  labelDot: { width: 8, height: 8, borderRadius: 4 },
+  labelText: { fontSize: 12, fontWeight: '700' },
+});
 
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AcademyLogScreen() {
@@ -221,59 +259,47 @@ export default function AcademyLogScreen() {
 
   const academyId = params.academyId as string;
   const isResuming = params.resume === '1';
-  // Academy members get full access (Batting, Bowling, Fielding, Fitness)
-  // Independent players (no academy) only get Batting + Fitness
   const isAcademyMember = params.isAcademyMember !== 'false';
   const availableConfigs = isAcademyMember
     ? SESSION_CONFIGS
     : SESSION_CONFIGS.filter(c => c.kind === 'Batting' || c.kind === 'Fitness');
   const logDate = new Date().toISOString().split('T')[0];
 
-  // ── Steps: 0=Pick Type, 1=Objectives, 2=Live, 3=Closing, 4=Summary
+  // ── Steps: 0=Pick Type, 1=Objective, 2=Live, 3=Closing, 4=Summary
   const TOTAL_STEPS = 5;
   const [step, setStep] = useState(0);
 
-  // ── Step 0: Type
   const [config, setConfig] = useState<SessionConfig | null>(null);
 
-  // ── Step 1: Objectives
-  const [objective1, setObjective1] = useState('');
-  const [objective2, setObjective2] = useState('');
+  // ── Step 1: Single Objective
+  const [objective, setObjective] = useState('');
 
-  // ── Step 2: Live (synced from context when minimized)
-  const [counter1, setCounter1] = useState(0);
-  const [counter2, setCounter2] = useState(0);
+  // ── Step 2: Live counters (up to 3)
+  const [counters, setCounters] = useState<number[]>([0, 0, 0]);
 
-  // Paused state from context (so it persists when minimized)
   const paused = academySession.isActive ? academySession.isPaused : false;
-
-  // Use the elapsed time from context (keeps ticking even when minimized)
   const elapsed = academySession.isActive ? academySession.elapsedSeconds : 0;
 
-  // ── Restore from context if resuming ──────────────────────────────────────
-  useEffect(() => {
-    if (isResuming && academySession.isActive && academySession.kind) {
-      const cfg = SESSION_CONFIGS.find(c => c.kind === academySession.kind) || null;
-      setConfig(cfg);
-      setObjective1(academySession.objective1);
-      setObjective2(academySession.objective2);
-      setCounter1(academySession.counter1);
-      setCounter2(academySession.counter2);
-      setStep(academySession.step);
-      setObj1Done(academySession.obj1Done);
-      setObj2Done(academySession.obj2Done);
-      setAnswers(academySession.answers);
-      maximizeAcademySession();
-    }
-  }, [isResuming]);
-
-  // ── Step 3: Closing
-  const [obj1Done, setObj1Done] = useState<boolean | null>(null);
-  const [obj2Done, setObj2Done] = useState<boolean | null>(null);
+  // ── Step 3: Reflection
+  const [objectiveDone, setObjectiveDone] = useState<boolean | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
 
   const updateAnswer = (id: string, val: number) =>
     setAnswers(prev => ({ ...prev, [id]: val }));
+
+  // ── Restore when resuming ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (isResuming && academySession.isActive && academySession.kind) {
+      const cfg = SESSION_CONFIGS.find(c => c.kind === academySession.kind) || null;
+      setConfig(cfg);
+      setObjective(academySession.objective);
+      setCounters(academySession.counters);
+      setStep(academySession.step);
+      setObjectiveDone(academySession.objectiveDone);
+      setAnswers(academySession.answers);
+      maximizeAcademySession();
+    }
+  }, [isResuming]);
 
   // ── Save ────────────────────────────────────────────────────────────────────
   const [saving, setSaving] = useState(false);
@@ -283,14 +309,17 @@ export default function AcademyLogScreen() {
     setSaving(true);
 
     const noteParts: string[] = [];
-    if (objective1.trim()) noteParts.push(`Objective 1: ${objective1.trim()} — ${obj1Done === true ? 'Completed' : obj1Done === false ? 'Not completed' : 'Not answered'}`);
-    if (objective2.trim()) noteParts.push(`Objective 2: ${objective2.trim()} — ${obj2Done === true ? 'Completed' : obj2Done === false ? 'Not completed' : 'Not answered'}`);
-    config.closingQuestions.forEach(q => {
-      const a = answers[q.id];
-      if (a !== undefined) {
-        noteParts.push(`${q.text}: ${q.type === 'stars' ? `${a}/5` : `${a}${q.suffix ? ' ' + q.suffix : ''}`}`);
-      }
-    });
+    if (objective.trim()) {
+      noteParts.push(`Objective: ${objective.trim()} — ${objectiveDone === true ? 'Achieved' : objectiveDone === false ? 'Not achieved' : 'Not reviewed'}`);
+    }
+    const rpe = answers['rpe'];
+    const focus = answers['focus'];
+    const objExec = answers['objective_execution'];
+    if (rpe !== undefined) noteParts.push(`RPE (Intensity): ${rpe}/10`);
+    if (focus !== undefined) noteParts.push(`Focus & Concentration: ${focus}/5`);
+    if (objExec !== undefined) noteParts.push(`Objective Execution: ${objExec}/5`);
+
+    const [c1, c2, c3] = counters;
 
     const { error } = await academyService.logTraining({
       user_id: user.id,
@@ -298,16 +327,21 @@ export default function AcademyLogScreen() {
       log_date: logDate,
       session_type: config.kind,
       duration_minutes: Math.max(1, Math.floor(elapsed / 60)),
-      intensity: answers['effort'] || answers['energy'] || answers['focus'] || answers['consistency'] || 5,
-      balls_faced: config.kind === 'Batting' ? counter1 || undefined : undefined,
-      runs_scored: config.kind === 'Batting' ? counter2 || undefined : undefined,
-      balls_bowled: config.kind === 'Bowling' ? counter1 || undefined : undefined,
-      wickets: config.kind === 'Bowling' ? counter2 || undefined : undefined,
-      catches: config.kind === 'Fielding' ? counter2 || undefined : undefined,
-      run_outs: config.kind === 'Fielding' ? counter1 || undefined : undefined,
-      fitness_exercises: config.kind === 'Fitness' ? (answers['exercises'] || undefined) : undefined,
-      fitness_sets: config.kind === 'Fitness' ? counter1 || undefined : undefined,
-      fitness_reps: config.kind === 'Fitness' ? counter2 || undefined : undefined,
+      intensity: rpe || 5,
+      // Batting: c1=balls faced, c2=quality contacts, c3=times beaten
+      balls_faced: config.kind === 'Batting' ? (c1 || undefined) : undefined,
+      runs_scored: config.kind === 'Batting' ? (c2 || undefined) : undefined,  // quality contacts stored in runs_scored
+      // Bowling: c1=balls bowled, c2=balls on target, c3=extras
+      balls_bowled: config.kind === 'Bowling' ? (c1 || undefined) : undefined,
+      wickets: config.kind === 'Bowling' ? (c2 || undefined) : undefined,        // on-target stored in wickets
+      runs_conceded: config.kind === 'Bowling' ? (c3 || undefined) : undefined,  // extras in runs_conceded
+      // Fielding: c1=chances, c2=clean takes
+      run_outs: config.kind === 'Fielding' ? (c1 || undefined) : undefined,
+      catches: config.kind === 'Fielding' ? (c2 || undefined) : undefined,
+      // Ratings
+      technical_rating: objExec || undefined,
+      effort_rating: rpe || undefined,
+      fitness_rating: focus || undefined,
       notes: noteParts.join('\n') || undefined,
     });
 
@@ -319,7 +353,7 @@ export default function AcademyLogScreen() {
 
   // ── Minimize ────────────────────────────────────────────────────────────────
   const handleMinimize = () => {
-    minimizeAcademySession(step, counter1, counter2, obj1Done, obj2Done, answers);
+    minimizeAcademySession(step, counters, objectiveDone, answers);
     router.back();
   };
 
@@ -331,16 +365,11 @@ export default function AcademyLogScreen() {
         <Text style={styles.heroSub}>Select a session type to begin</Text>
       </View>
       {!isAcademyMember && (
-        <View style={{
-          flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
-          backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
-          padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '30',
-          marginBottom: spacing.md,
-        }}>
+        <View style={styles.unlockBanner}>
           <MaterialIcons name="shield" size={18} color={colors.primary} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 13, fontWeight: '800', color: colors.primary }}>Academy Exclusive</Text>
-            <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginTop: 2 }}>
+            <Text style={styles.unlockTitle}>Academy Exclusive</Text>
+            <Text style={styles.unlockSub}>
               Bowling and Fielding tracking are unlocked when you join an academy with a coach code.
             </Text>
           </View>
@@ -351,21 +380,25 @@ export default function AcademyLogScreen() {
           <Pressable
             key={c.kind}
             style={({ pressed }) => [styles.typeCard, { borderColor: c.color }, pressed && { opacity: 0.8 }]}
-            onPress={() => { setConfig(c); setStep(1); }}
+            onPress={() => { setConfig(c); setCounters([0, 0, 0]); setStep(1); }}
           >
             <View style={[styles.typeIconCircle, { backgroundColor: c.color + '20' }]}>
               <MaterialIcons name={c.icon as any} size={36} color={c.color} />
             </View>
             <Text style={[styles.typeName, { color: c.color }]}>{c.kind}</Text>
-            <Text style={styles.typeSub}>{c.counter1Label} + {c.counter2Label}</Text>
+            <Text style={styles.typeSub}>
+              {c.counters.length === 0
+                ? 'Timer-based session'
+                : c.counters.map(ct => ct.label).join(' · ')}
+            </Text>
           </Pressable>
         ))}
       </View>
     </ScrollView>
   );
 
-  // ─── Step 1 — Objectives ───────────────────────────────────────────────────
-  const renderObjectives = () => (
+  // ─── Step 1 — Single Objective ────────────────────────────────────────────
+  const renderObjective = () => (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <View style={[styles.heroBlock, { alignItems: 'center' }]}>
@@ -373,40 +406,37 @@ export default function AcademyLogScreen() {
             <MaterialIcons name={config?.icon as any} size={36} color={config?.color || colors.primary} />
           </View>
           <Text style={styles.heroTitle}>{config?.kind} Session</Text>
-          <Text style={styles.heroSub}>Set 2 clear objectives before you start</Text>
+          <Text style={styles.heroSub}>Set one clear objective for this session</Text>
         </View>
 
-        <View style={styles.objectivesCard}>
+        <View style={styles.objectiveCard}>
           <View style={styles.objHeader}>
             <MaterialIcons name="flag" size={20} color={config?.color || colors.primary} />
-            <Text style={[styles.objHeaderText, { color: config?.color || colors.primary }]}>Session Objectives</Text>
+            <Text style={[styles.objHeaderText, { color: config?.color || colors.primary }]}>Session Objective</Text>
           </View>
-          <Text style={styles.objHelp}>What are you specifically trying to achieve today?</Text>
+          <Text style={styles.objHelp}>Elite training is about deep focus. What one thing will you work on today?</Text>
 
-          {[{ val: objective1, set: setObjective1, ph: 'e.g. Improve my back-foot play against short balls' },
-            { val: objective2, set: setObjective2, ph: 'e.g. Land 80% of deliveries in the good-length zone' }].map((o, i) => (
-            <View key={i} style={styles.objInputBlock}>
-              <View style={[styles.objNum, { backgroundColor: config?.color || colors.primary }]}>
-                <Text style={styles.objNumText}>{i + 1}</Text>
-              </View>
-              <TextInput
-                style={styles.objInput}
-                value={o.val}
-                onChangeText={o.set}
-                placeholder={o.ph}
-                placeholderTextColor={colors.textSecondary}
-                multiline
-                numberOfLines={2}
-                textAlignVertical="top"
-              />
+          <View style={styles.objInputBlock}>
+            <View style={[styles.objNum, { backgroundColor: config?.color || colors.primary }]}>
+              <MaterialIcons name="track-changes" size={14} color={colors.textLight} />
             </View>
-          ))}
+            <TextInput
+              style={styles.objInput}
+              value={objective}
+              onChangeText={setObjective}
+              placeholder="e.g. Weight transfer on the front foot"
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
         </View>
 
         <View style={styles.infoCard}>
           <MaterialIcons name="info-outline" size={16} color={colors.primary} />
           <Text style={styles.infoText}>
-            You will see these objectives again at the end of the session and be asked if you completed them.
+            You will be asked whether you achieved this objective at the end of the session. The cleaner the focus, the better the data.
           </Text>
         </View>
       </ScrollView>
@@ -416,11 +446,14 @@ export default function AcademyLogScreen() {
   // ─── Step 2 — Live Session ─────────────────────────────────────────────────
   const renderLive = () => {
     const c = config!;
-    const successRate = counter1 > 0 ? Math.round((counter2 / counter1) * 100) : 0;
+    const hasCounters = c.counters.length > 0;
+    const c1 = counters[0], c2 = counters[1], c3 = counters[2];
+    // Batting / Bowling accuracy = c2 / c1
+    const accuracyRate = c1 > 0 && c.counters.length >= 2 ? Math.round((c2 / c1) * 100) : null;
 
     return (
       <ScrollView style={styles.scroll} contentContainerStyle={[styles.scrollPad, { gap: spacing.md }]} showsVerticalScrollIndicator={false}>
-        {/* Timer Card */}
+        {/* Timer */}
         <View style={[styles.timerCard, { borderTopColor: c.color }]}>
           <Text style={styles.timerLabel}>SESSION TIMER</Text>
           <Text style={[styles.timerValue, { color: paused ? colors.warning : c.color }]}>{formatTime(elapsed)}</Text>
@@ -433,10 +466,7 @@ export default function AcademyLogScreen() {
               <MaterialIcons name={paused ? 'play-arrow' : 'pause'} size={22} color={colors.textLight} />
               <Text style={styles.timerBtnText}>{paused ? 'Resume' : 'Pause'}</Text>
             </Pressable>
-            <Pressable
-              style={styles.minimiseBtn}
-              onPress={handleMinimize}
-            >
+            <Pressable style={styles.minimiseBtn} onPress={handleMinimize}>
               <MaterialIcons name="minimize" size={20} color={colors.primary} />
               <Text style={styles.minimiseBtnText}>Minimise</Text>
             </Pressable>
@@ -449,59 +479,113 @@ export default function AcademyLogScreen() {
           )}
         </View>
 
-        {/* Objectives reminder */}
-        {(objective1.trim() || objective2.trim()) && (
+        {/* Objective reminder */}
+        {objective.trim() ? (
           <View style={[styles.objReminderCard, { borderLeftColor: c.color }]}>
-            <Text style={[styles.objReminderTitle, { color: c.color }]}>Today's Objectives</Text>
-            {objective1.trim() ? <Text style={styles.objReminderItem}>① {objective1}</Text> : null}
-            {objective2.trim() ? <Text style={styles.objReminderItem}>② {objective2}</Text> : null}
+            <Text style={[styles.objReminderTitle, { color: c.color }]}>Today's Objective</Text>
+            <Text style={styles.objReminderItem}>{objective}</Text>
+          </View>
+        ) : null}
+
+        {/* Fitness: no counters — motivational card */}
+        {!hasCounters && (
+          <View style={[styles.fitnessCard, { borderColor: c.color + '40' }]}>
+            <MaterialIcons name="fitness-center" size={36} color={c.color} />
+            <Text style={[styles.fitnessTitle, { color: c.color }]}>Keep pushing!</Text>
+            <Text style={styles.fitnessSub}>Your effort and duration are being recorded. Complete the debrief when you're done.</Text>
           </View>
         )}
 
-        {/* Counters — editable by tapping the number */}
-        <View style={styles.countersRow}>
-          <BigCounter
-            label={c.counter1Label}
-            sub={c.counter1Sub}
-            value={counter1}
-            color={c.color}
-            onInc={() => setCounter1(v => v + 1)}
-            onDec={() => setCounter1(v => Math.max(0, v - 1))}
-            onEdit={(n) => setCounter1(n)}
-          />
-          <BigCounter
-            label={c.counter2Label}
-            sub={c.counter2Sub}
-            value={counter2}
-            color={c.color}
-            onInc={() => setCounter2(v => v + 1)}
-            onDec={() => setCounter2(v => Math.max(0, v - 1))}
-            onEdit={(n) => setCounter2(n)}
-          />
-        </View>
+        {/* 2-counter layout (Fielding) */}
+        {hasCounters && c.counters.length === 2 && (
+          <View style={styles.countersRow}>
+            {c.counters.map((ct, i) => (
+              <BigCounter
+                key={i}
+                label={ct.label}
+                sub={ct.sub}
+                value={counters[i]}
+                color={c.color}
+                onInc={() => setCounters(prev => { const n = [...prev]; n[i]++; return n; })}
+                onDec={() => setCounters(prev => { const n = [...prev]; n[i] = Math.max(0, n[i] - 1); return n; })}
+                onEdit={(v) => setCounters(prev => { const n = [...prev]; n[i] = v; return n; })}
+              />
+            ))}
+          </View>
+        )}
 
-        {/* Live derived stat */}
-        {counter1 > 0 && (
+        {/* 3-counter layout (Batting / Bowling) */}
+        {hasCounters && c.counters.length >= 3 && (
+          <View style={{ gap: spacing.sm }}>
+            {/* Top 2 counters side by side */}
+            <View style={styles.countersRow}>
+              {c.counters.slice(0, 2).map((ct, i) => (
+                <BigCounter
+                  key={i}
+                  label={ct.label}
+                  sub={ct.sub}
+                  value={counters[i]}
+                  color={i === 1 ? c.color : colors.textSecondary}
+                  onInc={() => setCounters(prev => { const n = [...prev]; n[i]++; return n; })}
+                  onDec={() => setCounters(prev => { const n = [...prev]; n[i] = Math.max(0, n[i] - 1); return n; })}
+                  onEdit={(v) => setCounters(prev => { const n = [...prev]; n[i] = v; return n; })}
+                />
+              ))}
+            </View>
+            {/* 3rd counter — smaller, full width */}
+            <Pressable
+              style={[styles.counter3Row, { borderColor: colors.error + '40' }]}
+              onPress={() => {}}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.counter3Label, { color: colors.error }]}>{c.counters[2].label}</Text>
+                <Text style={styles.counter3Sub}>{c.counters[2].sub}</Text>
+              </View>
+              <View style={styles.counter3Controls}>
+                <Pressable
+                  style={[styles.counter3Btn, { backgroundColor: colors.border }]}
+                  onPress={() => setCounters(prev => { const n = [...prev]; n[2] = Math.max(0, n[2] - 1); return n; })}
+                  hitSlop={8}
+                >
+                  <MaterialIcons name="remove" size={18} color={colors.text} />
+                </Pressable>
+                <Text style={[styles.counter3Val, { color: colors.error }]}>{counters[2]}</Text>
+                <Pressable
+                  style={[styles.counter3Btn, { backgroundColor: colors.error }]}
+                  onPress={() => setCounters(prev => { const n = [...prev]; n[2]++; return n; })}
+                  hitSlop={8}
+                >
+                  <MaterialIcons name="add" size={18} color={colors.textLight} />
+                </Pressable>
+              </View>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Live accuracy stat */}
+        {accuracyRate !== null && (
           <View style={[styles.derivedCard, { borderColor: c.color + '40' }]}>
             <View style={styles.derivedRow}>
-              <Text style={styles.derivedLabel}>Success Rate</Text>
-              <Text style={[styles.derivedVal, { color: successRate >= 60 ? colors.success : successRate >= 40 ? colors.warning : colors.error }]}>
-                {successRate}%
+              <Text style={styles.derivedLabel}>Accuracy Rate</Text>
+              <Text style={[styles.derivedVal, { color: accuracyRate >= 60 ? colors.success : accuracyRate >= 40 ? colors.warning : colors.error }]}>
+                {accuracyRate}%
               </Text>
             </View>
             <View style={styles.derivedBarBg}>
-              <View style={[styles.derivedBarFill, { width: `${successRate}%` as any, backgroundColor: successRate >= 60 ? colors.success : successRate >= 40 ? colors.warning : colors.error }]} />
+              <View style={[styles.derivedBarFill, { width: `${accuracyRate}%` as any, backgroundColor: accuracyRate >= 60 ? colors.success : accuracyRate >= 40 ? colors.warning : colors.error }]} />
             </View>
-            <Text style={styles.derivedSub}>{counter2} {c.counter2Label.toLowerCase()} from {counter1} {c.counter1Label.toLowerCase()}</Text>
+            <Text style={styles.derivedSub}>{c2} {c.counters[1].label.toLowerCase()} from {c1} {c.counters[0].label.toLowerCase()}</Text>
           </View>
         )}
       </ScrollView>
     );
   };
 
-  // ─── Step 3 — Closing Questions ────────────────────────────────────────────
-  const renderClosing = () => {
+  // ─── Step 3 — Debrief ──────────────────────────────────────────────────────
+  const renderDebrief = () => {
     const c = config!;
+    const [c1, c2] = counters;
+    const hasCounters = c.counters.length > 0;
     return (
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -513,72 +597,66 @@ export default function AcademyLogScreen() {
             <Text style={styles.heroSub}>{formatTime(elapsed)} · {c.kind}</Text>
           </View>
 
-          {/* Objectives check */}
-          <View style={styles.closingCard}>
-            <Text style={styles.closingCardTitle}>Did you complete your objectives?</Text>
-            {[{ text: objective1, done: obj1Done, set: setObj1Done, num: '①' },
-              { text: objective2, done: obj2Done, set: setObj2Done, num: '②' }].map((o, i) =>
-              o.text.trim() ? (
-                <View key={i} style={styles.objCheckRow}>
-                  <View style={styles.objCheckContent}>
-                    <Text style={styles.objCheckNum}>{o.num}</Text>
-                    <Text style={styles.objCheckText}>{o.text}</Text>
-                  </View>
-                  <View style={styles.objCheckBtns}>
-                    <Pressable
-                      style={[styles.checkBtn, o.done === true && { backgroundColor: colors.success, borderColor: colors.success }]}
-                      onPress={() => o.set(true)}
-                    >
-                      <MaterialIcons name="check" size={18} color={o.done === true ? colors.textLight : colors.success} />
-                      <Text style={[styles.checkBtnText, { color: o.done === true ? colors.textLight : colors.success }]}>Yes</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.checkBtn, o.done === false && { backgroundColor: colors.error, borderColor: colors.error }]}
-                      onPress={() => o.set(false)}
-                    >
-                      <MaterialIcons name="close" size={18} color={o.done === false ? colors.textLight : colors.error} />
-                      <Text style={[styles.checkBtnText, { color: o.done === false ? colors.textLight : colors.error }]}>No</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ) : null
-            )}
-          </View>
+          {/* Objective check */}
+          {objective.trim() ? (
+            <View style={styles.closingCard}>
+              <Text style={styles.closingCardTitle}>Did you achieve your objective?</Text>
+              <View style={[styles.objCheckContent, { marginBottom: spacing.sm }]}>
+                <MaterialIcons name="track-changes" size={16} color={c.color} />
+                <Text style={styles.objCheckText}>{objective}</Text>
+              </View>
+              <View style={styles.objCheckBtns}>
+                <Pressable
+                  style={[styles.checkBtn, { flex: 1 }, objectiveDone === true && { backgroundColor: colors.success, borderColor: colors.success }]}
+                  onPress={() => setObjectiveDone(true)}
+                >
+                  <MaterialIcons name="check" size={20} color={objectiveDone === true ? colors.textLight : colors.success} />
+                  <Text style={[styles.checkBtnText, { color: objectiveDone === true ? colors.textLight : colors.success }]}>Yes, achieved it</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.checkBtn, { flex: 1 }, objectiveDone === false && { backgroundColor: colors.error, borderColor: colors.error }]}
+                  onPress={() => setObjectiveDone(false)}
+                >
+                  <MaterialIcons name="close" size={20} color={objectiveDone === false ? colors.textLight : colors.error} />
+                  <Text style={[styles.checkBtnText, { color: objectiveDone === false ? colors.textLight : colors.error }]}>Not this time</Text>
+                </Pressable>
+              </View>
+            </View>
+          ) : null}
 
-          {/* Reflection questions */}
+          {/* 3 Science-backed Reflection Questions */}
           <View style={styles.closingCard}>
-            <Text style={styles.closingCardTitle}>Reflection Questions</Text>
-            {c.closingQuestions.map((q, i) => (
-              <View key={q.id} style={[styles.questionRow, i < c.closingQuestions.length - 1 && styles.questionRowBorder]}>
-                <Text style={styles.questionText}>{q.text}</Text>
-                {q.hint ? (
+            <Text style={styles.closingCardTitle}>Performance Reflection</Text>
+            <Text style={styles.closingCardSub}>3 questions · Physical · Mental · Technical</Text>
+            {REFLECTION_QUESTIONS.map((q, i) => (
+              <View key={q.id} style={[styles.questionRow, i < REFLECTION_QUESTIONS.length - 1 && styles.questionRowBorder]}>
+                <View style={styles.questionMeta}>
+                  <View style={[styles.pillTag, {
+                    backgroundColor: q.id === 'rpe' ? colors.error + '20' : q.id === 'focus' ? colors.primary + '20' : (config?.color || colors.success) + '20'
+                  }]}>
+                    <Text style={[styles.pillTagText, {
+                      color: q.id === 'rpe' ? colors.error : q.id === 'focus' ? colors.primary : config?.color || colors.success
+                    }]}>{q.label}</Text>
+                  </View>
+                  <Text style={styles.questionText}>{q.text}</Text>
                   <Text style={styles.questionHint}>{q.hint}</Text>
-                ) : null}
-                {q.type === 'stars' ? (
+                </View>
+                {q.type === 'rpe' ? (
+                  <View style={{ marginTop: spacing.sm }}>
+                    <RPEPicker value={answers[q.id] || 0} onChange={v => updateAnswer(q.id, v)} />
+                  </View>
+                ) : (
                   <View style={{ marginTop: spacing.sm }}>
                     <StarRow
                       value={answers[q.id] || 0}
                       onChange={v => updateAnswer(q.id, v)}
-                      color={q.id === 'body' ? colors.success : c.color}
+                      color={q.id === 'focus' ? colors.primary : config?.color || colors.success}
                     />
                     {answers[q.id] > 0 && (
-                      <Text style={[styles.starValueLabel, { color: q.id === 'body' ? colors.success : c.color }]}>
-                        {answers[q.id]}/5
+                      <Text style={[styles.starValueLabel, { color: q.id === 'focus' ? colors.primary : config?.color || colors.success }]}>
+                        {answers[q.id]}/5 ★
                       </Text>
                     )}
-                  </View>
-                ) : (
-                  <View style={styles.numberInputRow}>
-                    <TextInput
-                      style={[styles.numberInput, { borderColor: c.color }]}
-                      value={answers[q.id] !== undefined ? String(answers[q.id]) : ''}
-                      onChangeText={v => updateAnswer(q.id, parseInt(v.replace(/[^0-9]/g, '')) || 0)}
-                      keyboardType="number-pad"
-                      placeholder="0"
-                      placeholderTextColor={colors.textSecondary}
-                      textAlign="center"
-                    />
-                    {q.suffix ? <Text style={styles.numberSuffix}>{q.suffix}</Text> : null}
                   </View>
                 )}
               </View>
@@ -593,7 +671,9 @@ export default function AcademyLogScreen() {
   const renderSummary = () => {
     const c = config!;
     const durationMins = Math.max(1, Math.floor(elapsed / 60));
-    const successRate = counter1 > 0 ? Math.round((counter2 / counter1) * 100) : 0;
+    const [c1, c2] = counters;
+    const hasCounters = c.counters.length > 0;
+    const accuracyRate = c1 > 0 && c.counters.length >= 2 ? Math.round((c2 / c1) * 100) : null;
 
     return (
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollPad} showsVerticalScrollIndicator={false}>
@@ -605,71 +685,86 @@ export default function AcademyLogScreen() {
           <Text style={styles.heroSub}>{logDate} · {c.kind}</Text>
         </View>
 
+        {/* Stats row */}
         <View style={styles.summaryStatsRow}>
-          {[
-            { icon: 'timer', val: `${durationMins}m`, label: 'Duration' },
-            { icon: c.icon, val: String(counter1), label: c.counter1Label },
-            { icon: 'check', val: String(counter2), label: c.counter2Label },
-            ...(counter1 > 0 ? [{ icon: 'percent', val: `${successRate}%`, label: 'Success' }] : []),
-          ].map((s, i) => (
+          <View style={styles.summaryStat}>
+            <MaterialIcons name="timer" size={18} color={c.color} />
+            <Text style={[styles.summaryStatVal, { color: c.color }]}>{durationMins}m</Text>
+            <Text style={styles.summaryStatLabel}>Duration</Text>
+          </View>
+          {hasCounters && c.counters.map((ct, i) => (
             <View key={i} style={styles.summaryStat}>
-              <MaterialIcons name={s.icon as any} size={18} color={c.color} />
-              <Text style={[styles.summaryStatVal, { color: c.color }]}>{s.val}</Text>
-              <Text style={styles.summaryStatLabel}>{s.label}</Text>
+              <MaterialIcons name={c.icon as any} size={18} color={i === 2 ? colors.error : c.color} />
+              <Text style={[styles.summaryStatVal, { color: i === 2 ? colors.error : c.color }]}>{counters[i]}</Text>
+              <Text style={styles.summaryStatLabel} numberOfLines={2}>{ct.label}</Text>
             </View>
           ))}
+          {accuracyRate !== null && (
+            <View style={styles.summaryStat}>
+              <MaterialIcons name="percent" size={18} color={c.color} />
+              <Text style={[styles.summaryStatVal, { color: c.color }]}>{accuracyRate}%</Text>
+              <Text style={styles.summaryStatLabel}>Accuracy</Text>
+            </View>
+          )}
         </View>
 
-        {counter1 > 0 && (
+        {/* Accuracy bar */}
+        {accuracyRate !== null && (
           <View style={styles.vizCard}>
             <View style={styles.vizHeaderRow}>
-              <Text style={styles.vizTitle}>Performance Breakdown</Text>
-              <Text style={[styles.vizPct, { color: successRate >= 60 ? colors.success : successRate >= 40 ? colors.warning : colors.error }]}>{successRate}%</Text>
+              <Text style={styles.vizTitle}>Accuracy Breakdown</Text>
+              <Text style={[styles.vizPct, { color: accuracyRate >= 60 ? colors.success : accuracyRate >= 40 ? colors.warning : colors.error }]}>{accuracyRate}%</Text>
             </View>
             <View style={styles.vizBarBg}>
-              <View style={[styles.vizBarFill, { width: `${successRate}%` as any, backgroundColor: c.color }]} />
+              <View style={[styles.vizBarFill, { width: `${accuracyRate}%` as any, backgroundColor: c.color }]} />
             </View>
             <View style={styles.vizLegend}>
               <View style={styles.vizLegendItem}>
                 <View style={[styles.vizDot, { backgroundColor: c.color }]} />
-                <Text style={styles.vizLegendText}>{c.counter2Label}: {counter2}</Text>
+                <Text style={styles.vizLegendText}>{c.counters[1]?.label}: {c2}</Text>
               </View>
               <View style={styles.vizLegendItem}>
                 <View style={[styles.vizDot, { backgroundColor: colors.border }]} />
-                <Text style={styles.vizLegendText}>Total: {counter1}</Text>
+                <Text style={styles.vizLegendText}>Total: {c1}</Text>
               </View>
             </View>
           </View>
         )}
 
-        {(objective1.trim() || objective2.trim()) && (
+        {/* Objective result */}
+        {objective.trim() ? (
           <View style={styles.summarySection}>
-            <Text style={styles.summarySectionTitle}>Objectives Review</Text>
-            {[{ text: objective1, done: obj1Done }, { text: objective2, done: obj2Done }].map((o, i) =>
-              o.text.trim() ? (
-                <View key={i} style={styles.summaryObjRow}>
-                  <MaterialIcons name={o.done ? 'check-circle' : 'cancel'} size={18} color={o.done ? colors.success : colors.error} />
-                  <Text style={styles.summaryObjText}>{o.text}</Text>
-                  <Text style={[styles.summaryObjStatus, { color: o.done ? colors.success : o.done === false ? colors.error : colors.textSecondary }]}>
-                    {o.done === true ? 'Done' : o.done === false ? 'Not done' : '—'}
-                  </Text>
-                </View>
-              ) : null
-            )}
+            <Text style={styles.summarySectionTitle}>Objective</Text>
+            <View style={styles.summaryObjRow}>
+              <MaterialIcons
+                name={objectiveDone === true ? 'check-circle' : objectiveDone === false ? 'cancel' : 'radio-button-unchecked'}
+                size={18}
+                color={objectiveDone === true ? colors.success : objectiveDone === false ? colors.error : colors.textSecondary}
+              />
+              <Text style={styles.summaryObjText}>{objective}</Text>
+              <Text style={[styles.summaryObjStatus, { color: objectiveDone === true ? colors.success : objectiveDone === false ? colors.error : colors.textSecondary }]}>
+                {objectiveDone === true ? 'Achieved' : objectiveDone === false ? 'Not achieved' : '—'}
+              </Text>
+            </View>
           </View>
-        )}
+        ) : null}
 
-        {c.closingQuestions.some(q => answers[q.id] !== undefined) && (
+        {/* Reflection Summary */}
+        {REFLECTION_QUESTIONS.some(q => answers[q.id] !== undefined) && (
           <View style={styles.summarySection}>
-            <Text style={styles.summarySectionTitle}>Reflection Summary</Text>
-            {c.closingQuestions.map(q => {
+            <Text style={styles.summarySectionTitle}>Performance Data</Text>
+            {REFLECTION_QUESTIONS.map(q => {
               const a = answers[q.id];
               if (a === undefined) return null;
+              const accentColor = q.id === 'rpe' ? colors.error : q.id === 'focus' ? colors.primary : config?.color || colors.success;
               return (
                 <View key={q.id} style={styles.reflectRow}>
-                  <Text style={styles.reflectQ} numberOfLines={2}>{q.text}</Text>
-                  <Text style={[styles.reflectA, { color: c.color }]}>
-                    {q.type === 'stars' ? `${a}/5 ★` : `${a}${q.suffix ? ' ' + q.suffix : ''}`}
+                  <View style={[styles.pillTag, { backgroundColor: accentColor + '20' }]}>
+                    <Text style={[styles.pillTagText, { color: accentColor }]}>{q.label}</Text>
+                  </View>
+                  <Text style={styles.reflectQ} numberOfLines={1}>{q.text}</Text>
+                  <Text style={[styles.reflectA, { color: accentColor }]}>
+                    {q.type === 'rpe' ? `${a}/10` : `${a}/5 ★`}
                   </Text>
                 </View>
               );
@@ -681,12 +776,12 @@ export default function AcademyLogScreen() {
   };
 
   // ─── Navigation ────────────────────────────────────────────────────────────
-  const STEP_TITLES = ['Session Type', 'Objectives', 'Live Session', 'Debrief', 'Summary'];
+  const STEP_TITLES = ['Session Type', 'Objective', 'Live Session', 'Debrief', 'Summary'];
 
   const getNextLabel = () => {
     if (step === 1) return 'Start Session →';
     if (step === 2) return 'End Session';
-    if (step === 3) return saving ? 'Saving...' : 'Save & Summary';
+    if (step === 3) return saving ? 'Saving...' : 'Save & View Summary';
     if (step === 4) return 'Done';
     return '';
   };
@@ -699,15 +794,13 @@ export default function AcademyLogScreen() {
 
   const handleNext = () => {
     if (step === 1) {
-      if (!objective1.trim() && !objective2.trim()) {
-        showAlert('Objectives', 'Please write at least one objective.');
+      if (!objective.trim()) {
+        showAlert('Objective required', 'Please set a focus objective before starting.');
         return;
       }
-      // Start academy session in context (timer begins)
-      startAcademySession(config!.kind, config!.color, objective1, objective2, academyId);
+      startAcademySession(config!.kind, config!.color, objective, academyId);
       setStep(2);
     } else if (step === 2) {
-      // Simply advance to the debrief step — local counter state is preserved
       setStep(3);
     } else if (step === 3) {
       handleSave();
@@ -718,18 +811,13 @@ export default function AcademyLogScreen() {
 
   const handleBack = () => {
     if (step === 0) { router.back(); return; }
-    if (step === 2) {
-      // Back during live session = minimize
-      handleMinimize();
-      return;
-    }
+    if (step === 2) { handleMinimize(); return; }
     if (step === 4) { router.back(); return; }
     setStep(s => s - 1);
   };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <Pressable onPress={handleBack} style={styles.headerBtn} hitSlop={8}>
           <MaterialIcons
@@ -755,9 +843,9 @@ export default function AcademyLogScreen() {
       <ProgressDots step={step} total={TOTAL_STEPS} />
 
       {step === 0 && renderTypePicker()}
-      {step === 1 && renderObjectives()}
+      {step === 1 && renderObjective()}
       {step === 2 && renderLive()}
-      {step === 3 && renderClosing()}
+      {step === 3 && renderDebrief()}
       {step === 4 && renderSummary()}
 
       {step > 0 && (
@@ -785,7 +873,6 @@ export default function AcademyLogScreen() {
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
 
@@ -802,12 +889,20 @@ const styles = StyleSheet.create({
   liveLabel: { fontSize: 11, fontWeight: '800' },
 
   scroll: { flex: 1 },
-  scrollPad: { padding: spacing.md, paddingBottom: 100 },
+  scrollPad: { padding: spacing.md, paddingBottom: 110 },
 
   heroBlock: { marginBottom: spacing.lg, gap: spacing.xs },
   heroIconCircle: { width: 72, height: 72, borderRadius: 36, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xs, alignSelf: 'center' },
   heroTitle: { fontSize: 22, fontWeight: '800', color: colors.text, textAlign: 'center' },
   heroSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
+
+  unlockBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: colors.primary + '10', borderRadius: borderRadius.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '30', marginBottom: spacing.md,
+  },
+  unlockTitle: { fontSize: 13, fontWeight: '800', color: colors.primary },
+  unlockSub: { fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginTop: 2 },
 
   typeGrid: { gap: spacing.md },
   typeCard: {
@@ -817,19 +912,18 @@ const styles = StyleSheet.create({
   },
   typeIconCircle: { width: 64, height: 64, borderRadius: 32, justifyContent: 'center', alignItems: 'center' },
   typeName: { fontSize: 20, fontWeight: '900' },
-  typeSub: { fontSize: 12, color: colors.textSecondary, textAlign: 'center' },
+  typeSub: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', lineHeight: 15 },
 
-  objectivesCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, gap: spacing.md },
+  objectiveCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, gap: spacing.md },
   objHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   objHeaderText: { fontSize: 16, fontWeight: '800' },
   objHelp: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
   objInputBlock: { flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start' },
   objNum: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 2, flexShrink: 0 },
-  objNumText: { fontSize: 13, fontWeight: '900', color: colors.textLight },
   objInput: {
     flex: 1, backgroundColor: colors.background, borderRadius: borderRadius.md,
     borderWidth: 1.5, borderColor: colors.border, padding: spacing.sm,
-    fontSize: 14, color: colors.text, lineHeight: 20, minHeight: 60,
+    fontSize: 14, color: colors.text, lineHeight: 20, minHeight: 70,
   },
   infoCard: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '30' },
   infoText: { flex: 1, fontSize: 13, color: colors.primary, lineHeight: 18 },
@@ -858,7 +952,21 @@ const styles = StyleSheet.create({
   objReminderTitle: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 },
   objReminderItem: { fontSize: 13, color: colors.text, lineHeight: 18 },
 
-  countersRow: { flexDirection: 'row', gap: spacing.md },
+  fitnessCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl, alignItems: 'center', borderWidth: 1.5, gap: spacing.md },
+  fitnessTitle: { fontSize: 22, fontWeight: '900' },
+  fitnessSub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 18 },
+
+  countersRow: { flexDirection: 'row', gap: spacing.sm },
+
+  counter3Row: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1.5, gap: spacing.md,
+  },
+  counter3Label: { fontSize: 13, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.3 },
+  counter3Sub: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
+  counter3Controls: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  counter3Btn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
+  counter3Val: { fontSize: 28, fontWeight: '900', minWidth: 36, textAlign: 'center' },
 
   derivedCard: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1.5, gap: spacing.sm },
   derivedRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
@@ -870,27 +978,27 @@ const styles = StyleSheet.create({
 
   closingCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.md, gap: spacing.md },
   closingCardTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
-  objCheckRow: { gap: spacing.sm, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border + '60' },
+  closingCardSub: { fontSize: 11, color: colors.textSecondary, marginTop: -spacing.sm },
+
   objCheckContent: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  objCheckNum: { fontSize: 16, fontWeight: '800', color: colors.textSecondary },
   objCheckText: { flex: 1, fontSize: 14, color: colors.text, lineHeight: 20 },
   objCheckBtns: { flexDirection: 'row', gap: spacing.sm },
-  checkBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background },
+  checkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background },
   checkBtnText: { fontSize: 13, fontWeight: '800' },
 
-  questionRow: { paddingBottom: spacing.md, gap: spacing.sm },
+  questionRow: { paddingBottom: spacing.md, gap: spacing.xs },
   questionRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.border + '60', marginBottom: spacing.sm },
-  questionText: { fontSize: 14, color: colors.text, fontWeight: '600', lineHeight: 20 },
-  questionHint: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', marginTop: 2, lineHeight: 15 },
-  starValueLabel: { fontSize: 12, fontWeight: '800', marginTop: 4 },
-  numberInputRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  numberInput: { width: 80, borderWidth: 2, borderRadius: borderRadius.md, paddingVertical: spacing.sm, fontSize: 22, fontWeight: '800', color: colors.text, backgroundColor: colors.background, textAlign: 'center' },
-  numberSuffix: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  questionMeta: { gap: 4 },
+  questionText: { fontSize: 14, color: colors.text, fontWeight: '700', lineHeight: 20 },
+  questionHint: { fontSize: 11, color: colors.textSecondary, lineHeight: 15 },
+  pillTag: { alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 2 },
+  pillTagText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+  starValueLabel: { fontSize: 13, fontWeight: '800', marginTop: 6 },
 
   summaryHero: { borderRadius: borderRadius.xl, padding: spacing.lg, alignItems: 'center', marginBottom: spacing.md, gap: spacing.xs },
   summaryStatsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, justifyContent: 'space-around', flexWrap: 'wrap', gap: spacing.sm },
-  summaryStat: { alignItems: 'center', gap: 4, minWidth: 60 },
-  summaryStatVal: { fontSize: 20, fontWeight: '900' },
+  summaryStat: { alignItems: 'center', gap: 4, minWidth: 55 },
+  summaryStatVal: { fontSize: 18, fontWeight: '900' },
   summaryStatLabel: { fontSize: 10, color: colors.textSecondary, textAlign: 'center' },
 
   vizCard: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm },
@@ -910,9 +1018,9 @@ const styles = StyleSheet.create({
   summaryObjText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 18 },
   summaryObjStatus: { fontSize: 12, fontWeight: '800' },
 
-  reflectRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border + '40' },
-  reflectQ: { flex: 1, fontSize: 12, color: colors.textSecondary, paddingRight: spacing.sm },
-  reflectA: { fontSize: 13, fontWeight: '800' },
+  reflectRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.xs, borderBottomWidth: 1, borderBottomColor: colors.border + '40' },
+  reflectQ: { flex: 1, fontSize: 12, color: colors.textSecondary },
+  reflectA: { fontSize: 13, fontWeight: '900' },
 
   footer: { backgroundColor: colors.surface, borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.md },
   ctaBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md + 2, borderRadius: borderRadius.md },
