@@ -8,6 +8,8 @@ import { useAuth } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { useEffect, useState } from 'react';
 
+const SUPER_ADMIN_EMAIL = 'alinasarzaids@gmail.com';
+
 function formatTime(seconds: number) {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
@@ -146,6 +148,7 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { user } = useAuth();
   const [showAcademy, setShowAcademy] = useState(true); // default show, hide once loaded
+  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
 
   useEffect(() => {
     if (!user?.id) return;
@@ -257,6 +260,17 @@ export default function TabLayout() {
           name="leaderboard"
           options={{
             href: null,
+          }}
+        />
+        <Tabs.Screen
+          name="admin"
+          options={{
+            title: 'Admin',
+            href: isSuperAdmin ? undefined : null,
+            tabBarIcon: ({ color, size }) => (
+              <MaterialIcons name="admin-panel-settings" size={size} color={color} />
+            ),
+            tabBarActiveTintColor: colors.warning,
           }}
         />
       </Tabs>
