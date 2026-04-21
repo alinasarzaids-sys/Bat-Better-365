@@ -6,7 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useAuth, useAlert } from '@/template';
+import { useAuth, useAlert, getSupabaseClient } from '@/template';
 import { academyService } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { useActiveSession } from '@/hooks/useActiveSession';
@@ -283,6 +283,36 @@ export default function AcademyLogScreen() {
   // ── Step 3: Reflection
   const [objectiveDone, setObjectiveDone] = useState<boolean | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+
+  // ── Step 3: AI Struggle Tip
+  const [struggleText, setStruggleText] = useState('');
+  const [aiTip, setAiTip] = useState('');
+  const [loadingTip, setLoadingTip] = useState(false);
+
+  const fetchAiTip = async () => {
+    if (!struggleText.trim()) return;
+    setLoadingTip(true);
+    setAiTip('');
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.functions.invoke('academy-ai-questions', {
+        body: {
+          mode: 'struggle_tip',
+          sessionKind: config?.kind || '',
+          objective: objective.trim(),
+          struggle: struggleText.trim(),
+        },
+      });
+      if (!error && data?.tip) {
+        setAiTip(data.tip);
+      } else {
+        setAiTip('Keep working on it — consistency is key. Focus on one small adjustment next session.');
+      }
+    } catch {
+      setAiTip('Keep working on it — consistency is key. Focus on one small adjustment next session.');
+    }
+    setLoadingTip(false);
+  };
 
   const updateAnswer = (id: string, val: number) =>
     setAnswers(prev => ({ ...prev, [id]: val }));
@@ -623,6 +653,61 @@ export default function AcademyLogScreen() {
               </View>
             </View>
           ) : null}
+
+          {/* AI Struggle Tip */}
+          <View style={styles.closingCard}>
+            <View style={styles.aiTipHeader}>
+              <View style={[styles.aiTipIconCircle, { backgroundColor: colors.primary + '20' }]}>
+                <MaterialIcons name="psychology" size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.closingCardTitle}>AI Coach Tip</Text>
+                <Text style={styles.closingCardSub}>Describe what you struggled with → get instant advice</Text>
+              </View>
+            </View>
+
+            <TextInput
+              style={styles.struggleInput}
+              value={struggleText}
+              onChangeText={setStruggleText}
+              placeholder="e.g. My footwork was off on full deliveries, kept mis-timing the drive..."
+              placeholderTextColor={colors.textSecondary}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+
+            <Pressable
+              style={[
+                styles.aiTipBtn,
+                (!struggleText.trim() || loadingTip) && styles.aiTipBtnDisabled,
+              ]}
+              onPress={fetchAiTip}
+              disabled={!struggleText.trim() || loadingTip}
+            >
+              {loadingTip ? (
+                <>
+                  <ActivityIndicator size="small" color={colors.textLight} />
+                  <Text style={styles.aiTipBtnText}>Generating tip...</Text>
+                </>
+              ) : (
+                <>
+                  <MaterialIcons name="auto-awesome" size={18} color={colors.textLight} />
+                  <Text style={styles.aiTipBtnText}>Get AI Tip</Text>
+                </>
+              )}
+            </Pressable>
+
+            {aiTip ? (
+              <View style={styles.aiTipResult}>
+                <View style={styles.aiTipResultHeader}>
+                  <MaterialIcons name="lightbulb" size={16} color={colors.warning} />
+                  <Text style={styles.aiTipResultTitle}>Improvement Tip</Text>
+                </View>
+                <Text style={styles.aiTipResultText}>{aiTip}</Text>
+              </View>
+            ) : null}
+          </View>
 
           {/* 3 Science-backed Reflection Questions */}
           <View style={styles.closingCard}>
@@ -994,6 +1079,29 @@ const styles = StyleSheet.create({
   pillTag: { alignSelf: 'flex-start', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 2 },
   pillTagText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
   starValueLabel: { fontSize: 13, fontWeight: '800', marginTop: 6 },
+
+  // AI Tip section
+  aiTipHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  aiTipIconCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  struggleInput: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.border, padding: spacing.sm,
+    fontSize: 14, color: colors.text, lineHeight: 20, minHeight: 80,
+  },
+  aiTipBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary, borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md,
+  },
+  aiTipBtnDisabled: { opacity: 0.45 },
+  aiTipBtnText: { fontSize: 14, fontWeight: '800', color: colors.textLight },
+  aiTipResult: {
+    backgroundColor: colors.warning + '12', borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.warning + '40', padding: spacing.md, gap: spacing.sm,
+  },
+  aiTipResultHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  aiTipResultTitle: { fontSize: 12, fontWeight: '800', color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.5 },
+  aiTipResultText: { fontSize: 14, color: colors.text, lineHeight: 21 },
 
   summaryHero: { borderRadius: borderRadius.xl, padding: spacing.lg, alignItems: 'center', marginBottom: spacing.md, gap: spacing.xs },
   summaryStatsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, justifyContent: 'space-around', flexWrap: 'wrap', gap: spacing.sm },

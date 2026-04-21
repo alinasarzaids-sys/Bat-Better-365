@@ -6,8 +6,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { position, sessionType, stats, mode } = await req.json();
-    // mode: 'questions' | 'analysis'
+    const { position, sessionType, stats, mode, sessionKind, objective, struggle } = await req.json();
+    // mode: 'questions' | 'analysis' | 'struggle_tip'
 
     const apiKey = Deno.env.get('ONSPACE_AI_API_KEY');
     const baseUrl = Deno.env.get('ONSPACE_AI_BASE_URL');
@@ -20,6 +20,35 @@ Deno.serve(async (req) => {
     }
 
     let prompt = '';
+
+    if (mode === 'struggle_tip') {
+      // Quick in-session AI tip: player describes what they struggled with → AI gives one actionable improvement tip
+      prompt = `You are an elite cricket performance coach giving instant, practical advice.
+
+A player just finished a ${sessionKind || 'cricket'} training session.
+${objective ? `Their session objective was: "${objective}"` : ''}
+They struggled with: "${struggle}"
+
+Give them ONE specific, actionable improvement tip for next time. Be direct, encouraging, and concise (3–5 sentences max). Use cricket-specific language. Focus only on what they can actively do differently next session.`;
+
+      const aiResponse = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'google/gemini-3-flash-preview',
+          messages: [{ role: 'user', content: prompt }],
+          max_tokens: 200,
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        return new Response(JSON.stringify({ error: 'AI service error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const aiData = await aiResponse.json();
+      const tip = aiData.choices?.[0]?.message?.content || 'Keep working on it — consistency is key. Review the drill basics and focus on one small adjustment next session.';
+      return new Response(JSON.stringify({ tip }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     if (mode === 'questions') {
       // Generate 4 coaching questions based on position and what was logged
@@ -78,7 +107,7 @@ Keep it under 280 words. Use bullet points. Be specific and encouraging. Cricket
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: 'google/gemini-3-flash-preview',
         messages: [{ role: 'user', content: prompt }],
         temperature: 0.7,
         max_tokens: mode === 'questions' ? 200 : 500,
