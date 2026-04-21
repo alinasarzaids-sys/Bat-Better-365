@@ -24,6 +24,9 @@ export interface AcademyMember {
   is_active: boolean;
   device_id?: string;
   squad_id?: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'removed';
+  cooldown_until?: string | null;
+  removal_reason?: string | null;
   user_profiles?: { username?: string; email: string; full_name?: string };
   academy_squads?: { id: string; name: string; color: string } | null;
 }
@@ -175,6 +178,28 @@ export const academyService = {
       }
     }
 
+    // Players join with 'pending' status — coaches/admins are auto-approved
+    const memberStatus = role === 'player' ? 'pending' : 'approved';
+
+    // Check 30-day cooldown for players (anti-cheat: was this player removed recently?)
+    if (role === 'player') {
+      const { data: removedRecord } = await supabase
+        .from('academy_members')
+        .select('cooldown_until, status')
+        .eq('academy_id', academy.id)
+        .eq('user_id', userId)
+        .eq('status', 'removed')
+        .maybeSingle();
+
+      if (removedRecord?.cooldown_until) {
+        const cooldownEnd = new Date(removedRecord.cooldown_until);
+        if (cooldownEnd > new Date()) {
+          const dateStr = cooldownEnd.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+          return { data: null, error: `You are on a 30-day cooldown for this academy. You can rejoin after ${dateStr}.` };
+        }
+      }
+    }
+
     const { error: joinError } = await supabase.from('academy_members').insert({
       academy_id: academy.id,
       user_id: userId,
@@ -182,12 +207,13 @@ export const academyService = {
       position: role === 'admin' ? 'Admin' : position,
       display_name: displayName,
       jersey_number: jerseyNumber,
+      status: memberStatus,
       ...(deviceId ? { device_id: deviceId } : {}),
       ...(squadId && role === 'player' ? { squad_id: squadId } : {}),
     });
 
     if (joinError) return { data: null, error: joinError.message };
-    return { data: { academy, role }, error: null };
+    return { data: { academy, role, status: memberStatus as any }, error: null };
   },
 
   async generateAdminCode(academyId: string): Promise<{ data: string | null; error: string | null }> {
@@ -376,6 +402,54 @@ export const academyService = {
       },
       error: null,
     };
+  },
+
+  // ─── Pending Approval System ─────────────────────────────────────────────────
+  async getPendingMembers(academyId: string): Promise<{ data: AcademyMember[] | null; error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from('academy_members')
+      .select('*, user_profiles(username, email, full_name)')
+      .eq('academy_id', academyId)
+      .eq('status', 'pending')
+      .order('joined_at', { ascending: true });
+    if (error) return { data: null, error: error.message };
+    return { data: data as any[], error: null };
+  },
+
+  async approvePlayer(memberId: string): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase
+      .from('academy_members')
+      .update({ status: 'approved', is_active: true })
+      .eq('id', memberId);
+    return { error: error?.message || null };
+  },
+
+  async rejectPlayer(memberId: string): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    const { error } = await supabase
+      .from('academy_members')
+      .update({ status: 'rejected', is_active: false })
+      .eq('id', memberId);
+    return { error: error?.message || null };
+  },
+
+  async removePlayer(memberId: string, reason?: string): Promise<{ error: string | null }> {
+    const supabase = getSupabaseClient();
+    // 30-day cooldown anti-cheat: player cannot rejoin for 30 days
+    const cooldownUntil = new Date(Date.now() + 30 * 86400000).toISOString();
+    const { error } = await supabase
+      .from('academy_members')
+      .update({
+        status: 'removed',
+        is_active: false,
+        deactivated_at: new Date().toISOString(),
+        cooldown_until: cooldownUntil,
+        removal_reason: reason || null,
+      })
+      .eq('id', memberId);
+    return { error: error?.message || null };
   },
 
   // ─── Player Deactivation ─────────────────────────────────────────────────────

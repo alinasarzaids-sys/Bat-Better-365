@@ -23,11 +23,13 @@ const INTRO_SEEN_KEY = '@bb365_intro_seen';
 
 type RouteDecision =
   | 'loading'
-  | 'intro'       // green splash, unauthenticated first-time
+  | 'intro'         // green splash, unauthenticated first-time
   | 'login'
-  | 'mode-select' // pick individual vs academy
-  | 'paywall'     // individual, unpaid
-  | 'app';        // go to main tabs
+  | 'mode-select'   // pick individual vs academy
+  | 'paywall'       // individual, unpaid
+  | 'waiting-room'  // player pending coach approval
+  | 'locked'        // academy billing locked
+  | 'app';          // go to main tabs
 
 export default function RootScreen() {
   const { user, loading: authLoading } = useAuth();
@@ -73,7 +75,30 @@ export default function RootScreen() {
       }
 
       if (mode === 'admin' || mode === 'academy') {
-        // Academy/admin — no paywall
+        // Check if any of their academies are locked
+        const { data: memberships } = await supabase
+          .from('academy_members')
+          .select('status, academies(billing_status)')
+          .eq('user_id', user.id)
+          .eq('is_active', true);
+
+        // If player is pending in all academies → waiting room
+        const activeMemberships = (memberships || []).filter((m: any) => m.status === 'approved');
+        const pendingMemberships = (memberships || []).filter((m: any) => m.status === 'pending');
+
+        if (activeMemberships.length === 0 && pendingMemberships.length > 0) {
+          setRoute('waiting-room');
+          return;
+        }
+
+        // If all active academies are locked → locked screen
+        const allLocked = activeMemberships.length > 0 &&
+          activeMemberships.every((m: any) => m.academies?.billing_status === 'locked');
+        if (allLocked) {
+          setRoute('locked');
+          return;
+        }
+
         setRoute('app');
         return;
       }
@@ -102,10 +127,12 @@ export default function RootScreen() {
     );
   }
 
-  if (route === 'intro')        return <Redirect href="/onboarding" />;
-  if (route === 'login')        return <Redirect href="/login" />;
-  if (route === 'mode-select')  return <Redirect href="/mode-selection" />;
-  if (route === 'paywall')      return <Redirect href="/paywall" />;
+  if (route === 'intro')         return <Redirect href="/onboarding" />;
+  if (route === 'login')         return <Redirect href="/login" />;
+  if (route === 'mode-select')   return <Redirect href="/mode-selection" />;
+  if (route === 'paywall')       return <Redirect href="/paywall" />;
+  if (route === 'waiting-room')  return <Redirect href="/waiting-room" />;
+  if (route === 'locked')        return <Redirect href="/academy-locked" />;
   return <Redirect href="/(tabs)" />;
 }
 

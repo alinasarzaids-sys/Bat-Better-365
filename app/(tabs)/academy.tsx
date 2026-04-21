@@ -336,9 +336,11 @@ export default function AcademyScreen() {
   const [nowBannerSession, setNowBannerSession] = useState<{ id: string; title: string; session_date: string; session_time: string; location?: string } | null>(null);
   const bannerTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  const [pendingMembers, setPendingMembers] = useState<AcademyMember[]>([]);
+  const [showPendingModal, setShowPendingModal] = useState(false);
+  const [approvingId, setApprovingId] = useState<string | null>(null);
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showEditAcademyModal, setShowEditAcademyModal] = useState(false);
   const [previewAsPlayer, setPreviewAsPlayer] = useState(false);
 
   // Join modal state
@@ -370,14 +372,16 @@ export default function AcademyScreen() {
   const isCoach = (memberRole === 'coach' || isAdmin) && !previewAsPlayer;
 
   const loadCoachData = useCallback(async (academyId: string) => {
-    const [logsRes, membersRes, squadsRes] = await Promise.all([
+    const [logsRes, membersRes, squadsRes, pendingRes] = await Promise.all([
       academyService.getAcademyLogs(academyId, 30),
       academyService.getAcademyMembers(academyId),
       academyService.getSquads(academyId),
+      academyService.getPendingMembers(academyId),
     ]);
     setAllMemberLogs(logsRes.data || []);
     setAllMembers(membersRes.data || []);
     setSquads(squadsRes.data || []);
+    setPendingMembers(pendingRes.data || []);
   }, []);
 
   const loadPlayerLogs = useCallback(async (academyId: string) => {
@@ -661,6 +665,24 @@ export default function AcademyScreen() {
         {/* ══ COACH VIEW ══ */}
         {isCoach && (
           <>
+            {/* ── Pending Approvals Banner ── */}
+            {pendingMembers.length > 0 && (
+              <Pressable
+                style={pendingStyles.banner}
+                onPress={() => setShowPendingModal(true)}
+              >
+                <View style={pendingStyles.badgeCircle}>
+                  <Text style={pendingStyles.badgeNum}>{pendingMembers.length}</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={pendingStyles.bannerTitle}>
+                    {pendingMembers.length} Player{pendingMembers.length > 1 ? 's' : ''} Awaiting Approval
+                  </Text>
+                  <Text style={pendingStyles.bannerSub}>Tap to review and approve</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={20} color={colors.warning} />
+              </Pressable>
+            )}
             <SquadOverviewCard members={allMembers} logs={allMemberLogs} squad={currentSquad} squadFilter={selectedSquadFilter} />
             <View style={styles.actionsGrid}>
               <Pressable style={styles.actionCard} onPress={() => router.push({ pathname: '/academy-coach', params: { academyId: currentMembership!.academy.id, ...(selectedSquadFilter ? { squadFilter: selectedSquadFilter } : {}) } } as any)}>
@@ -696,6 +718,13 @@ export default function AcademyScreen() {
               <View style={{ flex: 1 }}><Text style={styles.inviteBtnTitle}>Training History</Text><Text style={styles.inviteBtnSub}>All logged academy sessions</Text></View>
               <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
             </Pressable>
+            {isAdmin && (
+              <Pressable style={[styles.inviteBtn, { marginTop: 0, borderColor: colors.error + '40' }]} onPress={() => router.push('/admin-panel' as any)}>
+                <View style={[styles.inviteBtnIconCircle, { backgroundColor: colors.error + '15' }]}><MaterialIcons name="admin-panel-settings" size={20} color={colors.error} /></View>
+                <View style={{ flex: 1 }}><Text style={styles.inviteBtnTitle}>Super Admin Panel</Text><Text style={styles.inviteBtnSub}>Invoices, billing, lock/unlock</Text></View>
+                <MaterialIcons name="chevron-right" size={20} color={colors.error} />
+              </Pressable>
+            )}
           </>
         )}
 
@@ -864,6 +893,69 @@ export default function AcademyScreen() {
       <InviteModal visible={showInviteModal} academy={currentMembership?.academy || null} onClose={() => setShowInviteModal(false)} />
       <JoinModal visible={showJoinModal} step={joinStep} code={joinCode} onCodeChange={c => setJoinCode(c.toUpperCase())} academyName={joinAcademyName} displayName={joinDisplayName} onDisplayNameChange={setJoinDisplayName} position={joinPosition} onPositionChange={setJoinPosition} jersey={joinJersey} onJerseyChange={setJoinJersey} squads={joinSquads} selectedSquadId={joinSquadId} onSquadChange={setJoinSquadId} verifyLoading={joinCodeLoading} joining={joining} onVerify={handleVerifyCode} onBack={() => setJoinStep('code')} onClose={() => { setShowJoinModal(false); resetJoinModal(); }} onSubmit={handleConfirmJoin} />
       <JoinConfirmModal visible={showJoinConfirm} squadName={joinSquads.find(s => s.id === joinSquadId)?.name || null} squadColor={joinSquads.find(s => s.id === joinSquadId)?.color || colors.primary} position={joinPosition} displayName={joinDisplayName} academyName={joinAcademyName} joining={joining} onConfirm={handleJoin} onCancel={() => setShowJoinConfirm(false)} />
+
+      {/* ── Pending Approvals Modal ── */}
+      <Modal visible={showPendingModal} transparent animationType="slide" onRequestClose={() => setShowPendingModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <Text style={{ ...typography.h4, color: colors.text, fontWeight: '700' }}>Pending Approvals</Text>
+              <Pressable onPress={() => setShowPendingModal(false)} hitSlop={8}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40, gap: spacing.sm }} showsVerticalScrollIndicator={false}>
+              {pendingMembers.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 40, gap: spacing.md }}>
+                  <MaterialIcons name="check-circle" size={48} color={colors.success} />
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>All caught up!</Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>No pending approval requests.</Text>
+                </View>
+              ) : pendingMembers.map(m => {
+                const profile = (m as any).user_profiles;
+                return (
+                  <View key={m.id} style={pendingStyles.requestCard}>
+                    <View style={pendingStyles.requestAvatar}>
+                      <MaterialIcons name="person" size={22} color={colors.primary} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={pendingStyles.requestName}>{m.display_name || profile?.full_name || 'Player'}</Text>
+                      <Text style={pendingStyles.requestEmail}>{profile?.email || 'No email'}</Text>
+                      <Text style={pendingStyles.requestMeta}>{m.position || 'Batsman'} · Requested {new Date(m.joined_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</Text>
+                    </View>
+                    <View style={pendingStyles.requestActions}>
+                      <Pressable
+                        style={[pendingStyles.actionBtn, { backgroundColor: colors.error + '18', borderColor: colors.error + '40' }]}
+                        onPress={async () => {
+                          setApprovingId(m.id);
+                          await academyService.rejectPlayer(m.id);
+                          setApprovingId(null);
+                          if (currentMembership) await loadCoachData(currentMembership.academy.id);
+                        }}
+                        disabled={approvingId === m.id}
+                      >
+                        <MaterialIcons name="close" size={16} color={colors.error} />
+                      </Pressable>
+                      <Pressable
+                        style={[pendingStyles.actionBtn, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}
+                        onPress={async () => {
+                          setApprovingId(m.id);
+                          await academyService.approvePlayer(m.id);
+                          setApprovingId(null);
+                          if (currentMembership) await loadCoachData(currentMembership.academy.id);
+                          showAlert('Approved!', `${m.display_name || 'Player'} can now access the academy.`);
+                        }}
+                        disabled={approvingId === m.id}
+                      >
+                        {approvingId === m.id ? <ActivityIndicator size="small" color={colors.success} /> : <MaterialIcons name="check" size={16} color={colors.success} />}
+                      </Pressable>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -941,6 +1033,26 @@ function JoinModal({ visible, step, code, onCodeChange, academyName, displayName
     </Modal>
   );
 }
+
+const pendingStyles = StyleSheet.create({
+  banner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.warning + '12', borderRadius: borderRadius.lg,
+    borderWidth: 1.5, borderColor: colors.warning + '60',
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  badgeCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.warning, justifyContent: 'center', alignItems: 'center' },
+  badgeNum: { fontSize: 14, fontWeight: '900', color: colors.textLight },
+  bannerTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  bannerSub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  requestCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.background, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
+  requestAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
+  requestName: { fontSize: 14, fontWeight: '700', color: colors.text },
+  requestEmail: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  requestMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  requestActions: { flexDirection: 'row', gap: spacing.sm },
+  actionBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5 },
+});
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const modalStyles = StyleSheet.create({

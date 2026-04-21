@@ -307,10 +307,27 @@ export default function LoginScreen() {
               <View style={styles.hint}>
                 <MaterialIcons name="info-outline" size={14} color={colors.primary} />
                 <Text style={styles.hintText}>
-                  New user? Enter your email + a new password to create an account.{'\n'}
+                  New user? Enter your email + a new password to create an account.{"\n"}
                   Academy member? Enter your 6-digit code instead of email.
                 </Text>
               </View>
+
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <Pressable style={styles.registerAcademyBtn} onPress={() => router.push('/academy-register' as any)}>
+                <View style={[styles.iconCircle, { width: 40, height: 40, borderRadius: 20, marginBottom: 0, backgroundColor: colors.primary + '15' }]}>
+                  <MaterialIcons name="shield" size={20} color={colors.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.registerAcademyTitle}>Register a New Academy</Text>
+                  <Text style={styles.registerAcademySub}>30-day free trial · No credit card</Text>
+                </View>
+                <MaterialIcons name="arrow-forward" size={16} color={colors.primary} />
+              </Pressable>
             </View>
           )}
 
@@ -521,4 +538,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
     alignSelf: 'center', marginBottom: spacing.md,
   },
+  divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  registerAcademyBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    marginTop: spacing.md, backgroundColor: colors.primary + '0C',
+    borderRadius: borderRadius.lg, padding: spacing.md,
+    borderWidth: 1.5, borderColor: colors.primary + '30',
+  },
+  registerAcademyTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  registerAcademySub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
 });

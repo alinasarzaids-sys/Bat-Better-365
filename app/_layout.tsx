@@ -13,7 +13,10 @@ export default function RootLayout() {
           <StatusBar style="auto" />
           <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
             <Stack.Screen name="index" options={{ headerShown: false }} />
-            <Stack.Screen name="onboarding" options={{ headerShown: false, animation: 'fade' }} />
+            <Stack.Screen name="waiting-room" options={{ headerShown: false, animation: 'fade' }} />
+            <Stack.Screen name="academy-locked" options={{ headerShown: false, animation: 'fade' }} />
+            <Stack.Screen name="academy-register" options={{ headerShown: false, animation: 'slide_from_right' }} />
+            <Stack.Screen name="admin-panel" options={{ headerShown: false, animation: 'slide_from_right' }} />
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen name="login" options={{ headerShown: false, animation: 'fade' }} />
             <Stack.Screen name="profile-setup" options={{ headerShown: false, animation: 'slide_from_right' }} />
