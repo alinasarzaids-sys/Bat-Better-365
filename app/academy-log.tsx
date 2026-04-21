@@ -707,10 +707,7 @@ export default function AcademyLogScreen() {
       startAcademySession(config!.kind, config!.color, objective1, objective2, academyId);
       setStep(2);
     } else if (step === 2) {
-      // Sync counters to context before ending
-      minimizeAcademySession(3, counter1, counter2, obj1Done, obj2Done, answers);
-      // Then move to step 3 (not actually minimizing, just syncing state)
-      maximizeAcademySession();
+      // Simply advance to the debrief step — local counter state is preserved
       setStep(3);
     } else if (step === 3) {
       handleSave();
