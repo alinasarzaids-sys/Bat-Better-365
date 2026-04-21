@@ -89,7 +89,7 @@ function WeeklyBar({ logs, sessions }: { logs: AcademyTrainingLog[]; sessions: U
                 isLogged && weekBarStyles.dotLogged,
                 isMissed && weekBarStyles.dotMissed,
                 !isLogged && !isMissed && isUpcoming && weekBarStyles.dotScheduled,
-                isToday && !isLogged && !isMissed && weekBarStyles.dotToday,
+                isToday && !isLogged && !isMissed && !isUpcoming && weekBarStyles.dotToday,
               ]}>
                 {isLogged && <MaterialIcons name="check" size={14} color={colors.textLight} />}
                 {isMissed && <MaterialIcons name="close" size={13} color={colors.textLight} />}
@@ -116,7 +116,7 @@ const weekBarStyles = StyleSheet.create({
   dotLogged: { backgroundColor: '#22C55E' },
   dotMissed: { backgroundColor: colors.error },
   dotScheduled: { backgroundColor: colors.primary + '18', borderWidth: 2, borderColor: colors.primary },
-  dotToday: { borderWidth: 2.5, borderColor: colors.primary },
+  dotToday: { borderWidth: 2, borderColor: colors.textSecondary },  // today with no scheduled session
   dayLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
   dateNum: { fontSize: 9, color: colors.textSecondary, fontWeight: '500' },
 });
@@ -401,7 +401,7 @@ export default function AcademyScreen() {
       .order('log_date', { ascending: false });
     setRecentLogs(logsData || []);
 
-    // ── Fetch upcoming sessions (today → +30 days) ────────────────────────
+    // ── Fetch upcoming academy sessions (today → +30 days) ─────────────────
     const windowEnd = new Date();
     windowEnd.setDate(windowEnd.getDate() + 30);
     const { data: sessionsData } = await supabase
@@ -413,19 +413,51 @@ export default function AcademyScreen() {
       .order('session_date', { ascending: true });
 
     // Show sessions for this player's squad, or sessions open to all squads
-    const filteredSessions = (sessionsData || []).filter((s: any) =>
+    const filteredAcademySessions = (sessionsData || []).filter((s: any) =>
       !s.squad_id || !memberSquadId || s.squad_id === memberSquadId
     );
 
-    setWeeklySessions(filteredSessions);
-    setUpcomingSessions(filteredSessions.map((s: any) => ({
+    // ── Fetch upcoming personal sessions (sessions table) ─────────────────────
+    const { data: personalSessData } = await supabase
+      .from('sessions')
+      .select('id, title, scheduled_date, session_type, notes')
+      .eq('user_id', user.id)
+      .gte('scheduled_date', todayStr)
+      .lte('scheduled_date', windowEnd.toISOString())
+      .order('scheduled_date', { ascending: true });
+
+    const personalUpcoming = (personalSessData || []).map((s: any) => {
+      const dt = new Date(s.scheduled_date);
+      const dateStr = dt.toISOString().split('T')[0];
+      const timeStr = `${dt.getHours().toString().padStart(2, '0')}:${dt.getMinutes().toString().padStart(2, '0')}`;
+      return {
+        id: `personal_${s.id}`,
+        title: s.title,
+        session_date: dateStr,
+        session_time: timeStr,
+        location: undefined as string | undefined,
+        session_type: s.session_type || 'Personal',
+      };
+    });
+
+    const academyUpcoming = filteredAcademySessions.map((s: any) => ({
       id: s.id,
       title: s.title,
       session_date: s.session_date,
       session_time: s.session_time,
       location: s.location,
       session_type: s.session_type,
-    })));
+    }));
+
+    // Merge + sort by date then time
+    const allUpcoming = [...academyUpcoming, ...personalUpcoming].sort((a, b) =>
+      a.session_date !== b.session_date
+        ? a.session_date.localeCompare(b.session_date)
+        : a.session_time.localeCompare(b.session_time)
+    );
+
+    setWeeklySessions(filteredAcademySessions);
+    setUpcomingSessions(allUpcoming);
 
     // Schedule push notifications
     scheduleTrainingNotifications(
