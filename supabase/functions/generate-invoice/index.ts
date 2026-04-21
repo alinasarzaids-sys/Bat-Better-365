@@ -2,14 +2,21 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-// Bank transfer details — update these with real details
-const BANK_DETAILS = {
-  bankName: 'Meezan Bank',
-  accountTitle: 'Bat Better Technologies',
-  iban: 'PK00MEZN0001234567890123',
+// ── Admin receiving bank details (where academies transfer money TO) ──────────
+const ADMIN_BANK = {
+  bankName: 'HBL',
+  accountTitle: 'SYED ALI NASAR',
+  accountNumber: '50227900684903',
+  iban: 'PK03HABB0050227900684903',
+  branch: 'IBB Dehli Mercntl So',
   whatsapp: '+923001234567',
   email: 'billing@batbetter365.com',
 };
+
+// ── Pricing ───────────────────────────────────────────────────────────────────
+const GROSS_PRICE_PER_PLAYER = 850;   // PKR — total charge to academy per player
+const COACH_COMMISSION_PER_PLAYER = 300; // PKR — coach/academy earns this per player
+const NET_PAYABLE_PER_PLAYER = GROSS_PRICE_PER_PLAYER - COACH_COMMISSION_PER_PLAYER; // = 550 PKR — net owed to admin
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -43,8 +50,9 @@ serve(async (req) => {
     if (mErr) return new Response(JSON.stringify({ error: mErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const playerCount = (members || []).length;
-    const pricePerPlayer = academy.price_per_player || 550;
-    const totalAmount = playerCount * pricePerPlayer;
+    const grossTotal = playerCount * GROSS_PRICE_PER_PLAYER;
+    const commissionTotal = playerCount * COACH_COMMISSION_PER_PLAYER;
+    const netPayable = playerCount * NET_PAYABLE_PER_PLAYER;
     const currency = academy.currency || 'PKR';
 
     // 3. Generate invoice number
@@ -56,7 +64,7 @@ serve(async (req) => {
     const dueDate = new Date(new Date(periodStart).getTime() + 7 * 86400000).toISOString().split('T')[0];
     const invoiceDate = new Date().toISOString().split('T')[0];
 
-    // 5. Save invoice to DB
+    // 5. Save invoice to DB (store NET payable amount)
     const { data: invoice, error: iErr } = await supabase
       .from('billing_invoices')
       .insert({
@@ -67,8 +75,8 @@ serve(async (req) => {
         billing_period_start: periodStart,
         billing_period_end: periodEnd,
         player_count: playerCount,
-        price_per_player: pricePerPlayer,
-        total_amount: totalAmount,
+        price_per_player: NET_PAYABLE_PER_PLAYER,
+        total_amount: netPayable,
         currency,
         status: 'unpaid',
         sent_to_email: academy.owner_email || '',
@@ -78,12 +86,14 @@ serve(async (req) => {
 
     if (iErr) return new Response(JSON.stringify({ error: iErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    // 6. Build player list HTML
+    // 6. Build player list HTML rows
     const playerListRows = (members || []).map((m: any, idx: number) =>
       `<tr style="background:${idx % 2 === 0 ? '#f9fafb' : '#fff'}">
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;">${idx + 1}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;">${m.display_name || 'Player'}</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${currency} ${pricePerPlayer.toLocaleString()}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;">${idx + 1}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;color:#111827;">${m.display_name || 'Player'}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#374151;">${currency} ${GROSS_PRICE_PER_PLAYER.toLocaleString()}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#16a34a;font-weight:700;">− ${currency} ${COACH_COMMISSION_PER_PLAYER.toLocaleString()}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:800;color:#1d4ed8;">${currency} ${NET_PAYABLE_PER_PLAYER.toLocaleString()}</td>
       </tr>`
     ).join('');
 
@@ -95,98 +105,125 @@ serve(async (req) => {
 <html>
 <head><meta charset="utf-8"><title>Invoice ${invNum}</title></head>
 <body style="font-family:system-ui,sans-serif;background:#f3f4f6;margin:0;padding:24px;">
-  <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-    
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
     <!-- Header -->
     <div style="background:linear-gradient(135deg,#16a34a,#15803d);padding:32px 24px;text-align:center;">
       <h1 style="color:#fff;margin:0;font-size:28px;font-weight:900;">🏏 Bat Better 365</h1>
       <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px;">Academy Management Platform</p>
     </div>
 
-    <!-- Invoice Header -->
-    <div style="padding:24px;border-bottom:2px solid #f3f4f6;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-        <div>
-          <h2 style="margin:0;font-size:20px;color:#111827;">TAX INVOICE</h2>
-          <p style="margin:4px 0 0;color:#6b7280;font-size:14px;">${invNum}</p>
-        </div>
-        <div style="text-align:right;">
-          <p style="margin:0;font-size:12px;color:#6b7280;">Invoice Date</p>
-          <p style="margin:2px 0 0;font-weight:700;color:#111827;">${invoiceDate}</p>
-          <p style="margin:8px 0 0;font-size:12px;color:#6b7280;">Due Date</p>
-          <p style="margin:2px 0 0;font-weight:700;color:#dc2626;">${dueDate}</p>
-        </div>
+    <!-- Invoice Meta -->
+    <div style="padding:24px;border-bottom:2px solid #f3f4f6;display:flex;justify-content:space-between;">
+      <div>
+        <h2 style="margin:0;font-size:22px;color:#111827;font-weight:900;">MONTHLY INVOICE</h2>
+        <p style="margin:6px 0 0;font-family:monospace;font-size:15px;color:#6b7280;font-weight:700;">${invNum}</p>
+      </div>
+      <div style="text-align:right;">
+        <p style="margin:0;font-size:12px;color:#6b7280;text-transform:uppercase;font-weight:700;">Invoice Date</p>
+        <p style="margin:2px 0 8px;font-weight:800;color:#111827;">${invoiceDate}</p>
+        <p style="margin:0;font-size:12px;color:#dc2626;text-transform:uppercase;font-weight:700;">Due Date</p>
+        <p style="margin:2px 0 0;font-weight:800;color:#dc2626;">${dueDate}</p>
       </div>
     </div>
 
-    <!-- Academy Details -->
-    <div style="padding:24px;background:#f9fafb;border-bottom:2px solid #e5e7eb;">
-      <p style="margin:0 0 4px;font-size:12px;color:#6b7280;text-transform:uppercase;font-weight:700;">Billed To</p>
+    <!-- Academy Info -->
+    <div style="padding:20px 24px;background:#f9fafb;border-bottom:2px solid #e5e7eb;">
+      <p style="margin:0 0 4px;font-size:11px;color:#6b7280;text-transform:uppercase;font-weight:700;letter-spacing:0.5px;">Billed To</p>
       <p style="margin:0;font-size:18px;font-weight:900;color:#111827;">${academy.name}</p>
-      ${academy.description ? `<p style="margin:4px 0 0;color:#6b7280;font-size:14px;">${academy.description}</p>` : ''}
-      <p style="margin:8px 0 0;color:#374151;font-size:14px;">📧 ${academy.owner_email}</p>
-      ${academy.owner_phone ? `<p style="margin:2px 0 0;color:#374151;font-size:14px;">📱 ${academy.owner_phone}</p>` : ''}
+      ${academy.description ? `<p style="margin:4px 0 0;color:#6b7280;font-size:13px;">${academy.description}</p>` : ''}
+      <p style="margin:10px 0 0;color:#374151;font-size:14px;">📧 ${academy.owner_email}</p>
+      ${academy.owner_phone ? `<p style="margin:3px 0 0;color:#374151;font-size:14px;">📱 ${academy.owner_phone}</p>` : ''}
     </div>
 
     <!-- Billing Period -->
-    <div style="padding:16px 24px;background:#eff6ff;border-bottom:1px solid #dbeafe;">
+    <div style="padding:14px 24px;background:#eff6ff;border-bottom:1px solid #dbeafe;">
       <p style="margin:0;font-size:13px;color:#1d4ed8;font-weight:700;">
         📅 Billing Period: ${periodStart} → ${periodEnd}
       </p>
     </div>
 
-    <!-- Player List -->
+    <!-- Player Breakdown Table -->
     <div style="padding:24px;">
-      <h3 style="margin:0 0 12px;font-size:16px;color:#111827;">Approved Players (${playerCount})</h3>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <h3 style="margin:0 0 4px;font-size:16px;color:#111827;font-weight:800;">Player Breakdown</h3>
+      <p style="margin:0 0 14px;font-size:13px;color:#6b7280;">Only approved, active players are billed. Pending, rejected, and removed players are excluded.</p>
+
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
         <thead>
-          <tr style="background:#f3f4f6;">
-            <th style="padding:10px 12px;text-align:left;font-weight:700;color:#374151;border-bottom:2px solid #e5e7eb;">#</th>
-            <th style="padding:10px 12px;text-align:left;font-weight:700;color:#374151;border-bottom:2px solid #e5e7eb;">Player Name</th>
-            <th style="padding:10px 12px;text-align:right;font-weight:700;color:#374151;border-bottom:2px solid #e5e7eb;">Monthly Fee</th>
+          <tr style="background:#111827;">
+            <th style="padding:10px 12px;text-align:left;font-weight:700;color:#9ca3af;border-radius:0;">#</th>
+            <th style="padding:10px 12px;text-align:left;font-weight:700;color:#fff;">Player Name</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:700;color:#fff;">Gross Fee</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:700;color:#86efac;">Your Commission</th>
+            <th style="padding:10px 12px;text-align:right;font-weight:700;color:#93c5fd;">Net Payable</th>
           </tr>
         </thead>
         <tbody>
-          ${playerListRows || '<tr><td colspan="3" style="padding:16px;text-align:center;color:#6b7280;">No approved players</td></tr>'}
+          ${playerListRows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#6b7280;">No approved players this cycle</td></tr>'}
         </tbody>
+        <!-- Totals -->
+        <tfoot>
+          <tr style="background:#f3f4f6;border-top:2px solid #e5e7eb;">
+            <td colspan="2" style="padding:12px;font-weight:900;font-size:14px;color:#111827;">TOTALS (${playerCount} players)</td>
+            <td style="padding:12px;text-align:right;font-weight:700;color:#374151;">${currency} ${grossTotal.toLocaleString()}</td>
+            <td style="padding:12px;text-align:right;font-weight:700;color:#16a34a;">− ${currency} ${commissionTotal.toLocaleString()}</td>
+            <td style="padding:12px;text-align:right;font-weight:900;color:#1d4ed8;font-size:15px;">${currency} ${netPayable.toLocaleString()}</td>
+          </tr>
+        </tfoot>
       </table>
+    </div>
 
-      <!-- Total -->
-      <div style="background:#111827;border-radius:12px;padding:20px;margin-top:16px;text-align:right;">
-        <p style="margin:0;color:#9ca3af;font-size:13px;">${playerCount} players × ${currency} ${pricePerPlayer.toLocaleString()}/player</p>
-        <p style="margin:8px 0 0;color:#fff;font-size:28px;font-weight:900;">${currency} ${totalAmount.toLocaleString()}</p>
-        <p style="margin:4px 0 0;color:#6b7280;font-size:12px;">Total Amount Due</p>
+    <!-- Commission Explainer -->
+    <div style="margin:0 24px 24px;background:#f0fdf4;border-radius:12px;padding:18px;border:1px solid #bbf7d0;">
+      <h4 style="margin:0 0 12px;color:#15803d;font-size:14px;font-weight:800;">💰 Your Earnings This Month</h4>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:120px;background:#fff;border-radius:8px;padding:12px;border:1px solid #d1fae5;text-align:center;">
+          <p style="margin:0;font-size:11px;color:#6b7280;text-transform:uppercase;font-weight:700;">Gross Collected</p>
+          <p style="margin:4px 0 0;font-size:20px;font-weight:900;color:#111827;">${currency} ${grossTotal.toLocaleString()}</p>
+        </div>
+        <div style="flex:1;min-width:120px;background:#fff;border-radius:8px;padding:12px;border:1px solid #bbf7d0;text-align:center;">
+          <p style="margin:0;font-size:11px;color:#16a34a;text-transform:uppercase;font-weight:700;">Your Commission</p>
+          <p style="margin:4px 0 0;font-size:20px;font-weight:900;color:#16a34a;">+ ${currency} ${commissionTotal.toLocaleString()}</p>
+          <p style="margin:2px 0 0;font-size:10px;color:#6b7280;">${currency} ${COACH_COMMISSION_PER_PLAYER}/player</p>
+        </div>
+        <div style="flex:1;min-width:120px;background:#fff;border-radius:8px;padding:12px;border:1px solid #bfdbfe;text-align:center;">
+          <p style="margin:0;font-size:11px;color:#1d4ed8;text-transform:uppercase;font-weight:700;">Transfer to Admin</p>
+          <p style="margin:4px 0 0;font-size:20px;font-weight:900;color:#1d4ed8;">${currency} ${netPayable.toLocaleString()}</p>
+          <p style="margin:2px 0 0;font-size:10px;color:#6b7280;">${currency} ${NET_PAYABLE_PER_PLAYER}/player</p>
+        </div>
       </div>
     </div>
 
     <!-- Payment Instructions -->
     <div style="padding:24px;background:#fefce8;border-top:2px solid #fde68a;">
-      <h3 style="margin:0 0 12px;color:#92400e;font-size:15px;">💳 How to Pay (Bank Transfer)</h3>
-      <table style="font-size:14px;color:#374151;width:100%;">
-        <tr><td style="padding:4px 0;font-weight:700;width:140px;">Bank Name:</td><td>${BANK_DETAILS.bankName}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:700;">Account Title:</td><td>${BANK_DETAILS.accountTitle}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:700;">IBAN:</td><td style="font-family:monospace;font-weight:700;color:#1d4ed8;">${BANK_DETAILS.iban}</td></tr>
-        <tr><td style="padding:4px 0;font-weight:700;">Reference:</td><td>${invNum} — ${academy.name}</td></tr>
+      <h3 style="margin:0 0 6px;color:#92400e;font-size:16px;font-weight:800;">💳 Transfer ${currency} ${netPayable.toLocaleString()} to Admin</h3>
+      <p style="margin:0 0 14px;font-size:13px;color:#78350f;">Please transfer the <strong>Net Payable amount</strong> to the following HBL account. You retain your ${currency} ${commissionTotal.toLocaleString()} commission.</p>
+      <table style="font-size:14px;color:#374151;width:100%;background:#fff;border-radius:10px;overflow:hidden;">
+        <tr style="background:#f9fafb;"><td style="padding:10px 14px;font-weight:800;color:#92400e;width:150px;">Bank Name</td><td style="padding:10px 14px;font-weight:700;">${ADMIN_BANK.bankName}</td></tr>
+        <tr><td style="padding:10px 14px;font-weight:800;color:#92400e;">Account Title</td><td style="padding:10px 14px;font-weight:700;">${ADMIN_BANK.accountTitle}</td></tr>
+        <tr style="background:#f9fafb;"><td style="padding:10px 14px;font-weight:800;color:#92400e;">Account Number</td><td style="padding:10px 14px;font-family:monospace;font-weight:800;font-size:15px;letter-spacing:1px;">${ADMIN_BANK.accountNumber}</td></tr>
+        <tr><td style="padding:10px 14px;font-weight:800;color:#92400e;">IBAN</td><td style="padding:10px 14px;font-family:monospace;font-weight:800;color:#1d4ed8;">${ADMIN_BANK.iban}</td></tr>
+        <tr style="background:#f9fafb;"><td style="padding:10px 14px;font-weight:800;color:#92400e;">Branch</td><td style="padding:10px 14px;">${ADMIN_BANK.branch}</td></tr>
+        <tr><td style="padding:10px 14px;font-weight:800;color:#92400e;">Reference</td><td style="padding:10px 14px;font-weight:700;">${invNum} — ${academy.name}</td></tr>
       </table>
       <p style="margin:16px 0 0;font-size:13px;color:#92400e;">
-        After payment, send the bank receipt to:<br>
-        📱 WhatsApp: <strong>${BANK_DETAILS.whatsapp}</strong><br>
-        📧 Email: <strong>${BANK_DETAILS.email}</strong>
+        After transferring, send the bank receipt to confirm payment:<br>
+        📱 WhatsApp: <strong>${ADMIN_BANK.whatsapp}</strong><br>
+        📧 Email: <strong>${ADMIN_BANK.email}</strong>
       </p>
     </div>
 
     <!-- Warning -->
     <div style="padding:16px 24px;background:#fff1f2;border-top:2px solid #fecdd3;">
       <p style="margin:0;font-size:13px;color:#be123c;font-weight:600;">
-        ⚠️ Important: Failure to pay by ${dueDate} will result in your academy and all players being locked from the app. 
-        Contact us immediately if you need an extension.
+        ⚠️ Payment due by <strong>${dueDate}</strong>. Failure to pay will result in your academy and all players being locked from the app. Contact us immediately if you need assistance.
       </p>
     </div>
 
     <!-- Footer -->
-    <div style="padding:20px 24px;text-align:center;color:#9ca3af;font-size:12px;">
+    <div style="padding:20px 24px;text-align:center;color:#9ca3af;font-size:12px;background:#f9fafb;">
       <p style="margin:0;">Bat Better 365 · Academy Management Platform</p>
-      <p style="margin:4px 0 0;">This is an automated invoice. Generated on ${invoiceDate}.</p>
+      <p style="margin:4px 0 0;">Invoice ${invNum} · Generated ${invoiceDate}</p>
     </div>
   </div>
 </body>
@@ -198,24 +235,26 @@ serve(async (req) => {
         body: JSON.stringify({
           from: 'Bat Better 365 Billing <billing@batbetter365.com>',
           to: [academy.owner_email],
-          subject: `Invoice ${invNum} — ${currency} ${totalAmount.toLocaleString()} Due by ${dueDate}`,
+          subject: `Invoice ${invNum} — Net ${currency} ${netPayable.toLocaleString()} due by ${dueDate} | ${academy.name}`,
           html: emailHtml,
         }),
       });
 
-      // Update invoice with sent email
       await supabase.from('billing_invoices').update({ sent_to_email: academy.owner_email }).eq('id', invoice.id);
     }
 
-    return new Response(JSON.stringify({ 
-      success: true, 
+    return new Response(JSON.stringify({
+      success: true,
       invoice: {
         id: invoice.id,
         invoice_number: invoice.invoice_number,
         player_count: playerCount,
-        total_amount: totalAmount,
+        gross_total: grossTotal,
+        commission_total: commissionTotal,
+        net_payable: netPayable,
         currency,
         due_date: dueDate,
+        total_amount: netPayable,
       }
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

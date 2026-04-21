@@ -16,7 +16,7 @@ import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 
 // ─── CHANGE THIS TO YOUR ADMIN EMAIL ────────────────────────────────────────
-const SUPER_ADMIN_EMAIL = 'admin@batbetter365.com';
+const SUPER_ADMIN_EMAIL = 'alinasarzaids@gmail.com';
 
 const STATUS_COLORS: Record<string, string> = {
   trial: colors.primary,

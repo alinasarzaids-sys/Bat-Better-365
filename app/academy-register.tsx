@@ -1,7 +1,7 @@
 /**
  * Academy Owner Registration Screen
- * Collects: Full Name, Academy Name, Email, WhatsApp, Password
- * Auto-generates Player_Code + Coach_Code, sends welcome email, activates 30-day trial
+ * Collects: Full Name, Academy Name, Email, WhatsApp, Password + Bank Payout Details
+ * Auto-generates Player_Code + Coach_Code + Admin_Code, sends welcome email, activates 30-day trial
  */
 import React, { useState } from 'react';
 import {
@@ -26,17 +26,22 @@ export default function AcademyRegisterScreen() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
-  // Form fields
+  // ── Personal & Academy fields ─────────────────────────────────────────────
   const [fullName, setFullName] = useState('');
   const [academyName, setAcademyName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
 
-  // OTP step
+  // ── Commission payout bank details ────────────────────────────────────────
+  const [bankName, setBankName] = useState('');
+  const [accountName, setAccountName] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
+
+  // ── OTP step ──────────────────────────────────────────────────────────────
   const [otp, setOtp] = useState('');
 
-  // Success step
+  // ── Success step ──────────────────────────────────────────────────────────
   const [playerCode, setPlayerCode] = useState('');
   const [coachCode, setCoachCode] = useState('');
   const [adminCode, setAdminCode] = useState('');
@@ -50,16 +55,15 @@ export default function AcademyRegisterScreen() {
     if (!email.includes('@')) { showAlert('Required', 'Enter a valid email address.'); return; }
     if (!phone.trim() || phone.length < 8) { showAlert('Required', 'Enter a valid WhatsApp number.'); return; }
     if (password.length < 6) { showAlert('Required', 'Password must be at least 6 characters.'); return; }
+    if (!bankName.trim()) { showAlert('Required', 'Enter your bank name for commission payouts.'); return; }
+    if (!accountName.trim()) { showAlert('Required', 'Enter your account name for commission payouts.'); return; }
+    if (!accountNumber.trim()) { showAlert('Required', 'Enter your account number for commission payouts.'); return; }
 
     setLoading(true);
     const { error } = await sendOTP(email.trim().toLowerCase());
     setLoading(false);
 
-    if (error) {
-      showAlert('Error', error);
-      return;
-    }
-
+    if (error) { showAlert('Error', error); return; }
     setStep('otp');
   };
 
@@ -78,11 +82,10 @@ export default function AcademyRegisterScreen() {
       return;
     }
 
-    // Create academy with billing/owner info
     try {
       const supabase = getSupabaseClient();
 
-      // Generate codes
+      // Generate unique codes
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       const genCode = (len = 6) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 
@@ -106,9 +109,14 @@ export default function AcademyRegisterScreen() {
           created_by: user.id,
           owner_phone: phone.trim(),
           owner_email: email.trim().toLowerCase(),
+          bank_name: bankName.trim(),
+          account_name: accountName.trim(),
+          account_number: accountNumber.trim(),
           trial_start_date: trialStart,
           trial_end_date: trialEnd,
           billing_status: 'trial',
+          price_per_player: 550,
+          currency: 'PKR',
         })
         .select()
         .single();
@@ -135,7 +143,7 @@ export default function AcademyRegisterScreen() {
         full_name: fullName.trim(),
       }).eq('id', user.id);
 
-      // Send welcome email via Resend
+      // Send welcome email (non-fatal)
       try {
         await supabase.functions.invoke('send-welcome-email', {
           body: {
@@ -149,9 +157,7 @@ export default function AcademyRegisterScreen() {
             trialEndDate: trialEnd,
           },
         });
-      } catch (_) {
-        // Non-fatal — codes shown on screen anyway
-      }
+      } catch (_) {}
 
       setPlayerCode(pCode);
       setCoachCode(cCode);
@@ -192,9 +198,10 @@ export default function AcademyRegisterScreen() {
 
               <View style={styles.trialBanner}>
                 <MaterialIcons name="star" size={16} color={colors.warning} />
-                <Text style={styles.trialText}>30-day FREE trial · Full access · Cancel anytime</Text>
+                <Text style={styles.trialText}>30-day FREE trial · 850 PKR/player · You earn 300 PKR commission</Text>
               </View>
 
+              {/* ── Personal Details ── */}
               <Text style={styles.label}>Your Full Name *</Text>
               <TextInput style={styles.input} value={fullName} onChangeText={setFullName}
                 placeholder="e.g. Tariq Hussain" placeholderTextColor={colors.textSecondary} autoCapitalize="words" />
@@ -208,7 +215,7 @@ export default function AcademyRegisterScreen() {
                 placeholder="coach@academy.com" placeholderTextColor={colors.textSecondary}
                 keyboardType="email-address" autoCapitalize="none" autoCorrect={false} />
 
-              <Text style={styles.label}>WhatsApp Number * (for billing support)</Text>
+              <Text style={styles.label}>WhatsApp Number *</Text>
               <TextInput style={styles.input} value={phone} onChangeText={setPhone}
                 placeholder="+923001234567" placeholderTextColor={colors.textSecondary}
                 keyboardType="phone-pad" />
@@ -224,6 +231,33 @@ export default function AcademyRegisterScreen() {
                 </Pressable>
               </View>
 
+              {/* ── Commission Bank Payout Details ── */}
+              <View style={styles.sectionDivider}>
+                <MaterialIcons name="account-balance" size={16} color={colors.warning} />
+                <Text style={styles.sectionDividerText}>Your Commission Payout Details</Text>
+              </View>
+              <View style={styles.commissionNote}>
+                <MaterialIcons name="info-outline" size={14} color={colors.warning} />
+                <Text style={styles.commissionNoteText}>
+                  You earn <Text style={{ fontWeight: '800', color: colors.warning }}>PKR 300 per player/month</Text> commission. Provide your bank details so payouts are documented. You keep this from what you collect — only transfer PKR 550/player to admin.
+                </Text>
+              </View>
+
+              <Text style={styles.label}>Bank Name *</Text>
+              <TextInput style={styles.input} value={bankName} onChangeText={setBankName}
+                placeholder="e.g. HBL, Meezan Bank, UBL" placeholderTextColor={colors.textSecondary}
+                autoCapitalize="words" />
+
+              <Text style={styles.label}>Account Name *</Text>
+              <TextInput style={styles.input} value={accountName} onChangeText={setAccountName}
+                placeholder="Full name on your bank account" placeholderTextColor={colors.textSecondary}
+                autoCapitalize="words" />
+
+              <Text style={styles.label}>Account Number *</Text>
+              <TextInput style={styles.input} value={accountNumber} onChangeText={setAccountNumber}
+                placeholder="e.g. 01234567890123" placeholderTextColor={colors.textSecondary}
+                keyboardType="number-pad" />
+
               <Pressable style={[styles.btn, busy && styles.btnDisabled]} onPress={handleSendOTP} disabled={busy}>
                 {busy ? <ActivityIndicator color="#fff" /> : (
                   <>
@@ -234,8 +268,7 @@ export default function AcademyRegisterScreen() {
               </Pressable>
 
               <Text style={styles.termsNote}>
-                By registering, you agree to the Bat Better 365 terms of service. 
-                After the 30-day trial, you will be billed {'\u20A8'}550/player/month via bank transfer.
+                By registering you agree to the Bat Better 365 terms. After the 30-day trial: players pay PKR 850/month. You earn PKR 300/player and transfer PKR 550/player to admin via bank transfer.
               </Text>
             </View>
           )}
@@ -283,7 +316,7 @@ export default function AcademyRegisterScreen() {
           {/* ── SUCCESS ── */}
           {step === 'success' && (
             <View style={styles.card}>
-              <View style={[styles.iconCircle, { backgroundColor: '#22C55E' + '20', width: 80, height: 80, borderRadius: 40 }]}>
+              <View style={[styles.iconCircle, { backgroundColor: '#22C55E20', width: 80, height: 80, borderRadius: 40 }]}>
                 <MaterialIcons name="celebration" size={40} color="#22C55E" />
               </View>
               <Text style={styles.cardTitle}>Academy Created!</Text>
@@ -368,6 +401,19 @@ const styles = StyleSheet.create({
   },
   pwdRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.xs },
   eyeBtn: { padding: 4 },
+  sectionDivider: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    marginTop: spacing.xl, marginBottom: spacing.xs,
+    paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  sectionDividerText: { fontSize: 14, fontWeight: '800', color: colors.warning },
+  commissionNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: colors.warning + '10', borderRadius: borderRadius.md,
+    padding: spacing.md, marginBottom: spacing.xs,
+    borderWidth: 1, borderColor: colors.warning + '30',
+  },
+  commissionNoteText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
   btn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     backgroundColor: colors.primary, borderRadius: borderRadius.md,
