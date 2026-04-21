@@ -456,7 +456,8 @@ export default function AcademyScreen() {
         : a.session_time.localeCompare(b.session_time)
     );
 
-    setWeeklySessions(filteredAcademySessions);
+    // Pass ALL upcoming sessions (academy + personal) to WeeklyBar so dots and Scheduled count are correct
+    setWeeklySessions(allUpcoming);
     setUpcomingSessions(allUpcoming);
 
     // Schedule push notifications
