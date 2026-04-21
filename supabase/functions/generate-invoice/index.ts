@@ -38,14 +38,16 @@ serve(async (req) => {
       .single();
     if (aErr || !academy) return new Response(JSON.stringify({ error: 'Academy not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    // 2. Count APPROVED active players only (strict — excludes pending/rejected/removed)
+    // 2. Count APPROVED active PLAYERS only
+    // Strict rules: role must be 'player', status must be 'approved', is_active must be true
+    // Coach Code members (role='coach') are ALWAYS FREE and strictly excluded from billing
     const { data: members, error: mErr } = await supabase
       .from('academy_members')
       .select('id, user_id, display_name, status, role')
       .eq('academy_id', academy_id)
-      .eq('role', 'player')
-      .eq('status', 'approved')
-      .eq('is_active', true);
+      .eq('role', 'player')          // strictly players only — coaches are free
+      .eq('status', 'approved')      // pending/rejected/removed are excluded
+      .eq('is_active', true);        // deactivated players are excluded
 
     if (mErr) return new Response(JSON.stringify({ error: mErr.message }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 

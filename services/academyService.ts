@@ -178,10 +178,12 @@ export const academyService = {
       }
     }
 
-    // Players join with 'pending' status — coaches/admins are auto-approved
-    const memberStatus = role === 'player' ? 'pending' : 'approved';
+    // Players AND coaches join with 'pending' status — only admins (head coach/owner) are auto-approved
+    // Coaches are FREE (not billed) but still require head coach approval before accessing the portal
+    const memberStatus = role === 'admin' ? 'approved' : 'pending';
 
     // Check 30-day cooldown for players (anti-cheat: was this player removed recently?)
+    // Note: Coaches do not have cooldown restrictions — only players do
     if (role === 'player') {
       const { data: removedRecord } = await supabase
         .from('academy_members')

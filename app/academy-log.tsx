@@ -260,6 +260,8 @@ export default function AcademyLogScreen() {
   const academyId = params.academyId as string;
   const isResuming = params.resume === '1';
   const isAcademyMember = params.isAcademyMember !== 'false';
+  const userRole = params.userRole as string | undefined;
+  const isCoachRole = userRole === 'coach'; // coaches can VIEW but not log sessions
   const availableConfigs = isAcademyMember
     ? SESSION_CONFIGS
     : SESSION_CONFIGS.filter(c => c.kind === 'Batting' || c.kind === 'Fitness');
@@ -900,6 +902,40 @@ export default function AcademyLogScreen() {
     if (step === 4) { router.back(); return; }
     setStep(s => s - 1);
   };
+
+  // ── Coach guard: coaches cannot log sessions ──────────────────────────────
+  if (isCoachRole) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.header}>
+          <Pressable onPress={() => router.back()} style={styles.headerBtn} hitSlop={8}>
+            <MaterialIcons name="close" size={24} color={colors.text} />
+          </Pressable>
+          <View style={{ flex: 1, alignItems: 'center' }}>
+            <Text style={styles.headerTitle}>Session Log</Text>
+          </View>
+          <View style={{ width: 44 }} />
+        </View>
+        <View style={[styles.scroll, { flex: 1, justifyContent: 'center', alignItems: 'center', padding: spacing.xl }]}>
+          <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.warning + '20', justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md }}>
+            <MaterialIcons name="block" size={40} color={colors.warning} />
+          </View>
+          <Text style={{ fontSize: 20, fontWeight: '800', color: colors.text, textAlign: 'center', marginBottom: spacing.sm }}>Coaches Cannot Log Sessions</Text>
+          <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl }}>
+            As a coach, you have full access to the Coach Portal to manage players and view analytics.{"\n\n"}
+            Session logging is reserved for players only.
+          </Text>
+          <Pressable
+            style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primary, paddingVertical: spacing.md, paddingHorizontal: spacing.xl, borderRadius: borderRadius.md }}
+            onPress={() => router.back()}
+          >
+            <MaterialIcons name="arrow-back" size={18} color={colors.textLight} />
+            <Text style={{ fontSize: 15, fontWeight: '700', color: colors.textLight }}>Go Back</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

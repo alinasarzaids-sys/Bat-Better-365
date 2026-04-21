@@ -900,7 +900,7 @@ export default function AcademyScreen() {
           <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '80%' }}>
             <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 }} />
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
-              <Text style={{ ...typography.h4, color: colors.text, fontWeight: '700' }}>Pending Approvals</Text>
+            <Text style={{ ...typography.h4, color: colors.text, fontWeight: '700' }}>Pending Approvals</Text>
               <Pressable onPress={() => setShowPendingModal(false)} hitSlop={8}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
             </View>
             <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40, gap: spacing.sm }} showsVerticalScrollIndicator={false}>
@@ -920,7 +920,11 @@ export default function AcademyScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={pendingStyles.requestName}>{m.display_name || profile?.full_name || 'Player'}</Text>
                       <Text style={pendingStyles.requestEmail}>{profile?.email || 'No email'}</Text>
-                      <Text style={pendingStyles.requestMeta}>{m.position || 'Batsman'} · Requested {new Date(m.joined_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}</Text>
+                  <Text style={pendingStyles.requestMeta}>
+                      {m.role === 'coach' ? 'Coach' : m.position || 'Batsman'} ·
+                      {m.role === 'coach' ? ' Assistant Coach Request' : ' Player Request'} ·
+                      Requested {new Date(m.joined_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                    </Text>
                     </View>
                     <View style={pendingStyles.requestActions}>
                       <Pressable
