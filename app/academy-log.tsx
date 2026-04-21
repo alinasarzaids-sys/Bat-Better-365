@@ -654,15 +654,54 @@ export default function AcademyLogScreen() {
             </View>
           ) : null}
 
-          {/* AI Struggle Tip */}
+          {/* 3 Science-backed Reflection Questions */}
           <View style={styles.closingCard}>
+            <Text style={styles.closingCardTitle}>Performance Reflection</Text>
+            <Text style={styles.closingCardSub}>3 questions · Physical · Mental · Technical</Text>
+            {REFLECTION_QUESTIONS.map((q, i) => (
+              <View key={q.id} style={[styles.questionRow, i < REFLECTION_QUESTIONS.length - 1 && styles.questionRowBorder]}>
+                <View style={styles.questionMeta}>
+                  <View style={[styles.pillTag, {
+                    backgroundColor: q.id === 'rpe' ? colors.error + '20' : q.id === 'focus' ? colors.primary + '20' : (config?.color || colors.success) + '20'
+                  }]}>
+                    <Text style={[styles.pillTagText, {
+                      color: q.id === 'rpe' ? colors.error : q.id === 'focus' ? colors.primary : config?.color || colors.success
+                    }]}>{q.label}</Text>
+                  </View>
+                  <Text style={styles.questionText}>{q.text}</Text>
+                  <Text style={styles.questionHint}>{q.hint}</Text>
+                </View>
+                {q.type === 'rpe' ? (
+                  <View style={{ marginTop: spacing.sm }}>
+                    <RPEPicker value={answers[q.id] || 0} onChange={v => updateAnswer(q.id, v)} />
+                  </View>
+                ) : (
+                  <View style={{ marginTop: spacing.sm }}>
+                    <StarRow
+                      value={answers[q.id] || 0}
+                      onChange={v => updateAnswer(q.id, v)}
+                      color={q.id === 'focus' ? colors.primary : config?.color || colors.success}
+                    />
+                    {answers[q.id] > 0 && (
+                      <Text style={[styles.starValueLabel, { color: q.id === 'focus' ? colors.primary : config?.color || colors.success }]}>
+                        {answers[q.id]}/5 ★
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
+          {/* AI Coach Tip — at bottom of debrief */}
+          <View style={styles.aiTipCard}>
             <View style={styles.aiTipHeader}>
-              <View style={[styles.aiTipIconCircle, { backgroundColor: colors.primary + '20' }]}>
+              <View style={[styles.aiTipIconCircle, { backgroundColor: colors.primary + '18' }]}>
                 <MaterialIcons name="psychology" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.closingCardTitle}>AI Coach Tip</Text>
-                <Text style={styles.closingCardSub}>Describe what you struggled with → get instant advice</Text>
+                <Text style={styles.aiTipCardTitle}>AI Coach Tip</Text>
+                <Text style={styles.aiTipCardSub}>Describe what you struggled with — get instant advice</Text>
               </View>
             </View>
 
@@ -707,45 +746,6 @@ export default function AcademyLogScreen() {
                 <Text style={styles.aiTipResultText}>{aiTip}</Text>
               </View>
             ) : null}
-          </View>
-
-          {/* 3 Science-backed Reflection Questions */}
-          <View style={styles.closingCard}>
-            <Text style={styles.closingCardTitle}>Performance Reflection</Text>
-            <Text style={styles.closingCardSub}>3 questions · Physical · Mental · Technical</Text>
-            {REFLECTION_QUESTIONS.map((q, i) => (
-              <View key={q.id} style={[styles.questionRow, i < REFLECTION_QUESTIONS.length - 1 && styles.questionRowBorder]}>
-                <View style={styles.questionMeta}>
-                  <View style={[styles.pillTag, {
-                    backgroundColor: q.id === 'rpe' ? colors.error + '20' : q.id === 'focus' ? colors.primary + '20' : (config?.color || colors.success) + '20'
-                  }]}>
-                    <Text style={[styles.pillTagText, {
-                      color: q.id === 'rpe' ? colors.error : q.id === 'focus' ? colors.primary : config?.color || colors.success
-                    }]}>{q.label}</Text>
-                  </View>
-                  <Text style={styles.questionText}>{q.text}</Text>
-                  <Text style={styles.questionHint}>{q.hint}</Text>
-                </View>
-                {q.type === 'rpe' ? (
-                  <View style={{ marginTop: spacing.sm }}>
-                    <RPEPicker value={answers[q.id] || 0} onChange={v => updateAnswer(q.id, v)} />
-                  </View>
-                ) : (
-                  <View style={{ marginTop: spacing.sm }}>
-                    <StarRow
-                      value={answers[q.id] || 0}
-                      onChange={v => updateAnswer(q.id, v)}
-                      color={q.id === 'focus' ? colors.primary : config?.color || colors.success}
-                    />
-                    {answers[q.id] > 0 && (
-                      <Text style={[styles.starValueLabel, { color: q.id === 'focus' ? colors.primary : config?.color || colors.success }]}>
-                        {answers[q.id]}/5 ★
-                      </Text>
-                    )}
-                  </View>
-                )}
-              </View>
-            ))}
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1080,7 +1080,14 @@ const styles = StyleSheet.create({
   pillTagText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
   starValueLabel: { fontSize: 13, fontWeight: '800', marginTop: 6 },
 
-  // AI Tip section
+  // AI Tip card (bottom of debrief)
+  aiTipCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
+    padding: spacing.md, borderWidth: 1.5, borderColor: colors.primary + '30',
+    marginBottom: spacing.md, gap: spacing.md,
+  },
+  aiTipCardTitle: { fontSize: 15, fontWeight: '800', color: colors.text },
+  aiTipCardSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1, lineHeight: 15 },
   aiTipHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   aiTipIconCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
   struggleInput: {
@@ -1091,17 +1098,17 @@ const styles = StyleSheet.create({
   aiTipBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
     backgroundColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 4, paddingHorizontal: spacing.md,
   },
   aiTipBtnDisabled: { opacity: 0.45 },
-  aiTipBtnText: { fontSize: 14, fontWeight: '800', color: colors.textLight },
+  aiTipBtnText: { fontSize: 15, fontWeight: '800', color: colors.textLight },
   aiTipResult: {
     backgroundColor: colors.warning + '12', borderRadius: borderRadius.md,
     borderWidth: 1.5, borderColor: colors.warning + '40', padding: spacing.md, gap: spacing.sm,
   },
   aiTipResultHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   aiTipResultTitle: { fontSize: 12, fontWeight: '800', color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.5 },
-  aiTipResultText: { fontSize: 14, color: colors.text, lineHeight: 21 },
+  aiTipResultText: { fontSize: 14, color: colors.text, lineHeight: 22 },
 
   summaryHero: { borderRadius: borderRadius.xl, padding: spacing.lg, alignItems: 'center', marginBottom: spacing.md, gap: spacing.xs },
   summaryStatsRow: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md, marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, justifyContent: 'space-around', flexWrap: 'wrap', gap: spacing.sm },

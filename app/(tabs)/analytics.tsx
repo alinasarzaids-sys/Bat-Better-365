@@ -518,6 +518,214 @@ const editStyles = StyleSheet.create({
   },
 });
 
+// ─── AI Improvement Panel ─────────────────────────────────────────────────────
+function AIImprovementPanel({ sessions }: { sessions: FreestyleSession[] }) {
+  const [struggle, setStruggle] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{ advice: string; drills: { name: string; pillar: string; description: string; why: string }[] } | null>(null);
+
+  // Build a concise performance summary from recent sessions
+  const buildContext = () => {
+    const recent = sessions.slice(0, 5);
+    if (!recent.length) return '';
+    const avgOf = (key: keyof FreestyleSession) => {
+      const vals = recent.map(s => (s[key] as number) || 0).filter(v => v > 0);
+      if (!vals.length) return null;
+      return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
+    };
+    const parts: string[] = [`Sessions reviewed: ${recent.length}`];
+    if (avgOf('shotExecution')) parts.push(`Shot Execution avg: ${avgOf('shotExecution')}/5`);
+    if (avgOf('footwork')) parts.push(`Footwork avg: ${avgOf('footwork')}/5`);
+    if (avgOf('timing')) parts.push(`Timing avg: ${avgOf('timing')}/5`);
+    if (avgOf('focus')) parts.push(`Focus avg: ${avgOf('focus')}/5`);
+    if (avgOf('confidence')) parts.push(`Confidence avg: ${avgOf('confidence')}/5`);
+    if (avgOf('pressureHandling')) parts.push(`Pressure Handling avg: ${avgOf('pressureHandling')}/5`);
+    if (avgOf('energyLevel')) parts.push(`Energy avg: ${avgOf('energyLevel')}/5`);
+    if (avgOf('reactionSpeed')) parts.push(`Reaction Speed avg: ${avgOf('reactionSpeed')}/5`);
+    if (avgOf('shotSelection')) parts.push(`Shot Selection avg: ${avgOf('shotSelection')}/5`);
+    if (avgOf('gameAwareness')) parts.push(`Game Awareness avg: ${avgOf('gameAwareness')}/5`);
+    const totalBalls = recent.reduce((a, s) => a + (s.ballsFaced || 0), 0);
+    if (totalBalls > 0) parts.push(`Total balls faced: ${totalBalls}`);
+    const avgMid = recent.filter(s => (s.middlePercent || 0) > 0);
+    if (avgMid.length > 0) {
+      const mp = Math.round(avgMid.reduce((a, s) => a + (s.middlePercent || 0), 0) / avgMid.length);
+      parts.push(`Avg middle %: ${mp}%`);
+    }
+    return parts.join(', ');
+  };
+
+  const handleGenerate = async () => {
+    if (!struggle.trim()) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.functions.invoke('academy-ai-questions', {
+        body: {
+          mode: 'analytics_improvement',
+          struggle: struggle.trim(),
+          performanceContext: buildContext(),
+        },
+      });
+      if (!error && data) {
+        setResult(data);
+      } else {
+        setResult({
+          advice: 'Focus on the fundamentals and work with your coach to identify specific technical adjustments.',
+          drills: [],
+        });
+      }
+    } catch {
+      setResult({
+        advice: 'Focus on the fundamentals and work with your coach to identify specific technical adjustments.',
+        drills: [],
+      });
+    }
+    setLoading(false);
+  };
+
+  return (
+    <View style={aiStyles.panel}>
+      <View style={aiStyles.header}>
+        <View style={aiStyles.iconCircle}>
+          <MaterialIcons name="psychology" size={22} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={aiStyles.title}>AI Improvement Plan</Text>
+          <Text style={aiStyles.sub}>Describe a struggle — get personalised advice + drill recommendations</Text>
+        </View>
+      </View>
+
+      <TextInput
+        style={aiStyles.input}
+        value={struggle}
+        onChangeText={setStruggle}
+        placeholder="e.g. I keep getting out to short-pitched bowling, my pull shot timing is off..."
+        placeholderTextColor={colors.textSecondary}
+        multiline
+        numberOfLines={3}
+        textAlignVertical="top"
+      />
+
+      <Pressable
+        style={[aiStyles.btn, (!struggle.trim() || loading) && aiStyles.btnDisabled]}
+        onPress={handleGenerate}
+        disabled={!struggle.trim() || loading}
+      >
+        {loading ? (
+          <>
+            <ActivityIndicator size="small" color={colors.textLight} />
+            <Text style={aiStyles.btnText}>Analysing your data...</Text>
+          </>
+        ) : (
+          <>
+            <MaterialIcons name="auto-awesome" size={18} color={colors.textLight} />
+            <Text style={aiStyles.btnText}>Generate Improvement Plan</Text>
+          </>
+        )}
+      </Pressable>
+
+      {result ? (
+        <View style={aiStyles.result}>
+          {/* Advice block */}
+          <View style={aiStyles.adviceBlock}>
+            <View style={aiStyles.adviceHeader}>
+              <MaterialIcons name="lightbulb" size={16} color={colors.warning} />
+              <Text style={aiStyles.adviceLabel}>Coach Advice</Text>
+            </View>
+            <Text style={aiStyles.adviceText}>{result.advice}</Text>
+          </View>
+
+          {/* Drill recommendations */}
+          {result.drills && result.drills.length > 0 ? (
+            <View style={aiStyles.drillsSection}>
+              <View style={aiStyles.drillsHeader}>
+                <MaterialIcons name="fitness-center" size={15} color={colors.primary} />
+                <Text style={aiStyles.drillsTitle}>Recommended Drills</Text>
+              </View>
+              {result.drills.map((drill, i) => {
+                const pillarColor =
+                  drill.pillar === 'Technical' ? colors.technical
+                  : drill.pillar === 'Mental' ? colors.mental
+                  : drill.pillar === 'Physical' ? colors.physical
+                  : drill.pillar === 'Tactical' ? colors.tactical
+                  : colors.primary;
+                return (
+                  <View key={i} style={[aiStyles.drillCard, { borderLeftColor: pillarColor }]}>
+                    <View style={aiStyles.drillTop}>
+                      <View style={[aiStyles.pillarBadge, { backgroundColor: pillarColor + '20' }]}>
+                        <Text style={[aiStyles.pillarBadgeText, { color: pillarColor }]}>{drill.pillar}</Text>
+                      </View>
+                      <Text style={aiStyles.drillName}>{drill.name}</Text>
+                    </View>
+                    <Text style={aiStyles.drillDesc}>{drill.description}</Text>
+                    <View style={aiStyles.drillWhy}>
+                      <MaterialIcons name="track-changes" size={12} color={pillarColor} />
+                      <Text style={[aiStyles.drillWhyText, { color: pillarColor }]}>{drill.why}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const aiStyles = StyleSheet.create({
+  panel: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
+    padding: spacing.md, marginBottom: spacing.md,
+    borderWidth: 1.5, borderColor: colors.primary + '30',
+    gap: spacing.md,
+  },
+  header: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
+  iconCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primary + '15',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  title: { fontSize: 15, fontWeight: '800', color: colors.text },
+  sub: { fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginTop: 2 },
+  input: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.border, padding: spacing.sm,
+    fontSize: 14, color: colors.text, lineHeight: 20, minHeight: 80,
+  },
+  btn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary, borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 4,
+  },
+  btnDisabled: { opacity: 0.45 },
+  btnText: { fontSize: 15, fontWeight: '800', color: colors.textLight },
+  result: { gap: spacing.md },
+  adviceBlock: {
+    backgroundColor: colors.warning + '12', borderRadius: borderRadius.md,
+    borderWidth: 1.5, borderColor: colors.warning + '40', padding: spacing.md, gap: spacing.sm,
+  },
+  adviceHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  adviceLabel: { fontSize: 12, fontWeight: '800', color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.5 },
+  adviceText: { fontSize: 14, color: colors.text, lineHeight: 22 },
+  drillsSection: { gap: spacing.sm },
+  drillsHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 2 },
+  drillsTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
+  drillCard: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    padding: spacing.md, borderLeftWidth: 3, borderWidth: 1,
+    borderColor: colors.border, gap: spacing.xs,
+  },
+  drillTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+  pillarBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
+  pillarBadgeText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
+  drillName: { fontSize: 14, fontWeight: '800', color: colors.text, flex: 1 },
+  drillDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  drillWhy: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 2 },
+  drillWhyText: { fontSize: 11, fontWeight: '700', flex: 1, lineHeight: 15 },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 // ─── Data Source Toggle ───────────────────────────────────────────────────────
 type DataFilter = 'all' | 'academy' | 'personal';
@@ -918,6 +1126,9 @@ export default function AnalyticsScreen() {
                   <MetricBar label="Shot Selection" value={latest.shotSelection || 0} color={colors.tactical} />
                   <MetricBar label="Game Awareness" value={latest.gameAwareness || 0} color={colors.tactical} />
                 </View>
+
+                {/* AI Improvement Panel */}
+                <AIImprovementPanel sessions={filteredSessions} />
 
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Session Analysis</Text>

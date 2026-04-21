@@ -6,8 +6,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { position, sessionType, stats, mode, sessionKind, objective, struggle } = await req.json();
-    // mode: 'questions' | 'analysis' | 'struggle_tip'
+    const { position, sessionType, stats, mode, sessionKind, objective, struggle, performanceContext } = await req.json();
+    // mode: 'questions' | 'analysis' | 'struggle_tip' | 'analytics_improvement'
 
     const apiKey = Deno.env.get('ONSPACE_AI_API_KEY');
     const baseUrl = Deno.env.get('ONSPACE_AI_BASE_URL');
@@ -20,6 +20,54 @@ Deno.serve(async (req) => {
     }
 
     let prompt = '';
+
+    if (mode === 'analytics_improvement') {
+      // Analytics tab: player describes a struggle → AI gives advice + 3 specific drill recommendations
+      const ctx = performanceContext || '';
+
+      const improvPrompt = `You are an elite cricket performance coach. A player has shared their performance data and a specific struggle they want to improve.
+
+${ctx ? `Player's recent performance context: ${ctx}\n\n` : ''}Player's struggle: "${struggle}"
+
+Provide a structured response as valid JSON with this exact shape:
+{
+  "advice": "2-4 sentence coaching advice that directly addresses their struggle with specific technical cues",
+  "drills": [
+    {
+      "name": "Drill name (5 words max)",
+      "pillar": "Technical | Mental | Physical | Tactical",
+      "description": "How to perform this drill in 2 sentences",
+      "why": "Exactly how this drill fixes their specific struggle (1 sentence)"
+    }
+  ]
+}
+
+Return EXACTLY 3 drills. Use only cricket-specific drills. Drills must directly target the stated struggle. Return ONLY the JSON, no markdown, no extra text.`;
+
+      const aiResponse = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'google/gemini-3-flash-preview',
+          messages: [{ role: 'user', content: improvPrompt }],
+          max_tokens: 600,
+        }),
+      });
+
+      if (!aiResponse.ok) {
+        return new Response(JSON.stringify({ error: 'AI service error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const aiData = await aiResponse.json();
+      const content = aiData.choices?.[0]?.message?.content || '';
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : { advice: content, drills: [] };
+        return new Response(JSON.stringify(parsed), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      } catch {
+        return new Response(JSON.stringify({ advice: content, drills: [] }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
 
     if (mode === 'struggle_tip') {
       // Quick in-session AI tip: player describes what they struggled with → AI gives one actionable improvement tip
