@@ -32,8 +32,12 @@ function WeeklyBar({ logs, sessions }: { logs: AcademyTrainingLog[]; sessions: U
   monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
   const todayDayIdx = (today.getDay() + 6) % 7;
 
+  const todayDateStr = today.toISOString().split('T')[0];
+
+  // Only count logs on or before today as completed (never future-dated logs)
   const loggedDays: Set<number> = new Set();
   logs.forEach(log => {
+    if (log.log_date > todayDateStr) return; // skip future dates
     const diff = Math.floor((new Date(log.log_date).getTime() - monday.getTime()) / 86400000);
     if (diff >= 0 && diff < 7) loggedDays.add(diff);
   });
@@ -682,6 +686,11 @@ export default function AcademyScreen() {
               <View style={styles.cardHeaderRow}>
                 <MaterialIcons name="date-range" size={18} color={colors.primary} />
                 <Text style={styles.cardTitle}>This Week's Training</Text>
+                <View style={{ marginLeft: 'auto', backgroundColor: colors.primary + '15', borderRadius: borderRadius.sm, paddingHorizontal: 8, paddingVertical: 3, borderWidth: 1, borderColor: colors.primary + '30' }}>
+                  <Text style={{ fontSize: 10, fontWeight: '800', color: colors.primary }}>
+                    {new Date().toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' })}
+                  </Text>
+                </View>
               </View>
               {logsLoading ? (
                 <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />

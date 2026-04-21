@@ -1010,6 +1010,214 @@ function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: 
   );
 }
 
+// ─── Monthly Calendar View ───────────────────────────────────────────────────
+function MonthlyCalendar({ entries, isCoach, today, onDayPress }: {
+  entries: ScheduleEntry[];
+  isCoach: boolean;
+  today: string;
+  onDayPress: (dateStr: string, dayEntries: ScheduleEntry[]) => void;
+}) {
+  const [calYear, setCalYear] = useState(new Date().getFullYear());
+  const [calMonth, setCalMonth] = useState(new Date().getMonth()); // 0-indexed
+
+  const firstDay = new Date(calYear, calMonth, 1);
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  // Sunday=0 → shift so Monday=0
+  const startDow = (firstDay.getDay() + 6) % 7;
+
+  // Build a map of date → entries
+  const entriesByDate: Record<string, ScheduleEntry[]> = {};
+  entries.forEach(e => {
+    // Coaches: only show past/completed sessions in calendar (not upcoming)
+    if (isCoach && e.date >= today) return;
+    if (!entriesByDate[e.date]) entriesByDate[e.date] = [];
+    entriesByDate[e.date].push(e);
+  });
+
+  const prevMonth = () => {
+    if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
+    else setCalMonth(m => m - 1);
+  };
+  const nextMonth = () => {
+    if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
+    else setCalMonth(m => m + 1);
+  };
+
+  const DAYS_HDR = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+  const cells: (number | null)[] = [
+    ...Array(startDow).fill(null),
+    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+  ];
+  // Pad to full rows
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return (
+    <View style={cal.container}>
+      {/* Month navigation */}
+      <View style={cal.navRow}>
+        <Pressable onPress={prevMonth} style={cal.navBtn} hitSlop={8}>
+          <MaterialIcons name="chevron-left" size={26} color={colors.primary} />
+        </Pressable>
+        <Text style={cal.monthLabel}>
+          {MONTHS[calMonth]} {calYear}
+        </Text>
+        <Pressable onPress={nextMonth} style={cal.navBtn} hitSlop={8}>
+          <MaterialIcons name="chevron-right" size={26} color={colors.primary} />
+        </Pressable>
+      </View>
+
+      {/* Day-of-week headers */}
+      <View style={cal.daysHeader}>
+        {DAYS_HDR.map((d, i) => (
+          <Text key={i} style={cal.dayHdr}>{d}</Text>
+        ))}
+      </View>
+
+      {/* Calendar grid */}
+      <View style={cal.grid}>
+        {cells.map((day, idx) => {
+          if (!day) return <View key={idx} style={cal.cell} />;
+          const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dayEntries = entriesByDate[dateStr] || [];
+          const isToday = dateStr === today;
+          const hasSessions = dayEntries.length > 0;
+          const isFuture = dateStr > today;
+          const isPast = dateStr < today;
+          // Color dots: up to 3 session type dots
+          const dotColors = dayEntries.slice(0, 3).map(e => typeColor(e.sessionType));
+
+          return (
+            <Pressable
+              key={idx}
+              style={[
+                cal.cell,
+                isToday && cal.cellToday,
+                hasSessions && !isToday && cal.cellHasSessions,
+              ]}
+              onPress={() => hasSessions && onDayPress(dateStr, dayEntries)}
+              disabled={!hasSessions}
+            >
+              <Text style={[
+                cal.dayNum,
+                isToday && cal.dayNumToday,
+                isPast && !hasSessions && cal.dayNumPast,
+                isFuture && !hasSessions && cal.dayNumFuture,
+              ]}>{day}</Text>
+              {dotColors.length > 0 && (
+                <View style={cal.dotsRow}>
+                  {dotColors.map((c, di) => (
+                    <View key={di} style={[cal.dot, { backgroundColor: c }]} />
+                  ))}
+                </View>
+              )}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      {/* Legend */}
+      <View style={cal.legendRow}>
+        {isCoach ? (
+          <Text style={cal.legendHint}>Coloured dots show completed sessions. Upcoming sessions are not shown for coaches.</Text>
+        ) : (
+          <Text style={cal.legendHint}>Tap a date with dots to see session details.</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
+const cal = StyleSheet.create({
+  container: { backgroundColor: colors.surface, borderRadius: borderRadius.xl, borderWidth: 1, borderColor: colors.border, padding: spacing.md, marginBottom: spacing.md },
+  navRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md },
+  navBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
+  monthLabel: { fontSize: 17, fontWeight: '800', color: colors.text },
+  daysHeader: { flexDirection: 'row', marginBottom: 4 },
+  dayHdr: { flex: 1, textAlign: 'center', fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  cell: { width: `${100 / 7}%`, aspectRatio: 0.9, alignItems: 'center', justifyContent: 'center', paddingVertical: 4 },
+  cellToday: { backgroundColor: colors.primary + '15', borderRadius: borderRadius.md },
+  cellHasSessions: { backgroundColor: colors.background, borderRadius: borderRadius.md },
+  dayNum: { fontSize: 13, fontWeight: '600', color: colors.text },
+  dayNumToday: { color: colors.primary, fontWeight: '900' },
+  dayNumPast: { color: colors.textSecondary },
+  dayNumFuture: { color: colors.text },
+  dotsRow: { flexDirection: 'row', gap: 2, marginTop: 2 },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  legendRow: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  legendHint: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 14 },
+});
+
+// ─── Day Sessions Bottom Sheet ─────────────────────────────────────────────────
+function DaySessionsModal({ visible, dateStr, entries, onClose, router, academyId, isCoach, memberPosition }: {
+  visible: boolean;
+  dateStr: string;
+  entries: ScheduleEntry[];
+  onClose: () => void;
+  router: any;
+  academyId: string;
+  isCoach: boolean;
+  memberPosition?: string;
+}) {
+  const formattedDate = (() => {
+    try {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
+    } catch { return dateStr; }
+  })();
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+        <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '70%' }}>
+          <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>{formattedDate}</Text>
+            <Pressable onPress={onClose} hitSlop={8}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40, gap: spacing.sm }} showsVerticalScrollIndicator={false}>
+            {entries.map(e => {
+              const color = typeColor(e.sessionType);
+              const [hh, mm] = (e.time || '10:00').split(':').map(Number);
+              const period = hh >= 12 ? 'PM' : 'AM';
+              const h12 = hh % 12 || 12;
+              const timeStr = `${h12}:${String(mm).padStart(2, '0')} ${period}`;
+              return (
+                <View key={e.id} style={{ backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md, borderLeftWidth: 3, borderLeftColor: color, borderWidth: 1, borderColor: colors.border, gap: spacing.xs }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>{e.title}</Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>{timeStr}{e.location ? ` · ${e.location}` : ''}</Text>
+                    </View>
+                    <View style={{ backgroundColor: color + '20', borderRadius: borderRadius.sm, paddingHorizontal: 8, paddingVertical: 3 }}>
+                      <Text style={{ fontSize: 10, fontWeight: '800', color }}>{e.sessionType}</Text>
+                    </View>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                    <MaterialIcons name={e.source === 'academy' ? 'shield' : 'person'} size={11} color={e.source === 'academy' ? colors.primary : colors.success} />
+                    <Text style={{ fontSize: 10, color: e.source === 'academy' ? colors.primary : colors.success, fontWeight: '700' }}>
+                      {e.source === 'academy' ? 'Academy' : 'Personal'}
+                    </Text>
+                  </View>
+                  {!isCoach && (
+                    <Pressable
+                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: spacing.sm, marginTop: 4 }}
+                      onPress={() => { onClose(); router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any); }}
+                    >
+                      <MaterialIcons name="play-circle-filled" size={16} color={colors.textLight} />
+                      <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textLight }}>Log This Session</Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AcademyScheduleScreen() {
   const router = useRouter();
@@ -1026,6 +1234,11 @@ export default function AcademyScheduleScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [squadFilter, setSquadFilter] = useState<string | null>(null);
+
+  const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
+  const [selectedCalDate, setSelectedCalDate] = useState('');
+  const [selectedCalEntries, setSelectedCalEntries] = useState<ScheduleEntry[]>([]);
+  const [showDayModal, setShowDayModal] = useState(false);
 
   const [showCreateCoach, setShowCreateCoach] = useState(false);
   const [editingAcademySession, setEditingAcademySession] = useState<AcademySession | null>(null);
@@ -1149,6 +1362,11 @@ export default function AcademyScheduleScreen() {
     .filter(e => e.date < today)
     .sort((a, b) => b.date !== a.date ? b.date.localeCompare(a.date) : b.time.localeCompare(a.time));
 
+  // Calendar: players see all entries; coaches see only past (completed) entries
+  const calendarEntries = isCoach
+    ? filteredEntries.filter(e => e.date < today)
+    : filteredEntries;
+
   const userId = user?.id || '';
 
   if (loading) {
@@ -1186,6 +1404,18 @@ export default function AcademyScheduleScreen() {
             </Pressable>
           )}
         </View>
+      </View>
+
+      {/* List / Calendar toggle */}
+      <View style={viewToggle.bar}>
+        <Pressable style={[viewToggle.btn, viewMode === 'list' && viewToggle.btnActive]} onPress={() => setViewMode('list')}>
+          <MaterialIcons name="view-list" size={16} color={viewMode === 'list' ? colors.textLight : colors.textSecondary} />
+          <Text style={[viewToggle.btnText, viewMode === 'list' && viewToggle.btnTextActive]}>List View</Text>
+        </Pressable>
+        <Pressable style={[viewToggle.btn, viewMode === 'calendar' && viewToggle.btnActive]} onPress={() => setViewMode('calendar')}>
+          <MaterialIcons name="calendar-today" size={16} color={viewMode === 'calendar' ? colors.textLight : colors.textSecondary} />
+          <Text style={[viewToggle.btnText, viewMode === 'calendar' && viewToggle.btnTextActive]}>Calendar</Text>
+        </Pressable>
       </View>
 
       {squads.length > 0 && (
@@ -1232,40 +1462,79 @@ export default function AcademyScheduleScreen() {
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
-        {upcoming.length === 0 && past.length === 0 && (
-          <View style={styles.emptyState}>
-            <MaterialIcons name="event-note" size={64} color={colors.border} />
-            <Text style={styles.emptyTitle}>No sessions scheduled</Text>
-            <Text style={styles.emptySub}>{isCoach ? 'Tap + to create a session' : 'Your coach will schedule sessions'}</Text>
-          </View>
-        )}
-
-        {upcoming.length > 0 && (
+        {/* ── CALENDAR VIEW ── */}
+        {viewMode === 'calendar' && (
           <>
-            <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
-            {upcoming.map(e => (
-              <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
-                memberPosition={memberPosition}
-                onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
-                onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
-              />
-            ))}
+            {isCoach && (
+              <View style={{ backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.sm, marginBottom: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.primary + '30' }}>
+                <MaterialIcons name="info-outline" size={14} color={colors.primary} />
+                <Text style={{ fontSize: 11, color: colors.primary, flex: 1, lineHeight: 15 }}>As coach, you see completed session dates. Upcoming sessions are managed in List view.</Text>
+              </View>
+            )}
+            <MonthlyCalendar
+              entries={calendarEntries}
+              isCoach={isCoach}
+              today={today}
+              onDayPress={(dateStr, dayEntries) => {
+                setSelectedCalDate(dateStr);
+                setSelectedCalEntries(dayEntries);
+                setShowDayModal(true);
+              }}
+            />
           </>
         )}
 
-        {past.length > 0 && (
+        {/* ── LIST VIEW ── */}
+        {viewMode === 'list' && (
           <>
-            <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Recent / Missed ({past.length})</Text>
-            {past.map(e => (
-              <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
-                memberPosition={memberPosition}
-                onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
-                onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
-              />
-            ))}
+            {upcoming.length === 0 && past.length === 0 && (
+              <View style={styles.emptyState}>
+                <MaterialIcons name="event-note" size={64} color={colors.border} />
+                <Text style={styles.emptyTitle}>No sessions scheduled</Text>
+                <Text style={styles.emptySub}>{isCoach ? 'Tap + to create a session' : 'Your coach will schedule sessions'}</Text>
+              </View>
+            )}
+
+            {upcoming.length > 0 && (
+              <>
+                <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
+                {upcoming.map(e => (
+                  <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
+                    memberPosition={memberPosition}
+                    onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
+                    onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
+                  />
+                ))}
+              </>
+            )}
+
+            {past.length > 0 && (
+              <>
+                <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Recent / Missed ({past.length})</Text>
+                {past.map(e => (
+                  <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
+                    memberPosition={memberPosition}
+                    onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
+                    onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
+                  />
+                ))}
+              </>
+            )}
           </>
         )}
       </ScrollView>
+
+      {/* Day Sessions Modal (from calendar tap) */}
+      <DaySessionsModal
+        visible={showDayModal}
+        dateStr={selectedCalDate}
+        entries={selectedCalEntries}
+        isCoach={isCoach}
+        academyId={academyId}
+        memberPosition={memberPosition}
+        router={router}
+        onClose={() => setShowDayModal(false)}
+      />
 
       <EditAcademySessionModal
         visible={showEditAcademy}
@@ -1307,7 +1576,19 @@ export default function AcademyScheduleScreen() {
                   <TimePickerModal visible={showCreateTimePicker} value={newTime} onConfirm={setNewTime} onClose={() => setShowCreateTimePicker(false)} label="Session Time" />
                   <Text style={modal.label}>Location (Optional)</Text>
                   <TextInput style={modal.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Main Oval" placeholderTextColor={colors.textSecondary} />
-                  {squads.length > 0 && (
+                  {/* List / Calendar toggle */}
+      <View style={viewToggle.bar}>
+        <Pressable style={[viewToggle.btn, viewMode === 'list' && viewToggle.btnActive]} onPress={() => setViewMode('list')}>
+          <MaterialIcons name="view-list" size={16} color={viewMode === 'list' ? colors.textLight : colors.textSecondary} />
+          <Text style={[viewToggle.btnText, viewMode === 'list' && viewToggle.btnTextActive]}>List View</Text>
+        </Pressable>
+        <Pressable style={[viewToggle.btn, viewMode === 'calendar' && viewToggle.btnActive]} onPress={() => setViewMode('calendar')}>
+          <MaterialIcons name="calendar-today" size={16} color={viewMode === 'calendar' ? colors.textLight : colors.textSecondary} />
+          <Text style={[viewToggle.btnText, viewMode === 'calendar' && viewToggle.btnTextActive]}>Calendar</Text>
+        </Pressable>
+      </View>
+
+      {squads.length > 0 && (
                     <>
                       <Text style={modal.label}>Squad</Text>
                       <View style={modal.chipRow}>
@@ -1385,6 +1666,14 @@ const schedSq = StyleSheet.create({
   chipText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
   chipTextActive: { color: colors.textLight },
   dot: { width: 7, height: 7, borderRadius: 3.5 },
+});
+
+const viewToggle = StyleSheet.create({
+  bar: { flexDirection: 'row', gap: 0, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  btn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.sm + 2, borderBottomWidth: 2, borderBottomColor: 'transparent' },
+  btnActive: { borderBottomColor: colors.primary, backgroundColor: colors.primary + '08' },
+  btnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  btnTextActive: { color: colors.primary },
 });
 
 const styles = StyleSheet.create({
