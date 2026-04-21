@@ -6,7 +6,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useAuth, useAlert } from '@/template';
+import { useAuth, useAlert, getSupabaseClient } from '@/template';
 import { academyService, Academy, AcademyMember, AcademyTrainingLog, AcademySquad } from '@/services/academyService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { scheduleTrainingNotifications, minutesUntilSession } from '@/services/notificationService';
@@ -384,41 +384,62 @@ export default function AcademyScreen() {
     if (!user) return;
     setLogsLoading(true);
 
-    // ── PROMO DEMO DATA ───────────────────────────────────────────────────────
+    const supabase = getSupabaseClient();
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
-    const monday = new Date(today);
-    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
-    const dayOffset = (n: number) => {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + n);
-      return d.toISOString().split('T')[0];
-    };
+    const memberSquadId = currentMembership?.member.squad_id || null;
 
-    const DEMO_LOGS: AcademyTrainingLog[] = [
-      { id: 'dl-1', user_id: user.id, academy_id: academyId, log_date: dayOffset(0), session_type: 'Batting', duration_minutes: 75, intensity: 8, balls_faced: 180, runs_scored: 134, balls_bowled: 0, catches: 2, run_outs: 0, stumpings: 0, wickets: 0, technical_rating: 4, effort_rating: 5, fitness_rating: 4, notes: 'Cover drives clicking. Middle rate personal best.', created_at: dayOffset(0) },
-      { id: 'dl-2', user_id: user.id, academy_id: academyId, log_date: dayOffset(1), session_type: 'Fitness', duration_minutes: 60, intensity: 7, balls_faced: 0, runs_scored: 0, balls_bowled: 0, catches: 0, run_outs: 0, stumpings: 0, wickets: 0, technical_rating: 0, effort_rating: 4, fitness_rating: 5, notes: 'Leg day + core circuit. Felt strong.', created_at: dayOffset(1) },
-      { id: 'dl-3', user_id: user.id, academy_id: academyId, log_date: dayOffset(2), session_type: 'Bowling', duration_minutes: 50, intensity: 6, balls_faced: 0, runs_scored: 0, balls_bowled: 36, catches: 1, run_outs: 0, stumpings: 0, wickets: 3, technical_rating: 4, effort_rating: 4, fitness_rating: 0, notes: '3 wickets in the spell drill. Rhythm improving.', created_at: dayOffset(2) },
-      { id: 'dl-4', user_id: user.id, academy_id: academyId, log_date: dayOffset(4), session_type: 'Batting', duration_minutes: 65, intensity: 9, balls_faced: 150, runs_scored: 105, balls_bowled: 0, catches: 0, run_outs: 0, stumpings: 0, wickets: 0, technical_rating: 5, effort_rating: 5, fitness_rating: 4, notes: 'High intensity session. Pull shot working well.', created_at: dayOffset(4) },
-    ];
+    // ── Fetch recent training logs (last 30 days) ─────────────────────────
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const { data: logsData } = await supabase
+      .from('academy_training_logs')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('academy_id', academyId)
+      .gte('log_date', thirtyDaysAgo.toISOString().split('T')[0])
+      .order('log_date', { ascending: false });
+    setRecentLogs(logsData || []);
 
-    const DEMO_UPCOMING = [
-      { id: 'du-1', title: 'Team Batting Practice', session_date: todayStr, session_time: '15:00', location: 'Main Net — Bay 2', session_type: 'Batting' },
-      { id: 'du-2', title: 'Fielding & Fitness Drill', session_date: dayOffset(2), session_time: '09:00', location: 'Outdoor Ground', session_type: 'Fitness' },
-    ];
+    // ── Fetch upcoming sessions (today → +30 days) ────────────────────────
+    const windowEnd = new Date();
+    windowEnd.setDate(windowEnd.getDate() + 30);
+    const { data: sessionsData } = await supabase
+      .from('academy_sessions')
+      .select('*')
+      .eq('academy_id', academyId)
+      .gte('session_date', todayStr)
+      .lte('session_date', windowEnd.toISOString().split('T')[0])
+      .order('session_date', { ascending: true });
 
-    setRecentLogs(DEMO_LOGS);
-    setWeeklySessions(DEMO_UPCOMING as any);
-    setUpcomingSessions(DEMO_UPCOMING as any);
+    // Show sessions for this player's squad, or sessions open to all squads
+    const filteredSessions = (sessionsData || []).filter((s: any) =>
+      !s.squad_id || !memberSquadId || s.squad_id === memberSquadId
+    );
 
-    // Schedule push notifications for upcoming sessions
+    setWeeklySessions(filteredSessions);
+    setUpcomingSessions(filteredSessions.map((s: any) => ({
+      id: s.id,
+      title: s.title,
+      session_date: s.session_date,
+      session_time: s.session_time,
+      location: s.location,
+      session_type: s.session_type,
+    })));
+
+    // Schedule push notifications
     scheduleTrainingNotifications(
-      DEMO_UPCOMING.map(s => ({ id: s.id, title: s.title, session_date: s.session_date, session_time: s.session_time, location: s.location }))
+      filteredSessions.map((s: any) => ({
+        id: s.id,
+        title: s.title,
+        session_date: s.session_date,
+        session_time: s.session_time,
+        location: s.location,
+      }))
     ).catch(() => {});
 
     setLogsLoading(false);
-    // ── END PROMO DATA ───────────────────────────────────────────────────────
-  }, [user]);
+  }, [user, currentMembership?.member.squad_id]);
 
   useFocusEffect(useCallback(() => {
     if (!currentMembership) return;
