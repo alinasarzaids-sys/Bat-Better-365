@@ -461,7 +461,7 @@ export default function AcademyScreen() {
 
     // Schedule push notifications
     scheduleTrainingNotifications(
-      filteredSessions.map((s: any) => ({
+      filteredAcademySessions.map((s: any) => ({
         id: s.id,
         title: s.title,
         session_date: s.session_date,

@@ -132,7 +132,7 @@ const tp = StyleSheet.create({
   confirmText: { fontSize: 15, fontWeight: '700', color: colors.textLight },
 });
 
-// ─── Inline Date Picker (View-based, no nested Modal) ─────────────────────────
+// ─── Inline Date Picker ────────────────────────────────────────────────────────
 function InlineDatePicker({ value, onChange, onClose }: {
   value: string; onChange: (v: string) => void; onClose: () => void;
 }) {
@@ -168,15 +168,9 @@ function InlineDatePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setDay(d => d >= daysInMonth ? 1 : d + 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <TextInput
-            style={inl.colInput}
-            value={dayText}
-            onChangeText={setDayText}
+          <TextInput style={inl.colInput} value={dayText} onChangeText={setDayText}
             onBlur={() => { const n = parseInt(dayText, 10); if (!isNaN(n) && n >= 1 && n <= daysInMonth) setDay(n); else setDayText(String(safeDay).padStart(2, '0')); }}
-            keyboardType="number-pad"
-            maxLength={2}
-            selectTextOnFocus
-          />
+            keyboardType="number-pad" maxLength={2} selectTextOnFocus />
           <Pressable style={inl.arrowBtn} onPress={() => setDay(d => d <= 1 ? daysInMonth : d - 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -187,15 +181,9 @@ function InlineDatePicker({ value, onChange, onClose }: {
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
           <View style={{ alignItems: 'center' }}>
-            <TextInput
-              style={inl.colInput}
-              value={monthText}
-              onChangeText={setMonthText}
+            <TextInput style={inl.colInput} value={monthText} onChangeText={setMonthText}
               onBlur={() => { const n = parseInt(monthText, 10); if (!isNaN(n) && n >= 1 && n <= 12) setMonth(n); else setMonthText(String(month).padStart(2, '0')); }}
-              keyboardType="number-pad"
-              maxLength={2}
-              selectTextOnFocus
-            />
+              keyboardType="number-pad" maxLength={2} selectTextOnFocus />
             <Text style={{ fontSize: 10, color: colors.success, fontWeight: '700', marginTop: 2 }}>{MONTHS[(parseInt(monthText, 10) || month) - 1] || ''}</Text>
           </View>
           <Pressable style={inl.arrowBtn} onPress={() => setMonth(m => m <= 1 ? 12 : m - 1)} hitSlop={8}>
@@ -207,15 +195,9 @@ function InlineDatePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setYear(y => y + 1)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <TextInput
-            style={[inl.colInput, { minWidth: 64, fontSize: 18 }]}
-            value={yearText}
-            onChangeText={setYearText}
+          <TextInput style={[inl.colInput, { minWidth: 64, fontSize: 18 }]} value={yearText} onChangeText={setYearText}
             onBlur={() => { const n = parseInt(yearText, 10); if (!isNaN(n) && n >= 2020) setYear(n); else setYearText(String(year)); }}
-            keyboardType="number-pad"
-            maxLength={4}
-            selectTextOnFocus
-          />
+            keyboardType="number-pad" maxLength={4} selectTextOnFocus />
           <Pressable style={inl.arrowBtn} onPress={() => setYear(y => Math.max(2020, y - 1))} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -232,7 +214,7 @@ function InlineDatePicker({ value, onChange, onClose }: {
   );
 }
 
-// ─── Inline Time Picker (View-based, no nested Modal) ─────────────────────────
+// ─── Inline Time Picker ────────────────────────────────────────────────────────
 function InlineTimePicker({ value, onChange, onClose }: {
   value: string; onChange: (v: string) => void; onClose: () => void;
 }) {
@@ -244,7 +226,6 @@ function InlineTimePicker({ value, onChange, onClose }: {
   const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
   const [hourText, setHourText] = useState(String(h12).padStart(2, '0'));
   const [minText, setMinText] = useState(String(minute).padStart(2, '0'));
-  // Keep text in sync when arrows change values
   React.useEffect(() => { setHourText(String(hour % 12 || 12).padStart(2, '0')); }, [hour]);
   React.useEffect(() => { setMinText(String(minute).padStart(2, '0')); }, [minute]);
 
@@ -258,9 +239,7 @@ function InlineTimePicker({ value, onChange, onClose }: {
     if (!isNaN(n) && n >= 0 && n <= 59) setMinute(n);
     else setMinText(String(minute).padStart(2, '0'));
   };
-
   const handleConfirm = () => {
-    // commit any pending text edits
     const fh = parseInt(hourText, 10); const fm = parseInt(minText, 10);
     const finalHour = (!isNaN(fh) && fh >= 1 && fh <= 12) ? (isPM ? (fh === 12 ? 12 : fh + 12) : (fh === 12 ? 0 : fh)) : hour;
     const finalMin = (!isNaN(fm) && fm >= 0 && fm <= 59) ? fm : minute;
@@ -277,15 +256,8 @@ function InlineTimePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setHour(h => (h + 1) % 24)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <TextInput
-            style={inl.colInput}
-            value={hourText}
-            onChangeText={setHourText}
-            onBlur={() => commitHour(hourText)}
-            keyboardType="number-pad"
-            maxLength={2}
-            selectTextOnFocus
-          />
+          <TextInput style={inl.colInput} value={hourText} onChangeText={setHourText}
+            onBlur={() => commitHour(hourText)} keyboardType="number-pad" maxLength={2} selectTextOnFocus />
           <Pressable style={inl.arrowBtn} onPress={() => setHour(h => (h - 1 + 24) % 24)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
@@ -296,30 +268,19 @@ function InlineTimePicker({ value, onChange, onClose }: {
           <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m + 1) % 60)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-up" size={28} color={colors.success} />
           </Pressable>
-          <TextInput
-            style={inl.colInput}
-            value={minText}
-            onChangeText={setMinText}
-            onBlur={() => commitMin(minText)}
-            keyboardType="number-pad"
-            maxLength={2}
-            selectTextOnFocus
-          />
+          <TextInput style={inl.colInput} value={minText} onChangeText={setMinText}
+            onBlur={() => commitMin(minText)} keyboardType="number-pad" maxLength={2} selectTextOnFocus />
           <Pressable style={inl.arrowBtn} onPress={() => setMinute(m => (m - 1 + 60) % 60)} hitSlop={8}>
             <MaterialIcons name="keyboard-arrow-down" size={28} color={colors.success} />
           </Pressable>
         </View>
         <View style={[tp.ampmCol, { marginTop: 20 }]}>
-          <Pressable
-            style={[tp.ampmBtn, !isPM ? { backgroundColor: colors.success, borderColor: colors.success } : { backgroundColor: 'transparent', borderColor: colors.border }]}
-            onPress={() => { if (hour >= 12) setHour(h => h - 12); }}
-          >
+          <Pressable style={[tp.ampmBtn, !isPM ? { backgroundColor: colors.success, borderColor: colors.success } : { backgroundColor: 'transparent', borderColor: colors.border }]}
+            onPress={() => { if (hour >= 12) setHour(h => h - 12); }}>
             <Text style={[tp.ampmText, { color: !isPM ? colors.textLight : colors.textSecondary }]}>AM</Text>
           </Pressable>
-          <Pressable
-            style={[tp.ampmBtn, isPM ? { backgroundColor: colors.success, borderColor: colors.success } : { backgroundColor: 'transparent', borderColor: colors.border }]}
-            onPress={() => { if (hour < 12) setHour(h => h + 12); }}
-          >
+          <Pressable style={[tp.ampmBtn, isPM ? { backgroundColor: colors.success, borderColor: colors.success } : { backgroundColor: 'transparent', borderColor: colors.border }]}
+            onPress={() => { if (hour < 12) setHour(h => h + 12); }}>
             <Text style={[tp.ampmText, { color: isPM ? colors.textLight : colors.textSecondary }]}>PM</Text>
           </Pressable>
         </View>
@@ -336,30 +297,23 @@ function InlineTimePicker({ value, onChange, onClose }: {
 }
 
 const inl = StyleSheet.create({
-  box: {
-    backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md,
-    borderWidth: 1.5, borderColor: colors.success + '60', marginTop: 6, marginBottom: 4,
-  },
+  box: { backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md, borderWidth: 1.5, borderColor: colors.success + '60', marginTop: 6, marginBottom: 4 },
   display: { fontSize: 22, fontWeight: '900', color: colors.success, textAlign: 'center', marginBottom: spacing.md },
   cols: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: spacing.md },
   col: { alignItems: 'center', minWidth: 52 },
   colLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
-  colVal: { fontSize: 26, fontWeight: '900', color: colors.text, lineHeight: 32, textAlign: 'center', minWidth: 44 },
   colInput: { fontSize: 26, fontWeight: '900', color: colors.success, textAlign: 'center', minWidth: 44, borderBottomWidth: 2, borderBottomColor: colors.success + '80', paddingVertical: 2, backgroundColor: 'transparent' },
   arrowBtn: { padding: 2 },
 });
 
-// ─── Time Picker Modal (for coach modals — single modal context) ───────────────
+// ─── Time Picker Modal ────────────────────────────────────────────────────────
 function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   visible: boolean; value: string; onConfirm: (v: string) => void; onClose: () => void; label?: string;
 }) {
   const [hour, setHour] = useState(0);
   const [minute, setMinute] = useState(0);
   React.useEffect(() => {
-    if (visible) {
-      const [h, m] = (value || '00:00').split(':').map(Number);
-      setHour(isNaN(h) ? 0 : h); setMinute(isNaN(m) ? 0 : m);
-    }
+    if (visible) { const [h, m] = (value || '00:00').split(':').map(Number); setHour(isNaN(h) ? 0 : h); setMinute(isNaN(m) ? 0 : m); }
   }, [visible, value]);
   const isPM = hour >= 12; const h12 = hour % 12 || 12;
   const formatted = `${String(h12).padStart(2, '0')}:${String(minute).padStart(2, '0')} ${isPM ? 'PM' : 'AM'}`;
@@ -417,7 +371,7 @@ function TimePickerModal({ visible, value, onConfirm, onClose, label }: {
   );
 }
 
-// ─── Date Picker Modal (for coach modals) ─────────────────────────────────────
+// ─── Date Picker Modal ────────────────────────────────────────────────────────
 function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
   visible: boolean; value: string; onConfirm: (v: string) => void; onClose: () => void; label?: string;
 }) {
@@ -519,7 +473,12 @@ function PlanBlockEditor({ blocks, onChange, sessionColor }: { blocks: PlanBlock
     onChange([...blocks, { id: Date.now().toString(), startTime: startT, endTime: endT, activities: ['Batting'], notes: '' }]);
   };
   const updateField = (id: string, field: keyof PlanBlock, value: any) => onChange(blocks.map(b => b.id === id ? { ...b, [field]: value } : b));
-  const toggleActivity = (id: string, activity: string) => onChange(blocks.map(b => { if (b.id !== id) return b; const has = b.activities.includes(activity); const next = has ? b.activities.filter(a => a !== activity) : [...b.activities, activity]; return { ...b, activities: next.length ? next : [activity] }; }));
+  const toggleActivity = (id: string, activity: string) => onChange(blocks.map(b => {
+    if (b.id !== id) return b;
+    const has = b.activities.includes(activity);
+    const next = has ? b.activities.filter(a => a !== activity) : [...b.activities, activity];
+    return { ...b, activities: next.length ? next : [activity] };
+  }));
   return (
     <View style={pb.wrapper}>
       {blocks.map((block, idx) => (
@@ -567,9 +526,7 @@ const pb = StyleSheet.create({
 });
 
 // ─── Session Card ─────────────────────────────────────────────────────────────
-function SessionCard({
-  entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal, memberPosition,
-}: {
+function SessionCard({ entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal, memberPosition }: {
   entry: ScheduleEntry; isCoach: boolean; academyId: string; userId: string; today: string;
   router: any; onEditAcademy: (s: AcademySession) => void; onEditPersonal: (entry: ScheduleEntry) => void;
   memberPosition?: string;
@@ -578,10 +535,8 @@ function SessionCard({
   const color = typeColor(entry.sessionType);
   const isToday = entry.date === today;
   const isPast = entry.date < today;
-  // A past session is "missed" if there is no log for it (we flag via the source/type heuristic used in academy.tsx)
-  // For schedule screen, we treat all past sessions as potentially missed unless marked done by the player
   const isMissed = isPast && !isCoach;
-  const isDone = isPast && isCoach; // coaches see past sessions as done/archived
+  const isDone = isPast && isCoach;
   const isAcademy = entry.source === 'academy';
   const isPersonal = entry.source === 'personal';
   const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId);
@@ -593,11 +548,7 @@ function SessionCard({
   const stripeColor = isMissed ? colors.error : isPersonal ? colors.success : color;
 
   return (
-    <Pressable
-      style={[styles.sessionCard, isToday && styles.sessionCardToday, isMissed && styles.sessionCardMissed, isDone && styles.sessionCardPast]}
-      onPress={() => setExpanded(e => !e)}
-      activeOpacity={0.85}
-    >
+    <Pressable style={[styles.sessionCard, isToday && styles.sessionCardToday, isMissed && styles.sessionCardMissed, isDone && styles.sessionCardPast]} onPress={() => setExpanded(e => !e)} activeOpacity={0.85}>
       <View style={[styles.sessionStripe, { backgroundColor: isMissed ? colors.error : isDone ? colors.border : stripeColor }]} />
       <View style={styles.sessionContent}>
         <View style={styles.sessionTop}>
@@ -605,23 +556,10 @@ function SessionCard({
             <View style={styles.sessionTitleRow}>
               <Text style={[styles.sessionTitle, isMissed && { color: colors.error }, isDone && { color: colors.textSecondary }]}>{entry.title}</Text>
               {isToday && <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>}
-              {isMissed && (
-                <View style={styles.missedBadge}>
-                  <MaterialIcons name="cancel" size={12} color={colors.textLight} />
-                  <Text style={styles.missedBadgeText}>MISSED</Text>
-                </View>
-              )}
-              {isDone && (
-                <View style={styles.doneBadge}>
-                  <MaterialIcons name="check-circle" size={12} color={colors.success} />
-                  <Text style={styles.doneBadgeText}>Done</Text>
-                </View>
-              )}
+              {isMissed && <View style={styles.missedBadge}><MaterialIcons name="cancel" size={12} color={colors.textLight} /><Text style={styles.missedBadgeText}>MISSED</Text></View>}
+              {isDone && <View style={styles.doneBadge}><MaterialIcons name="check-circle" size={12} color={colors.success} /><Text style={styles.doneBadgeText}>Done</Text></View>}
             </View>
-            <Text style={styles.sessionMeta}>
-              {formatDateReadable(entry.date)} · {formatTime12(entry.time)}
-              {entry.location ? ` · ${entry.location}` : ''}
-            </Text>
+            <Text style={styles.sessionMeta}>{formatDateReadable(entry.date)} · {formatTime12(entry.time)}{entry.location ? ` · ${entry.location}` : ''}</Text>
           </View>
           <View style={{ alignItems: 'flex-end', gap: 4 }}>
             <View style={[styles.typeBadge, { backgroundColor: isPast ? colors.border : color + '20' }]}>
@@ -630,16 +568,12 @@ function SessionCard({
             <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={18} color={colors.textSecondary} />
           </View>
         </View>
-
         <View style={styles.sourceBadgeRow}>
           <View style={[styles.sourceBadge, { backgroundColor: sourceC.bg, borderColor: sourceC.border }]}>
             <MaterialIcons name={isAcademy ? 'shield' : 'person'} size={10} color={sourceC.text} />
-            <Text style={[styles.sourceBadgeText, { color: sourceC.text }]}>
-              {isAcademy ? 'Academy Session' : 'Personal Session'}
-            </Text>
+            <Text style={[styles.sourceBadgeText, { color: sourceC.text }]}>{isAcademy ? 'Academy Session' : 'Personal Session'}</Text>
           </View>
         </View>
-
         {!expanded && planBlocks.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: spacing.xs }}>
             <View style={{ flexDirection: 'row', gap: 5 }}>
@@ -652,15 +586,11 @@ function SessionCard({
             </View>
           </ScrollView>
         )}
-
         {expanded && hasPlan && (
           <View style={styles.planContainer}>
             {objectives.length > 0 && (
               <View style={styles.planSection}>
-                <View style={styles.planSectionHeader}>
-                  <MaterialIcons name="flag" size={14} color={colors.warning} />
-                  <Text style={[styles.planSectionTitle, { color: colors.warning }]}>Session Objectives</Text>
-                </View>
+                <View style={styles.planSectionHeader}><MaterialIcons name="flag" size={14} color={colors.warning} /><Text style={[styles.planSectionTitle, { color: colors.warning }]}>Session Objectives</Text></View>
                 {objectives.map((o, i) => (
                   <View key={i} style={styles.objRow}>
                     <View style={[styles.objNum, { backgroundColor: colors.warning }]}><Text style={styles.objNumText}>{i + 1}</Text></View>
@@ -671,10 +601,7 @@ function SessionCard({
             )}
             {planBlocks.length > 0 && (
               <View style={styles.planSection}>
-                <View style={styles.planSectionHeader}>
-                  <MaterialIcons name="schedule" size={14} color={color} />
-                  <Text style={[styles.planSectionTitle, { color }]}>Training Plan</Text>
-                </View>
+                <View style={styles.planSectionHeader}><MaterialIcons name="schedule" size={14} color={color} /><Text style={[styles.planSectionTitle, { color }]}>Training Plan</Text></View>
                 {planBlocks.map((b, i) => (
                   <View key={b.id} style={[styles.planBlockRow, i < planBlocks.length - 1 && styles.planBlockRowBorder]}>
                     <View style={[styles.planBlockTimeCol, { backgroundColor: color + '12' }]}>
@@ -692,63 +619,41 @@ function SessionCard({
             )}
             {coachNotes ? (
               <View style={styles.planSection}>
-                <View style={styles.planSectionHeader}>
-                  <MaterialIcons name="notes" size={14} color={colors.textSecondary} />
-                  <Text style={[styles.planSectionTitle, { color: colors.textSecondary }]}>Coach Notes</Text>
-                </View>
+                <View style={styles.planSectionHeader}><MaterialIcons name="notes" size={14} color={colors.textSecondary} /><Text style={[styles.planSectionTitle, { color: colors.textSecondary }]}>Coach Notes</Text></View>
                 <Text style={styles.coachNoteText}>{coachNotes}</Text>
               </View>
             ) : null}
           </View>
         )}
-
-        {/* Start button: today/future sessions */}
         {!isCoach && !isPast && (
-          <Pressable
-            style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
-            onPress={() => router.push({
-              pathname: '/academy-log',
-              params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' },
-            } as any)}
-          >
+          <Pressable style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
+            onPress={() => router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any)}>
             <MaterialIcons name="play-circle-filled" size={18} color={colors.textLight} />
             <Text style={styles.startSessionBtnText}>Start Session</Text>
           </Pressable>
         )}
-        {/* Log Late button: missed sessions (past, not completed, player view) */}
         {!isCoach && isMissed && (
-          <Pressable
-            style={styles.logLateBtn}
-            onPress={() => router.push({
-              pathname: '/academy-log',
-              params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' },
-            } as any)}
-          >
+          <Pressable style={styles.logLateBtn}
+            onPress={() => router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any)}>
             <MaterialIcons name="edit" size={16} color={colors.textLight} />
             <Text style={styles.logLateBtnText}>Log Late — Did this session?</Text>
           </Pressable>
         )}
-
         <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.xs }}>
           {isCoach && isAcademy && !isPast && (
             <Pressable style={styles.actionBtn} onPress={() => router.push({ pathname: '/academy-attendance', params: { academyId } } as any)}>
-              <MaterialIcons name="fact-check" size={13} color={colors.primary} />
-              <Text style={styles.actionBtnText}>Attendance</Text>
+              <MaterialIcons name="fact-check" size={13} color={colors.primary} /><Text style={styles.actionBtnText}>Attendance</Text>
             </Pressable>
           )}
           {canEdit && (
-            <Pressable
-              style={[styles.actionBtn, { backgroundColor: colors.warning + '15' }]}
-              onPress={() => { if (isCoach && isAcademy && entry.rawAcademy) onEditAcademy(entry.rawAcademy); else onEditPersonal(entry); }}
-            >
-              <MaterialIcons name="edit" size={13} color={colors.warning} />
-              <Text style={[styles.actionBtnText, { color: colors.warning }]}>Edit</Text>
+            <Pressable style={[styles.actionBtn, { backgroundColor: colors.warning + '15' }]}
+              onPress={() => { if (isCoach && isAcademy && entry.rawAcademy) onEditAcademy(entry.rawAcademy); else onEditPersonal(entry); }}>
+              <MaterialIcons name="edit" size={13} color={colors.warning} /><Text style={[styles.actionBtnText, { color: colors.warning }]}>Edit</Text>
             </Pressable>
           )}
           {!isCoach && isAcademy && expanded && (
             <View style={[styles.actionBtn, { backgroundColor: colors.border + '60' }]}>
-              <MaterialIcons name="lock-outline" size={13} color={colors.textSecondary} />
-              <Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Coach-managed session</Text>
+              <MaterialIcons name="lock-outline" size={13} color={colors.textSecondary} /><Text style={[styles.actionBtnText, { color: colors.textSecondary }]}>Coach-managed session</Text>
             </View>
           )}
         </View>
@@ -757,7 +662,7 @@ function SessionCard({
   );
 }
 
-// ─── Edit Academy Session Modal (coaches only) ────────────────────────────────
+// ─── Edit Academy Session Modal ────────────────────────────────────────────────
 function EditAcademySessionModal({ visible, session, onClose, onSaved }: {
   visible: boolean; session: AcademySession | null; onClose: () => void; onSaved: () => void;
 }) {
@@ -853,10 +758,9 @@ function EditAcademySessionModal({ visible, session, onClose, onSaved }: {
   );
 }
 
-// ─── Personal Session Modal — inline date/time (NO nested Modal) ──────────────
+// ─── Personal Session Modal ────────────────────────────────────────────────────
 function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: {
-  visible: boolean; editEntry: ScheduleEntry | null; userId: string;
-  onClose: () => void; onSaved: () => void;
+  visible: boolean; editEntry: ScheduleEntry | null; userId: string; onClose: () => void; onSaved: () => void;
 }) {
   const { showAlert } = useAlert();
   const [title, setTitle] = useState('');
@@ -869,28 +773,13 @@ function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: 
 
   React.useEffect(() => {
     if (visible) {
-      if (editEntry) {
-        setTitle(editEntry.title);
-        setDate(editEntry.date);
-        setTime(editEntry.time);
-        setNotes(editEntry.notes || '');
-      } else {
-        setTitle('');
-        setDate(todayStr());
-        setTime(now12());
-        setNotes('');
-      }
-      setShowDatePicker(false);
-      setShowTimePicker(false);
+      if (editEntry) { setTitle(editEntry.title); setDate(editEntry.date); setTime(editEntry.time); setNotes(editEntry.notes || ''); }
+      else { setTitle(''); setDate(todayStr()); setTime(now12()); setNotes(''); }
+      setShowDatePicker(false); setShowTimePicker(false);
     }
   }, [visible, editEntry]);
 
-  const displayDate = (() => {
-    try {
-      const [y, m, d] = date.split('-').map(Number);
-      return new Date(y, m - 1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
-    } catch { return date; }
-  })();
+  const displayDate = (() => { try { const [y, m, d] = date.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }); } catch { return date; } })();
 
   const handleSave = async () => {
     if (!title.trim()) { showAlert('Error', 'Please enter a title'); return; }
@@ -898,16 +787,11 @@ function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: 
     const supabase = getSupabaseClient();
     const scheduledDate = `${date}T${time}:00`;
     if (editEntry?.rawPersonalId) {
-      const { error } = await supabase.from('sessions').update({
-        title: title.trim(), scheduled_date: scheduledDate, notes: notes || null,
-      }).eq('id', editEntry.rawPersonalId).eq('user_id', userId);
+      const { error } = await supabase.from('sessions').update({ title: title.trim(), scheduled_date: scheduledDate, notes: notes || null }).eq('id', editEntry.rawPersonalId).eq('user_id', userId);
       setSaving(false);
       if (error) { showAlert('Error', error.message); return; }
     } else {
-      const { error } = await supabase.from('sessions').insert({
-        user_id: userId, title: title.trim(), scheduled_date: scheduledDate,
-        session_type: 'Structured', status: 'planned', notes: notes || null,
-      });
+      const { error } = await supabase.from('sessions').insert({ user_id: userId, title: title.trim(), scheduled_date: scheduledDate, session_type: 'Structured', status: 'planned', notes: notes || null });
       setSaving(false);
       if (error) { showAlert('Error', error.message); return; }
     }
@@ -926,81 +810,36 @@ function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: 
           </View>
           <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
             <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" style={{ flex: 1 }}>
-              {/* Info banner */}
               <View style={[modal.sectionBlock, { backgroundColor: colors.success + '10', borderColor: colors.success + '30' }]}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <MaterialIcons name="person" size={16} color={colors.success} />
                   <Text style={{ fontSize: 12, color: colors.success, fontWeight: '700' }}>Personal Session</Text>
                 </View>
-                <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>
-                  This session is only visible to you. Academy sessions are created by your coach.
-                </Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary, lineHeight: 17 }}>This session is only visible to you. Academy sessions are created by your coach.</Text>
               </View>
-
               <View style={modal.sectionBlock}>
-                <View style={modal.sectionHeader}>
-                  <MaterialIcons name="event" size={16} color={colors.success} />
-                  <Text style={modal.sectionTitle}>Session Details</Text>
-                </View>
-
+                <View style={modal.sectionHeader}><MaterialIcons name="event" size={16} color={colors.success} /><Text style={modal.sectionTitle}>Session Details</Text></View>
                 <Text style={modal.label}>Title *</Text>
-                <TextInput
-                  style={modal.input} value={title} onChangeText={setTitle}
-                  placeholder="e.g. Solo batting practice" placeholderTextColor={colors.textSecondary}
-                />
-
-                {/* Date — inline picker, no nested Modal */}
+                <TextInput style={modal.input} value={title} onChangeText={setTitle} placeholder="e.g. Solo batting practice" placeholderTextColor={colors.textSecondary} />
                 <Text style={[modal.label, { marginTop: spacing.sm }]}>Date</Text>
-                <Pressable
-                  style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-                  onPress={() => { setShowTimePicker(false); setShowDatePicker(v => !v); }}
-                >
+                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => { setShowTimePicker(false); setShowDatePicker(v => !v); }}>
                   <MaterialIcons name="calendar-today" size={16} color={colors.success} />
                   <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 }}>{displayDate}</Text>
                   <MaterialIcons name={showDatePicker ? 'expand-less' : 'expand-more'} size={16} color={colors.textSecondary} />
                 </Pressable>
-                {showDatePicker && (
-                  <InlineDatePicker
-                    value={date}
-                    onChange={(v) => { setDate(v); setShowDatePicker(false); }}
-                    onClose={() => setShowDatePicker(false)}
-                  />
-                )}
-
-                {/* Time — inline picker, no nested Modal */}
+                {showDatePicker && <InlineDatePicker value={date} onChange={(v) => { setDate(v); setShowDatePicker(false); }} onClose={() => setShowDatePicker(false)} />}
                 <Text style={[modal.label, { marginTop: spacing.sm }]}>Time</Text>
-                <Pressable
-                  style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]}
-                  onPress={() => { setShowDatePicker(false); setShowTimePicker(v => !v); }}
-                >
+                <Pressable style={[modal.input, { flexDirection: 'row', alignItems: 'center', gap: 6 }]} onPress={() => { setShowDatePicker(false); setShowTimePicker(v => !v); }}>
                   <MaterialIcons name="access-time" size={16} color={colors.success} />
                   <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text, flex: 1 }}>{formatTime12(time)}</Text>
                   <MaterialIcons name={showTimePicker ? 'expand-less' : 'expand-more'} size={16} color={colors.textSecondary} />
                 </Pressable>
-                {showTimePicker && (
-                  <InlineTimePicker
-                    value={time}
-                    onChange={(v) => { setTime(v); setShowTimePicker(false); }}
-                    onClose={() => setShowTimePicker(false)}
-                  />
-                )}
-
+                {showTimePicker && <InlineTimePicker value={time} onChange={(v) => { setTime(v); setShowTimePicker(false); }} onClose={() => setShowTimePicker(false)} />}
                 <Text style={[modal.label, { marginTop: spacing.sm }]}>Notes (Optional)</Text>
-                <TextInput
-                  style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]}
-                  value={notes} onChangeText={setNotes} multiline
-                  placeholder="What do you plan to work on?" placeholderTextColor={colors.textSecondary}
-                />
+                <TextInput style={[modal.input, { minHeight: 64, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} multiline placeholder="What do you plan to work on?" placeholderTextColor={colors.textSecondary} />
               </View>
-
-              <Pressable
-                style={[modal.submitBtn, { backgroundColor: colors.success, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]}
-                onPress={handleSave}
-              >
-                {saving
-                  ? <ActivityIndicator color={colors.textLight} />
-                  : <><MaterialIcons name="save" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>{editEntry ? 'Save Changes' : 'Add to Schedule'}</Text></>
-                }
+              <Pressable style={[modal.submitBtn, { backgroundColor: colors.success, marginTop: spacing.md, marginBottom: spacing.xl }, saving && { opacity: 0.6 }]} onPress={handleSave}>
+                {saving ? <ActivityIndicator color={colors.textLight} /> : <><MaterialIcons name="save" size={18} color={colors.textLight} /><Text style={modal.submitBtnText}>{editEntry ? 'Save Changes' : 'Add to Schedule'}</Text></>}
               </Pressable>
             </ScrollView>
           </KeyboardAvoidingView>
@@ -1010,118 +849,99 @@ function PersonalSessionModal({ visible, editEntry, userId, onClose, onSaved }: 
   );
 }
 
-// ─── Monthly Calendar View ───────────────────────────────────────────────────
-function MonthlyCalendar({ entries, isCoach, today, onDayPress }: {
+// ─── Monthly Calendar View ────────────────────────────────────────────────────
+// Dots match the legend: green filled = Completed, red filled = Missed, outlined = Upcoming (blue=academy, green=personal)
+function MonthlyCalendar({ entries, isCoach, today, loggedDates, onDayPress }: {
   entries: ScheduleEntry[];
   isCoach: boolean;
   today: string;
+  loggedDates: Set<string>;
   onDayPress: (dateStr: string, dayEntries: ScheduleEntry[]) => void;
 }) {
   const [calYear, setCalYear] = useState(new Date().getFullYear());
-  const [calMonth, setCalMonth] = useState(new Date().getMonth()); // 0-indexed
+  const [calMonth, setCalMonth] = useState(new Date().getMonth());
 
   const firstDay = new Date(calYear, calMonth, 1);
   const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
-  // Sunday=0 → shift so Monday=0
   const startDow = (firstDay.getDay() + 6) % 7;
 
-  // Build a map of date → entries
   const entriesByDate: Record<string, ScheduleEntry[]> = {};
   entries.forEach(e => {
-    // Coaches: only show past/completed sessions in calendar (not upcoming)
     if (isCoach && e.date >= today) return;
     if (!entriesByDate[e.date]) entriesByDate[e.date] = [];
     entriesByDate[e.date].push(e);
   });
 
-  const prevMonth = () => {
-    if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); }
-    else setCalMonth(m => m - 1);
-  };
-  const nextMonth = () => {
-    if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); }
-    else setCalMonth(m => m + 1);
-  };
+  const prevMonth = () => { if (calMonth === 0) { setCalYear(y => y - 1); setCalMonth(11); } else setCalMonth(m => m - 1); };
+  const nextMonth = () => { if (calMonth === 11) { setCalYear(y => y + 1); setCalMonth(0); } else setCalMonth(m => m + 1); };
 
   const DAYS_HDR = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-  const cells: (number | null)[] = [
-    ...Array(startDow).fill(null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
-  ];
-  // Pad to full rows
+  const cells: (number | null)[] = [...Array(startDow).fill(null), ...Array.from({ length: daysInMonth }, (_, i) => i + 1)];
   while (cells.length % 7 !== 0) cells.push(null);
 
   return (
     <View style={cal.container}>
-      {/* Month navigation */}
       <View style={cal.navRow}>
-        <Pressable onPress={prevMonth} style={cal.navBtn} hitSlop={8}>
-          <MaterialIcons name="chevron-left" size={26} color={colors.primary} />
-        </Pressable>
-        <Text style={cal.monthLabel}>
-          {MONTHS[calMonth]} {calYear}
-        </Text>
-        <Pressable onPress={nextMonth} style={cal.navBtn} hitSlop={8}>
-          <MaterialIcons name="chevron-right" size={26} color={colors.primary} />
-        </Pressable>
+        <Pressable onPress={prevMonth} style={cal.navBtn} hitSlop={8}><MaterialIcons name="chevron-left" size={26} color={colors.primary} /></Pressable>
+        <Text style={cal.monthLabel}>{MONTHS[calMonth]} {calYear}</Text>
+        <Pressable onPress={nextMonth} style={cal.navBtn} hitSlop={8}><MaterialIcons name="chevron-right" size={26} color={colors.primary} /></Pressable>
       </View>
-
-      {/* Day-of-week headers */}
       <View style={cal.daysHeader}>
-        {DAYS_HDR.map((d, i) => (
-          <Text key={i} style={cal.dayHdr}>{d}</Text>
-        ))}
+        {DAYS_HDR.map((d, i) => <Text key={i} style={cal.dayHdr}>{d}</Text>)}
       </View>
-
-      {/* Calendar grid */}
       <View style={cal.grid}>
         {cells.map((day, idx) => {
-          if (!day) return <View key={idx} style={cal.cell} />;
+          if (!day) return <View key={String(idx)} style={cal.cell} />;
           const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
           const dayEntries = entriesByDate[dateStr] || [];
           const isToday = dateStr === today;
           const hasSessions = dayEntries.length > 0;
           const isFuture = dateStr > today;
           const isPast = dateStr < today;
-          // Color dots: up to 3 session type dots
-          const dotColors = dayEntries.slice(0, 3).map(e => typeColor(e.sessionType));
+          const isCompleted = loggedDates.has(dateStr);
 
           return (
             <Pressable
-              key={idx}
-              style={[
-                cal.cell,
-                isToday && cal.cellToday,
-                hasSessions && !isToday && cal.cellHasSessions,
-              ]}
+              key={String(idx)}
+              style={[cal.cell, isToday && cal.cellToday, hasSessions && !isToday && cal.cellHasSessions]}
               onPress={() => hasSessions && onDayPress(dateStr, dayEntries)}
               disabled={!hasSessions}
             >
-              <Text style={[
-                cal.dayNum,
-                isToday && cal.dayNumToday,
-                isPast && !hasSessions && cal.dayNumPast,
-                isFuture && !hasSessions && cal.dayNumFuture,
-              ]}>{day}</Text>
-              {dotColors.length > 0 && (
+              <Text style={[cal.dayNum, isToday && cal.dayNumToday, isPast && !hasSessions && cal.dayNumPast, isFuture && !hasSessions && cal.dayNumFuture]}>{day}</Text>
+              {dayEntries.length > 0 && (
                 <View style={cal.dotsRow}>
-                  {dotColors.map((c, di) => (
-                    <View key={di} style={[cal.dot, { backgroundColor: c }]} />
-                  ))}
+                  {dayEntries.slice(0, 3).map((e, di) => {
+                    // Match legend: Completed=green filled, Missed=red filled, Upcoming=outlined dot
+                    if (isFuture || isToday) {
+                      // Upcoming: outlined ring (blue for academy, green for personal)
+                      const ringColor = e.source === 'personal' ? colors.success : colors.primary;
+                      return <View key={di} style={[cal.dot, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ringColor }]} />;
+                    } else if (isPast) {
+                      // Past: green if logged (completed), red if not (missed)
+                      return <View key={di} style={[cal.dot, { backgroundColor: isCompleted ? colors.success : colors.error }]} />;
+                    }
+                    return <View key={di} style={[cal.dot, { backgroundColor: colors.border }]} />;
+                  })}
                 </View>
               )}
             </Pressable>
           );
         })}
       </View>
-
-      {/* Legend */}
-      <View style={cal.legendRow}>
-        {isCoach ? (
-          <Text style={cal.legendHint}>Coloured dots show completed sessions. Upcoming sessions are not shown for coaches.</Text>
-        ) : (
-          <Text style={cal.legendHint}>Tap a date with dots to see session details.</Text>
-        )}
+      {/* Calendar legend matching the list view legend */}
+      <View style={[cal.legendRow, { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.md }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={[cal.dot, { backgroundColor: colors.success }]} />
+          <Text style={cal.legendHint}>Completed</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={[cal.dot, { backgroundColor: colors.error }]} />
+          <Text style={cal.legendHint}>Missed</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={[cal.dot, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary }]} />
+          <Text style={cal.legendHint}>Upcoming</Text>
+        </View>
       </View>
     </View>
   );
@@ -1143,29 +963,17 @@ const cal = StyleSheet.create({
   dayNumPast: { color: colors.textSecondary },
   dayNumFuture: { color: colors.text },
   dotsRow: { flexDirection: 'row', gap: 2, marginTop: 2 },
-  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  dot: { width: 6, height: 6, borderRadius: 3 },
   legendRow: { marginTop: spacing.sm, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
-  legendHint: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 14 },
+  legendHint: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
 });
 
 // ─── Day Sessions Bottom Sheet ─────────────────────────────────────────────────
 function DaySessionsModal({ visible, dateStr, entries, onClose, router, academyId, isCoach, memberPosition }: {
-  visible: boolean;
-  dateStr: string;
-  entries: ScheduleEntry[];
-  onClose: () => void;
-  router: any;
-  academyId: string;
-  isCoach: boolean;
-  memberPosition?: string;
+  visible: boolean; dateStr: string; entries: ScheduleEntry[]; onClose: () => void;
+  router: any; academyId: string; isCoach: boolean; memberPosition?: string;
 }) {
-  const formattedDate = (() => {
-    try {
-      const [y, m, d] = dateStr.split('-').map(Number);
-      return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' });
-    } catch { return dateStr; }
-  })();
-
+  const formattedDate = (() => { try { const [y, m, d] = dateStr.split('-').map(Number); return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long' }); } catch { return dateStr; } })();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
@@ -1179,8 +987,7 @@ function DaySessionsModal({ visible, dateStr, entries, onClose, router, academyI
             {entries.map(e => {
               const color = typeColor(e.sessionType);
               const [hh, mm] = (e.time || '10:00').split(':').map(Number);
-              const period = hh >= 12 ? 'PM' : 'AM';
-              const h12 = hh % 12 || 12;
+              const period = hh >= 12 ? 'PM' : 'AM'; const h12 = hh % 12 || 12;
               const timeStr = `${h12}:${String(mm).padStart(2, '0')} ${period}`;
               return (
                 <View key={e.id} style={{ backgroundColor: colors.background, borderRadius: borderRadius.lg, padding: spacing.md, borderLeftWidth: 3, borderLeftColor: color, borderWidth: 1, borderColor: colors.border, gap: spacing.xs }}>
@@ -1195,15 +1002,11 @@ function DaySessionsModal({ visible, dateStr, entries, onClose, router, academyI
                   </View>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                     <MaterialIcons name={e.source === 'academy' ? 'shield' : 'person'} size={11} color={e.source === 'academy' ? colors.primary : colors.success} />
-                    <Text style={{ fontSize: 10, color: e.source === 'academy' ? colors.primary : colors.success, fontWeight: '700' }}>
-                      {e.source === 'academy' ? 'Academy' : 'Personal'}
-                    </Text>
+                    <Text style={{ fontSize: 10, color: e.source === 'academy' ? colors.primary : colors.success, fontWeight: '700' }}>{e.source === 'academy' ? 'Academy' : 'Personal'}</Text>
                   </View>
                   {!isCoach && (
-                    <Pressable
-                      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: spacing.sm, marginTop: 4 }}
-                      onPress={() => { onClose(); router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any); }}
-                    >
+                    <Pressable style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: spacing.sm, marginTop: 4 }}
+                      onPress={() => { onClose(); router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any); }}>
                       <MaterialIcons name="play-circle-filled" size={16} color={colors.textLight} />
                       <Text style={{ fontSize: 13, fontWeight: '800', color: colors.textLight }}>Log This Session</Text>
                     </Pressable>
@@ -1234,6 +1037,8 @@ export default function AcademyScheduleScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [squadFilter, setSquadFilter] = useState<string | null>(null);
+  // Logged dates for calendar status coloring (player only)
+  const [loggedDates, setLoggedDates] = useState<Set<string>>(new Set());
 
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
   const [selectedCalDate, setSelectedCalDate] = useState('');
@@ -1295,18 +1100,16 @@ export default function AcademyScheduleScreen() {
           const dt = new Date(s.scheduled_date);
           const dateStr = dt.toISOString().split('T')[0];
           const timeStr = `${dt.getHours().toString().padStart(2, '0')}:${dt.getMinutes().toString().padStart(2, '0')}`;
-          return {
-            id: `personal_${s.id}`,
-            source: 'personal' as const,
-            title: s.title,
-            date: dateStr,
-            time: timeStr,
-            sessionType: s.session_type,
-            notes: s.notes || undefined,
-            createdBy: s.user_id,
-            rawPersonalId: s.id,
-          };
+          return { id: `personal_${s.id}`, source: 'personal' as const, title: s.title, date: dateStr, time: timeStr, sessionType: s.session_type, notes: s.notes || undefined, createdBy: s.user_id, rawPersonalId: s.id };
         });
+
+        // Fetch logged dates for calendar dot coloring
+        const { data: logs } = await supabase
+          .from('academy_training_logs')
+          .select('log_date')
+          .eq('user_id', user.id)
+          .eq('academy_id', academyId);
+        setLoggedDates(new Set((logs || []).map((l: any) => l.log_date)));
       } catch (_) {}
     }
 
@@ -1344,29 +1147,15 @@ export default function AcademyScheduleScreen() {
     ? entries.filter(e => !e.squadId || e.squadId === squadFilter || e.source === 'personal')
     : entries;
 
-  // Visibility window: today - 7 days → today + 30 days
-  const windowStart = new Date();
-  windowStart.setDate(windowStart.getDate() - 7);
+  const windowStart = new Date(); windowStart.setDate(windowStart.getDate() - 7);
   const windowStartStr = windowStart.toISOString().split('T')[0];
-  const windowEnd = new Date();
-  windowEnd.setDate(windowEnd.getDate() + 30);
+  const windowEnd = new Date(); windowEnd.setDate(windowEnd.getDate() + 30);
   const windowEndStr = windowEnd.toISOString().split('T')[0];
 
   const windowedEntries = filteredEntries.filter(e => e.date >= windowStartStr && e.date <= windowEndStr);
-
-  const upcoming = windowedEntries
-    .filter(e => e.date >= today)
-    .sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
-  // Past = within 7-day window (missed sessions stay visible for Log Late)
-  const past = windowedEntries
-    .filter(e => e.date < today)
-    .sort((a, b) => b.date !== a.date ? b.date.localeCompare(a.date) : b.time.localeCompare(a.time));
-
-  // Calendar: players see all entries; coaches see only past (completed) entries
-  const calendarEntries = isCoach
-    ? filteredEntries.filter(e => e.date < today)
-    : filteredEntries;
-
+  const upcoming = windowedEntries.filter(e => e.date >= today).sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
+  const past = windowedEntries.filter(e => e.date < today).sort((a, b) => b.date !== a.date ? b.date.localeCompare(a.date) : b.time.localeCompare(a.time));
+  const calendarEntries = isCoach ? filteredEntries.filter(e => e.date < today) : filteredEntries;
   const userId = user?.id || '';
 
   if (loading) {
@@ -1388,16 +1177,11 @@ export default function AcademyScheduleScreen() {
         <Pressable onPress={() => router.back()} style={styles.backBtn}><MaterialIcons name="arrow-back" size={24} color={colors.text} /></Pressable>
         <Text style={styles.headerTitle}>Schedule</Text>
         <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
-          {/* Players: clearly labelled text button */}
           {!isCoach && (
-            <Pressable
-              style={styles.addPersonalBtn}
-              onPress={() => { setEditingPersonalEntry(null); setShowPersonalModal(true); }}
-            >
+            <Pressable style={styles.addPersonalBtn} onPress={() => { setEditingPersonalEntry(null); setShowPersonalModal(true); }}>
               <Text style={styles.addPersonalBtnText}>+ Personal Session</Text>
             </Pressable>
           )}
-          {/* Coaches: + icon button */}
           {isCoach && (
             <Pressable style={styles.addBtn} onPress={() => { resetCoachForm(); setShowCreateCoach(true); }}>
               <MaterialIcons name="add" size={22} color={colors.primary} />
@@ -1409,11 +1193,11 @@ export default function AcademyScheduleScreen() {
       {/* List / Calendar toggle */}
       <View style={viewToggle.bar}>
         <Pressable style={[viewToggle.btn, viewMode === 'list' && viewToggle.btnActive]} onPress={() => setViewMode('list')}>
-          <MaterialIcons name="view-list" size={16} color={viewMode === 'list' ? colors.textLight : colors.textSecondary} />
+          <MaterialIcons name="view-list" size={16} color={viewMode === 'list' ? colors.primary : colors.textSecondary} />
           <Text style={[viewToggle.btnText, viewMode === 'list' && viewToggle.btnTextActive]}>List View</Text>
         </Pressable>
         <Pressable style={[viewToggle.btn, viewMode === 'calendar' && viewToggle.btnActive]} onPress={() => setViewMode('calendar')}>
-          <MaterialIcons name="calendar-today" size={16} color={viewMode === 'calendar' ? colors.textLight : colors.textSecondary} />
+          <MaterialIcons name="calendar-today" size={16} color={viewMode === 'calendar' ? colors.primary : colors.textSecondary} />
           <Text style={[viewToggle.btnText, viewMode === 'calendar' && viewToggle.btnTextActive]}>Calendar</Text>
         </Pressable>
       </View>
@@ -1436,33 +1220,17 @@ export default function AcademyScheduleScreen() {
 
       {!isCoach && (
         <View style={styles.legendBar}>
-          <View style={styles.legendItem}>
-            <MaterialIcons name="shield" size={11} color={colors.primary} />
-            <Text style={[styles.legendText, { color: colors.primary }]}>Academy</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <MaterialIcons name="person" size={11} color={colors.success} />
-            <Text style={[styles.legendText, { color: colors.success }]}>Personal</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <MaterialIcons name="check-circle" size={11} color={colors.success} />
-            <Text style={styles.legendText}>Done</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: colors.primary + '60' }]} />
-            <Text style={styles.legendText}>Upcoming</Text>
-          </View>
-          <View style={styles.legendItem}>
-            <MaterialIcons name="cancel" size={11} color={colors.error} />
-            <Text style={[styles.legendText, { color: colors.error }]}>Missed</Text>
-          </View>
+          <View style={styles.legendItem}><MaterialIcons name="shield" size={11} color={colors.primary} /><Text style={[styles.legendText, { color: colors.primary }]}>Academy</Text></View>
+          <View style={styles.legendItem}><MaterialIcons name="person" size={11} color={colors.success} /><Text style={[styles.legendText, { color: colors.success }]}>Personal</Text></View>
+          <View style={styles.legendItem}><MaterialIcons name="check-circle" size={11} color={colors.success} /><Text style={styles.legendText}>Done</Text></View>
+          <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary }]} /><Text style={styles.legendText}>Upcoming</Text></View>
+          <View style={styles.legendItem}><MaterialIcons name="cancel" size={11} color={colors.error} /><Text style={[styles.legendText, { color: colors.error }]}>Missed</Text></View>
         </View>
       )}
 
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
 
-        {/* ── CALENDAR VIEW ── */}
         {viewMode === 'calendar' && (
           <>
             {isCoach && (
@@ -1475,16 +1243,12 @@ export default function AcademyScheduleScreen() {
               entries={calendarEntries}
               isCoach={isCoach}
               today={today}
-              onDayPress={(dateStr, dayEntries) => {
-                setSelectedCalDate(dateStr);
-                setSelectedCalEntries(dayEntries);
-                setShowDayModal(true);
-              }}
+              loggedDates={loggedDates}
+              onDayPress={(dateStr, dayEntries) => { setSelectedCalDate(dateStr); setSelectedCalEntries(dayEntries); setShowDayModal(true); }}
             />
           </>
         )}
 
-        {/* ── LIST VIEW ── */}
         {viewMode === 'list' && (
           <>
             {upcoming.length === 0 && past.length === 0 && (
@@ -1494,7 +1258,6 @@ export default function AcademyScheduleScreen() {
                 <Text style={styles.emptySub}>{isCoach ? 'Tap + to create a session' : 'Your coach will schedule sessions'}</Text>
               </View>
             )}
-
             {upcoming.length > 0 && (
               <>
                 <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
@@ -1502,12 +1265,10 @@ export default function AcademyScheduleScreen() {
                   <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
                     memberPosition={memberPosition}
                     onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
-                    onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
-                  />
+                    onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }} />
                 ))}
               </>
             )}
-
             {past.length > 0 && (
               <>
                 <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Recent / Missed ({past.length})</Text>
@@ -1515,8 +1276,7 @@ export default function AcademyScheduleScreen() {
                   <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
                     memberPosition={memberPosition}
                     onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
-                    onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }}
-                  />
+                    onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }} />
                 ))}
               </>
             )}
@@ -1524,33 +1284,9 @@ export default function AcademyScheduleScreen() {
         )}
       </ScrollView>
 
-      {/* Day Sessions Modal (from calendar tap) */}
-      <DaySessionsModal
-        visible={showDayModal}
-        dateStr={selectedCalDate}
-        entries={selectedCalEntries}
-        isCoach={isCoach}
-        academyId={academyId}
-        memberPosition={memberPosition}
-        router={router}
-        onClose={() => setShowDayModal(false)}
-      />
-
-      <EditAcademySessionModal
-        visible={showEditAcademy}
-        session={editingAcademySession}
-        onClose={() => { setShowEditAcademy(false); setEditingAcademySession(null); }}
-        onSaved={load}
-      />
-
-      {/* Personal Session Modal — date/time are inline Views, no secondary Modal */}
-      <PersonalSessionModal
-        visible={showPersonalModal}
-        editEntry={editingPersonalEntry}
-        userId={userId}
-        onClose={() => { setShowPersonalModal(false); setEditingPersonalEntry(null); }}
-        onSaved={load}
-      />
+      <DaySessionsModal visible={showDayModal} dateStr={selectedCalDate} entries={selectedCalEntries} isCoach={isCoach} academyId={academyId} memberPosition={memberPosition} router={router} onClose={() => setShowDayModal(false)} />
+      <EditAcademySessionModal visible={showEditAcademy} session={editingAcademySession} onClose={() => { setShowEditAcademy(false); setEditingAcademySession(null); }} onSaved={load} />
+      <PersonalSessionModal visible={showPersonalModal} editEntry={editingPersonalEntry} userId={userId} onClose={() => { setShowPersonalModal(false); setEditingPersonalEntry(null); }} onSaved={load} />
 
       {/* Create Academy Session (coaches only) */}
       <Modal visible={showCreateCoach} animationType="slide" transparent onRequestClose={() => setShowCreateCoach(false)}>
@@ -1576,19 +1312,7 @@ export default function AcademyScheduleScreen() {
                   <TimePickerModal visible={showCreateTimePicker} value={newTime} onConfirm={setNewTime} onClose={() => setShowCreateTimePicker(false)} label="Session Time" />
                   <Text style={modal.label}>Location (Optional)</Text>
                   <TextInput style={modal.input} value={newLocation} onChangeText={setNewLocation} placeholder="e.g. Main Oval" placeholderTextColor={colors.textSecondary} />
-                  {/* List / Calendar toggle */}
-      <View style={viewToggle.bar}>
-        <Pressable style={[viewToggle.btn, viewMode === 'list' && viewToggle.btnActive]} onPress={() => setViewMode('list')}>
-          <MaterialIcons name="view-list" size={16} color={viewMode === 'list' ? colors.textLight : colors.textSecondary} />
-          <Text style={[viewToggle.btnText, viewMode === 'list' && viewToggle.btnTextActive]}>List View</Text>
-        </Pressable>
-        <Pressable style={[viewToggle.btn, viewMode === 'calendar' && viewToggle.btnActive]} onPress={() => setViewMode('calendar')}>
-          <MaterialIcons name="calendar-today" size={16} color={viewMode === 'calendar' ? colors.textLight : colors.textSecondary} />
-          <Text style={[viewToggle.btnText, viewMode === 'calendar' && viewToggle.btnTextActive]}>Calendar</Text>
-        </Pressable>
-      </View>
-
-      {squads.length > 0 && (
+                  {squads.length > 0 && (
                     <>
                       <Text style={modal.label}>Squad</Text>
                       <View style={modal.chipRow}>
@@ -1669,7 +1393,7 @@ const schedSq = StyleSheet.create({
 });
 
 const viewToggle = StyleSheet.create({
-  bar: { flexDirection: 'row', gap: 0, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
+  bar: { flexDirection: 'row', backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   btn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.sm + 2, borderBottomWidth: 2, borderBottomColor: 'transparent' },
   btnActive: { borderBottomColor: colors.primary, backgroundColor: colors.primary + '08' },
   btnText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
@@ -1683,51 +1407,39 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, justifyContent: 'center' },
   headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700', flex: 1 },
   addBtn: { width: 40, height: 40, justifyContent: 'center', alignItems: 'flex-end' },
-  addPersonalBtn: {
-    backgroundColor: colors.success + '18', borderWidth: 1, borderColor: colors.success + '60',
-    borderRadius: borderRadius.md, paddingHorizontal: spacing.sm + 2, paddingVertical: 8,
-  },
+  addPersonalBtn: { backgroundColor: colors.success + '18', borderWidth: 1, borderColor: colors.success + '60', borderRadius: borderRadius.md, paddingHorizontal: spacing.sm + 2, paddingVertical: 8 },
   addPersonalBtnText: { fontSize: 12, color: colors.success, fontWeight: '800' },
-
   legendBar: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: 8, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border, flexWrap: 'wrap' },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendText: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
-  legendDot: { width: 8, height: 8, borderRadius: 4, marginLeft: 4 },
-
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
   scroll: { flex: 1 },
   scrollContent: { padding: spacing.md, paddingBottom: 80, gap: spacing.xs },
   sectionLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '700', marginBottom: spacing.xs, marginTop: spacing.xs, letterSpacing: 0.3 },
-
   sessionCard: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: borderRadius.lg, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
   sessionCardToday: { borderColor: colors.primary + '80', borderWidth: 2 },
   sessionCardPast: { opacity: 0.7 },
   sessionCardMissed: { borderColor: colors.error + '60', borderWidth: 1.5, backgroundColor: colors.error + '04' },
   sessionStripe: { width: 5 },
   sessionContent: { flex: 1, padding: spacing.md, gap: 4 },
-
   sessionTop: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
   sessionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   sessionTitle: { fontSize: 15, color: colors.text, fontWeight: '700' },
   sessionMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2, lineHeight: 16 },
-
   todayBadge: { backgroundColor: colors.primary, paddingHorizontal: spacing.xs + 2, paddingVertical: 2, borderRadius: borderRadius.sm },
   todayBadgeText: { fontSize: 9, color: colors.textLight, fontWeight: '800' },
   doneBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.success + '18', paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
   doneBadgeText: { fontSize: 9, color: colors.success, fontWeight: '800' },
   missedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.error, paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
   missedBadgeText: { fontSize: 9, color: colors.textLight, fontWeight: '900', letterSpacing: 0.4 },
-
   typeBadge: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.sm },
   typeBadgeText: { fontSize: 10, fontWeight: '700' },
-
   sourceBadgeRow: { flexDirection: 'row', marginTop: 2 },
   sourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3, borderRadius: borderRadius.sm, borderWidth: 1 },
   sourceBadgeText: { fontSize: 10, fontWeight: '700' },
-
   blockPreviewChip: { borderWidth: 1, borderRadius: borderRadius.sm, paddingHorizontal: spacing.sm, paddingVertical: 3, alignItems: 'center' },
   blockPreviewTime: { fontSize: 9, fontWeight: '700' },
   blockPreviewActivity: { fontSize: 11, fontWeight: '800', marginTop: 1 },
-
   planContainer: { gap: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border + '60', paddingTop: spacing.sm, marginTop: spacing.xs },
   planSection: { gap: spacing.xs },
   planSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 3 },
@@ -1744,15 +1456,12 @@ const styles = StyleSheet.create({
   objNumText: { fontSize: 11, fontWeight: '900', color: colors.textLight },
   objText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 18 },
   coachNoteText: { fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
-
   actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', backgroundColor: colors.primary + '15', paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.sm },
   actionBtnText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
-
   startSessionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.primary, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
   startSessionBtnText: { fontSize: 13, fontWeight: '800', color: colors.textLight },
   logLateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: colors.warning, paddingVertical: spacing.sm, paddingHorizontal: spacing.md, borderRadius: borderRadius.md, marginTop: spacing.sm },
   logLateBtnText: { fontSize: 13, fontWeight: '800', color: colors.textLight },
-
   emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { fontSize: 16, color: colors.text, fontWeight: '700' },
   emptySub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, paddingHorizontal: spacing.md },
