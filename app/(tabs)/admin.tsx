@@ -485,7 +485,7 @@ export default function AdminDashboardTab() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Super Admin</Text>
-          <Text style={styles.headerSub}>Bat Better 365 · Control Panel</Text>
+          <Text style={styles.headerSub}>Bat Better · Control Panel</Text>
         </View>
         {(loadingId || billingRunning) && <ActivityIndicator color={colors.primary} />}
       </View>
