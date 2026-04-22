@@ -1034,7 +1034,11 @@ export default function AnalyticsScreen() {
               <View style={styles.emptyState}>
                 <MaterialIcons name="sports-cricket" size={72} color={colors.border} />
                 <Text style={styles.emptyTitle}>No sessions yet</Text>
-                <Text style={styles.emptySubtitle}>Complete a freestyle session to see your performance breakdown here. Go to Training → Start Freestyle Session.</Text>
+                <Text style={styles.emptySubtitle}>{dataFilter === 'academy'
+                  ? 'Finish an academy session to see your performance breakdown here. Go to Academy → Log Training Session.'
+                  : dataFilter === 'personal'
+                  ? 'Complete a freestyle session to see your performance breakdown here. Go to Training → Start Freestyle Session.'
+                  : 'Complete a session to see your performance breakdown here. Go to Training → Start Freestyle Session or log an academy session.'}</Text>
               </View>
             ) : (
               <>
