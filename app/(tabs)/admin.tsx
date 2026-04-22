@@ -193,6 +193,56 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
             </View>
           )}
 
+          {/* ── Bank Payout Details ── */}
+          {(academy.bank_name || academy.account_name || academy.account_number) && (
+            <View style={ac.bankSection}>
+              <View style={ac.bankSectionHeader}>
+                <MaterialIcons name="account-balance" size={13} color={colors.warning} />
+                <Text style={ac.bankSectionTitle}>Academy Payout Details</Text>
+              </View>
+              {academy.bank_name ? (
+                <View style={ac.bankRow}>
+                  <Text style={ac.bankLabel}>Bank</Text>
+                  <Text style={ac.bankVal}>{academy.bank_name}</Text>
+                </View>
+              ) : null}
+              {academy.account_name ? (
+                <View style={ac.bankRow}>
+                  <Text style={ac.bankLabel}>Account Name</Text>
+                  <Text style={ac.bankVal}>{academy.account_name}</Text>
+                </View>
+              ) : null}
+              {academy.account_number ? (
+                <View style={ac.bankRow}>
+                  <Text style={ac.bankLabel}>Account No.</Text>
+                  <Text style={[ac.bankVal, { fontFamily: 'monospace', letterSpacing: 0.8, fontWeight: '800' }]}>{academy.account_number}</Text>
+                </View>
+              ) : null}
+            </View>
+          )}
+
+          {/* ── Academy Codes ── */}
+          <View style={ac.codesSection}>
+            <View style={ac.bankSectionHeader}>
+              <MaterialIcons name="vpn-key" size={13} color={colors.primary} />
+              <Text style={[ac.bankSectionTitle, { color: colors.primary }]}>Academy Codes</Text>
+            </View>
+            <View style={ac.codesRow}>
+              {academy.coach_code ? (
+                <View style={[ac.codeChip, { borderColor: colors.warning + '50', backgroundColor: colors.warning + '08' }]}>
+                  <Text style={[ac.codeChipLabel, { color: colors.warning }]}>COACH CODE</Text>
+                  <Text style={[ac.codeChipVal, { color: colors.warning }]}>{academy.coach_code}</Text>
+                </View>
+              ) : null}
+              {academy.player_code ? (
+                <View style={[ac.codeChip, { borderColor: colors.primary + '50', backgroundColor: colors.primary + '08' }]}>
+                  <Text style={[ac.codeChipLabel, { color: colors.primary }]}>PLAYER CODE</Text>
+                  <Text style={[ac.codeChipVal, { color: colors.primary }]}>{academy.player_code}</Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
           {/* Recent invoices */}
           {(academy._invoices || []).length > 0 && (
             <View style={ac.invoiceSection}>
@@ -295,6 +345,20 @@ const ac = StyleSheet.create({
   invAmt: { fontSize: 12, fontWeight: '700', color: colors.text },
   invBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10 },
   invBadgeText: { fontSize: 10, fontWeight: '800' },
+  bankSection: {
+    backgroundColor: colors.warning + '08', borderRadius: borderRadius.md,
+    padding: spacing.sm + 2, borderWidth: 1, borderColor: colors.warning + '30', gap: 6,
+  },
+  bankSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 },
+  bankSectionTitle: { fontSize: 11, fontWeight: '800', color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.5 },
+  bankRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 3 },
+  bankLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', minWidth: 90 },
+  bankVal: { fontSize: 12, color: colors.text, fontWeight: '700', flex: 1, textAlign: 'right' },
+  codesSection: { gap: 6 },
+  codesRow: { flexDirection: 'row', gap: spacing.sm },
+  codeChip: { flex: 1, borderRadius: borderRadius.md, borderWidth: 1.5, padding: spacing.sm, alignItems: 'center', gap: 4 },
+  codeChipLabel: { fontSize: 9, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
+  codeChipVal: { fontSize: 18, fontWeight: '900', letterSpacing: 4 },
   secondaryActions: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
   secBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, paddingVertical: 7, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary + '40' },
   secBtnText: { fontSize: 12, fontWeight: '700' },
