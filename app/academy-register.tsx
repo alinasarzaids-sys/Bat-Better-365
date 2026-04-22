@@ -207,13 +207,6 @@ export default function AcademyRegisterScreen() {
               <Text style={styles.cardTitle}>Register Your Academy</Text>
               <Text style={styles.cardSub}>Get 30 days free — no credit card required</Text>
 
-              <View style={styles.trialBanner}>
-                <MaterialIcons name="star" size={16} color={colors.warning} />
-                <Text style={styles.trialText}>
-                  30-day FREE trial · 850 PKR/player · You earn 300 PKR commission per player
-                </Text>
-              </View>
-
               {/* ── Personal Details ── */}
               <Text style={styles.sectionTitle}>Your Details</Text>
 
@@ -282,15 +275,7 @@ export default function AcademyRegisterScreen() {
               {/* ── Commission Bank Payout Details ── */}
               <View style={styles.sectionDivider}>
                 <MaterialIcons name="account-balance" size={16} color={colors.warning} />
-                <Text style={styles.sectionDividerText}>Your Commission Payout Bank Details</Text>
-              </View>
-              <View style={styles.commissionNote}>
-                <MaterialIcons name="info-outline" size={14} color={colors.warning} />
-                <Text style={styles.commissionNoteText}>
-                  You earn{' '}
-                  <Text style={{ fontWeight: '800', color: colors.warning }}>PKR 300 per player/month</Text>
-                  {' '}commission. Only transfer PKR 550/player to admin after collecting fees.
-                </Text>
+                <Text style={styles.sectionDividerText}>Academy Payout Details</Text>
               </View>
 
               <Text style={styles.label}>Bank Name *</Text>
@@ -339,8 +324,7 @@ export default function AcademyRegisterScreen() {
               </Pressable>
 
               <Text style={styles.termsNote}>
-                By registering you agree to the Bat Better 365 terms. After the 30-day trial, players
-                pay PKR 850/month. You earn PKR 300/player and transfer PKR 550/player to admin via bank transfer.
+                By registering you agree to the Bat Better terms.
               </Text>
             </View>
           )}
