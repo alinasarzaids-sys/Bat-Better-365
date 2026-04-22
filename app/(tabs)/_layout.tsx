@@ -146,9 +146,10 @@ function MiniSessionBar() {
 
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
   const [showAcademy, setShowAcademy] = useState(true); // default show, hide once loaded
-  const isSuperAdmin = user?.email === SUPER_ADMIN_EMAIL;
+  // Only show admin tab when definitively confirmed as super admin (not during loading)
+  const isSuperAdmin = !loading && user?.email === SUPER_ADMIN_EMAIL;
 
   useEffect(() => {
     if (!user?.id) return;
