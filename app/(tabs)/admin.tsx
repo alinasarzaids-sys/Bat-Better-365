@@ -330,33 +330,25 @@ export default function AdminDashboardTab() {
   const load = useCallback(async () => {
     const supabase = getSupabaseClient();
 
-    const { data: acads } = await supabase
-      .from('academies')
-      .select('*')
-      .order('created_at', { ascending: false });
+    // Use service-role edge function to bypass RLS — guarantees real player counts
+    try {
+      const { data, error } = await supabase.functions.invoke('get-admin-data', { body: {} });
 
-    if (!acads) { setLoading(false); return; }
+      if (error || !data?.academies) {
+        console.warn('get-admin-data failed, falling back to direct queries', error);
+        setLoading(false);
+        return;
+      }
 
-    const enriched = await Promise.all(acads.map(async (a: any) => {
-      const [{ count: pCount }, { data: invData }] = await Promise.all([
-        supabase.from('academy_members').select('*', { count: 'exact', head: true })
-          .eq('academy_id', a.id).eq('role', 'player').eq('status', 'approved').eq('is_active', true),
-        supabase.from('billing_invoices').select('*').eq('academy_id', a.id)
-          .order('created_at', { ascending: false }).limit(5),
-      ]);
-      return { ...a, _playerCount: pCount ?? 0, _invoices: invData || [] };
-    }));
+      setAcademies(data.academies);
+      setGlobalStats(data.globalStats);
+    } catch (e) {
+      console.error('Admin load error:', e);
+    }
 
-    const totalPlayers = enriched.reduce((s: number, a: any) => s + (a._playerCount || 0), 0);
-    const pendingPayments = enriched.filter((a: any) =>
-      a.billing_status === 'locked' || (a._invoices || []).some((inv: any) => inv.status === 'unpaid')
-    ).length;
-
-    setAcademies(enriched);
-    setGlobalStats({ totalAcademies: enriched.length, totalPlayers, pendingPayments });
     setLoading(false);
 
-    // Load last run
+    // Load last run timestamp
     const lr = await AsyncStorage.getItem(LAST_RUN_KEY);
     setLastRun(lr);
   }, []);
