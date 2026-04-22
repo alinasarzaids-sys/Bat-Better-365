@@ -224,7 +224,7 @@ serve(async (req) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: 'Bat Better 365 Billing <billing@batbetter365.com>',
+          from: 'Bat Better 365 Billing <onboarding@resend.dev>',  // use resend.dev until batbetter365.com domain is verified in Resend
           to: [academy.owner_email],
           subject: `Invoice ${invNum} — ${netPayable.toLocaleString()} ${currency} due by ${dueDate} | ${academy.name}`,
           html: emailHtml,

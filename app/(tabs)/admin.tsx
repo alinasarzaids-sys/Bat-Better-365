@@ -330,13 +330,36 @@ export default function AdminDashboardTab() {
   const load = useCallback(async () => {
     const supabase = getSupabaseClient();
 
-    // Use service-role edge function to bypass RLS — guarantees real player counts
     try {
-      const { data, error } = await supabase.functions.invoke('get-admin-data', { body: {} });
+      // Load last run timestamp in parallel
+      const [adminDataResult, lr] = await Promise.all([
+        supabase.functions.invoke('get-admin-data', { body: {} }),
+        AsyncStorage.getItem(LAST_RUN_KEY),
+      ]);
 
-      if (error || !data?.academies) {
-        console.warn('get-admin-data failed, falling back to direct queries', error);
+      setLastRun(lr);
+
+      const { data, error } = adminDataResult;
+
+      if (error) {
+        let errMsg = error.message;
+        try {
+          const { FunctionsHttpError } = await import('@supabase/supabase-js');
+          if (error instanceof FunctionsHttpError) {
+            const t = await error.context?.text();
+            errMsg = t || error.message;
+          }
+        } catch {}
+        console.warn('get-admin-data error:', errMsg);
         setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
+      if (!data?.academies) {
+        console.warn('get-admin-data returned no academies');
+        setLoading(false);
+        setRefreshing(false);
         return;
       }
 
@@ -344,18 +367,15 @@ export default function AdminDashboardTab() {
       setGlobalStats(data.globalStats);
     } catch (e) {
       console.error('Admin load error:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-
-    setLoading(false);
-
-    // Load last run timestamp
-    const lr = await AsyncStorage.getItem(LAST_RUN_KEY);
-    setLastRun(lr);
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
+  const onRefresh = async () => { setRefreshing(true); await load(); };
 
   // ─── Run Daily Billing ────────────────────────────────────────────────────
   const handleRunBilling = async () => {

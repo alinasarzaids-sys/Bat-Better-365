@@ -201,7 +201,7 @@ serve(async (req) => {
           method: 'POST',
           headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            from: 'Bat Better 365 Billing <billing@batbetter365.com>',
+            from: 'Bat Better 365 Billing <onboarding@resend.dev>',  // use resend.dev until batbetter365.com domain is verified in Resend
             to: [academy.owner_email],
             subject: `Your Bat Better subscription expires in 5 days — ${netPayable.toLocaleString()} ${currency} due | ${academy.name}`,
             html: emailHtml,
