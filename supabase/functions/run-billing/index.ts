@@ -8,13 +8,11 @@ const ADMIN_BANK = {
   accountNumber: '50227900684903',
   iban: 'PK03HABB0050227900684903',
   branch: 'IBB Dehli Mercntl So',
-  whatsapp: '+923001234567',
-  email: 'billing@batbetter365.com',
 };
 
-const GROSS_PRICE_PER_PLAYER = 850;
-const COACH_COMMISSION = 300;
-const NET_PER_PLAYER = 550;
+const GROSS_PER_PLAYER = 850;
+const COMMISSION_PER_PLAYER = 300;
+const NET_PER_PLAYER = GROSS_PER_PLAYER - COMMISSION_PER_PLAYER; // 550 PKR
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -28,10 +26,12 @@ serve(async (req) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    // Find academies whose trial_end_date or next_billing_date is exactly 5 days away
+    // Academies whose trial or billing date is exactly 5 days away
     const target = new Date(today);
     target.setDate(target.getDate() + 5);
     const targetStr = target.toISOString().split('T')[0];
+
+    console.log(`Running billing for date: ${targetStr}`);
 
     const { data: academies, error: aErr } = await supabase
       .from('academies')
@@ -40,12 +40,13 @@ serve(async (req) => {
       .neq('billing_status', 'locked');
 
     if (aErr) throw new Error(aErr.message);
+    console.log(`Found ${(academies || []).length} academies due in 5 days`);
 
     const results: any[] = [];
     const resendKey = Deno.env.get('RESEND_API_KEY');
 
     for (const academy of (academies || [])) {
-      // Count approved active players only (coaches are FREE)
+      // Strictly count approved active players only — coaches are always FREE
       const { data: members } = await supabase
         .from('academy_members')
         .select('id, display_name')
@@ -55,10 +56,11 @@ serve(async (req) => {
         .eq('is_active', true);
 
       const playerCount = (members || []).length;
-      const grossTotal = playerCount * GROSS_PRICE_PER_PLAYER;
-      const commissionTotal = playerCount * COACH_COMMISSION;
-      const netPayable = playerCount * NET_PER_PLAYER;
+      const netPayable = NET_PER_PLAYER * playerCount;
+      const grossTotal = GROSS_PER_PLAYER * playerCount;
+      const commissionTotal = COMMISSION_PER_PLAYER * playerCount;
       const currency = academy.currency || 'PKR';
+      const coachName = academy.name;
 
       const { data: invNum } = await supabase.rpc('generate_invoice_number', { p_academy_id: academy.id });
 
@@ -86,56 +88,114 @@ serve(async (req) => {
         .select()
         .single();
 
-      // Send invoice email
+      // Send email using exact template
       if (resendKey && academy.owner_email && invoice) {
-        const playerRows = (members || []).map((m: any, i: number) =>
-          `<tr style="background:${i % 2 === 0 ? '#f9fafb' : '#fff'}">
-            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;color:#6b7280;">${i + 1}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;font-weight:600;">${m.display_name || 'Player'}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;">${currency} ${GROSS_PRICE_PER_PLAYER.toLocaleString()}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;color:#16a34a;font-weight:700;">− ${currency} ${COACH_COMMISSION.toLocaleString()}</td>
-            <td style="padding:8px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:800;color:#1d4ed8;">${currency} ${NET_PER_PLAYER.toLocaleString()}</td>
-          </tr>`
-        ).join('');
+        const emailHtml = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bat Better 365 — Invoice ${invNum}</title>
+</head>
+<body style="font-family:system-ui,-apple-system,sans-serif;background:#f3f4f6;margin:0;padding:24px;">
+  <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
-        const html = `<!DOCTYPE html><html><body style="font-family:system-ui,sans-serif;background:#f3f4f6;margin:0;padding:24px;">
-<div style="max-width:640px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-<div style="background:linear-gradient(135deg,#16a34a,#15803d);padding:32px 24px;text-align:center;">
-<h1 style="color:#fff;margin:0;font-size:28px;font-weight:900;">🏏 Bat Better 365</h1>
-<p style="color:rgba(255,255,255,0.85);margin:8px 0 0;">Academy Management Platform</p>
-</div>
-<div style="padding:24px;">
-<h2 style="margin:0 0 6px;">MONTHLY INVOICE — ${invNum}</h2>
-<p style="color:#6b7280;">Issued to: <strong>${academy.name}</strong> · Due: <strong style="color:#dc2626;">${dueDate}</strong></p>
-<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:16px;">
-<thead><tr style="background:#111827;">
-<th style="padding:10px 12px;text-align:left;color:#9ca3af;">#</th>
-<th style="padding:10px 12px;text-align:left;color:#fff;">Player</th>
-<th style="padding:10px 12px;text-align:right;color:#fff;">Gross</th>
-<th style="padding:10px 12px;text-align:right;color:#86efac;">Commission</th>
-<th style="padding:10px 12px;text-align:right;color:#93c5fd;">Net Payable</th>
-</tr></thead>
-<tbody>${playerRows || '<tr><td colspan="5" style="padding:20px;text-align:center;color:#6b7280;">No approved players</td></tr>'}</tbody>
-<tfoot><tr style="background:#f3f4f6;border-top:2px solid #e5e7eb;">
-<td colspan="2" style="padding:12px;font-weight:900;">TOTAL (${playerCount} players)</td>
-<td style="padding:12px;text-align:right;font-weight:700;">${currency} ${grossTotal.toLocaleString()}</td>
-<td style="padding:12px;text-align:right;color:#16a34a;font-weight:700;">− ${currency} ${commissionTotal.toLocaleString()}</td>
-<td style="padding:12px;text-align:right;font-weight:900;color:#1d4ed8;font-size:15px;">${currency} ${netPayable.toLocaleString()}</td>
-</tr></tfoot>
-</table>
-</div>
-<div style="padding:24px;background:#fefce8;border-top:2px solid #fde68a;">
-<h3 style="margin:0 0 12px;color:#92400e;">Transfer ${currency} ${netPayable.toLocaleString()} to HBL</h3>
-<table style="font-size:14px;color:#374151;background:#fff;border-radius:10px;width:100%;overflow:hidden;">
-<tr style="background:#f9fafb;"><td style="padding:10px 14px;font-weight:800;color:#92400e;width:140px;">Bank</td><td style="padding:10px 14px;">${ADMIN_BANK.bankName}</td></tr>
-<tr><td style="padding:10px 14px;font-weight:800;color:#92400e;">Account</td><td style="padding:10px 14px;font-weight:700;">${ADMIN_BANK.accountTitle}</td></tr>
-<tr style="background:#f9fafb;"><td style="padding:10px 14px;font-weight:800;color:#92400e;">Number</td><td style="padding:10px 14px;font-family:monospace;font-weight:800;">${ADMIN_BANK.accountNumber}</td></tr>
-<tr><td style="padding:10px 14px;font-weight:800;color:#92400e;">IBAN</td><td style="padding:10px 14px;font-family:monospace;color:#1d4ed8;">${ADMIN_BANK.iban}</td></tr>
-<tr style="background:#f9fafb;"><td style="padding:10px 14px;font-weight:800;color:#92400e;">Reference</td><td style="padding:10px 14px;font-weight:700;">${invNum} — ${academy.name}</td></tr>
-</table>
-<p style="margin:14px 0 0;font-size:13px;color:#92400e;">Send receipt to: WhatsApp <strong>${ADMIN_BANK.whatsapp}</strong> or Email <strong>${ADMIN_BANK.email}</strong></p>
-</div>
-</div></body></html>`;
+    <!-- Header -->
+    <div style="background:linear-gradient(135deg,#16a34a,#15803d);padding:32px 24px;text-align:center;">
+      <h1 style="color:#ffffff;margin:0;font-size:26px;font-weight:900;">🏏 Bat Better 365</h1>
+      <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px;">Academy Management Platform</p>
+    </div>
+
+    <!-- Body -->
+    <div style="padding:28px 24px;">
+      <p style="font-size:16px;color:#111827;margin:0 0 20px;">
+        Hi <strong>${coachName}</strong>,
+      </p>
+      <p style="font-size:15px;color:#374151;line-height:1.7;margin:0 0 24px;">
+        Your current Bat Better subscription cycle will expire in 5 days. To ensure your players do not lose access to their training portal and AI analytics, please settle the invoice below.
+      </p>
+
+      <!-- Billing Breakdown -->
+      <div style="background:#f0fdf4;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #bbf7d0;">
+        <h3 style="margin:0 0 14px;color:#15803d;font-size:16px;font-weight:800;">📊 Billing Breakdown</h3>
+        <table style="width:100%;font-size:15px;color:#374151;border-collapse:collapse;">
+          <tr>
+            <td style="padding:6px 0;">Approved Players:</td>
+            <td style="padding:6px 0;text-align:right;font-weight:700;">${playerCount}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;">Standard Rate:</td>
+            <td style="padding:6px 0;text-align:right;">${playerCount} x ${GROSS_PER_PLAYER} ${currency}</td>
+          </tr>
+          <tr>
+            <td style="padding:6px 0;color:#16a34a;font-weight:700;">Coach Commission:</td>
+            <td style="padding:6px 0;text-align:right;color:#16a34a;font-weight:700;">- ${playerCount} x ${COMMISSION_PER_PLAYER} ${currency} (Your cut!)</td>
+          </tr>
+          <tr style="border-top:2px solid #86efac;">
+            <td style="padding:12px 0 4px;font-size:17px;font-weight:900;color:#111827;">💰 Total Amount Due:</td>
+            <td style="padding:12px 0 4px;text-align:right;font-size:22px;font-weight:900;color:#1d4ed8;">${netPayable.toLocaleString()} ${currency}</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Payment Instructions -->
+      <div style="background:#fefce8;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #fde68a;">
+        <h3 style="margin:0 0 14px;color:#92400e;font-size:16px;font-weight:800;">🏦 Payment Instructions</h3>
+        <p style="font-size:14px;color:#78350f;margin:0 0 14px;line-height:1.6;">
+          To renew your academy for the next 30 days, please transfer the Total Amount Due to the following account:
+        </p>
+        <table style="width:100%;font-size:14px;background:#fff;border-radius:10px;overflow:hidden;border-collapse:collapse;">
+          <tr style="background:#fef9c3;">
+            <td style="padding:10px 14px;font-weight:800;color:#92400e;width:140px;">Bank Name</td>
+            <td style="padding:10px 14px;font-weight:700;color:#111827;">${ADMIN_BANK.bankName}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;font-weight:800;color:#92400e;">Account Title</td>
+            <td style="padding:10px 14px;font-weight:700;color:#111827;">${ADMIN_BANK.accountTitle}</td>
+          </tr>
+          <tr style="background:#fef9c3;">
+            <td style="padding:10px 14px;font-weight:800;color:#92400e;">Account Number</td>
+            <td style="padding:10px 14px;font-family:monospace;font-weight:900;font-size:15px;letter-spacing:1px;color:#111827;">${ADMIN_BANK.accountNumber}</td>
+          </tr>
+          <tr>
+            <td style="padding:10px 14px;font-weight:800;color:#92400e;">IBAN</td>
+            <td style="padding:10px 14px;font-family:monospace;font-weight:800;color:#1d4ed8;">${ADMIN_BANK.iban}</td>
+          </tr>
+          <tr style="background:#fef9c3;">
+            <td style="padding:10px 14px;font-weight:800;color:#92400e;">Branch</td>
+            <td style="padding:10px 14px;color:#374151;">${ADMIN_BANK.branch}</td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Next Steps -->
+      <div style="background:#eff6ff;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #bfdbfe;">
+        <h3 style="margin:0 0 12px;color:#1e40af;font-size:15px;font-weight:800;">Next Steps:</h3>
+        <p style="font-size:14px;color:#1e40af;line-height:1.7;margin:0;">
+          Once you have made the transfer, please reply directly to this email with a screenshot of the receipt. Our admin team will verify the payment and instantly unlock your roster for the next 30 days!
+        </p>
+      </div>
+
+      <p style="font-size:15px;color:#374151;margin:0;">Keep up the great work in the nets,</p>
+      <p style="font-size:15px;font-weight:700;color:#15803d;margin:6px 0 0;">The Bat Better Team 🏏</p>
+    </div>
+
+    <!-- Warning bar -->
+    <div style="padding:14px 24px;background:#fff1f2;border-top:2px solid #fecdd3;">
+      <p style="margin:0;font-size:13px;color:#be123c;font-weight:600;">
+        ⚠️ Payment due by <strong>${dueDate}</strong>. Failure to pay will result in your academy and all players being locked from the app.
+      </p>
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:18px 24px;text-align:center;color:#9ca3af;font-size:12px;background:#f9fafb;border-top:1px solid #e5e7eb;">
+      <p style="margin:0;">Bat Better 365 · Academy Management Platform</p>
+      <p style="margin:4px 0 0;">Invoice ${invNum} · Generated ${invoiceDate}</p>
+    </div>
+  </div>
+</body>
+</html>`;
 
         await fetch('https://api.resend.com/emails', {
           method: 'POST',
@@ -143,8 +203,8 @@ serve(async (req) => {
           body: JSON.stringify({
             from: 'Bat Better 365 Billing <billing@batbetter365.com>',
             to: [academy.owner_email],
-            subject: `Invoice ${invNum} — ${currency} ${netPayable.toLocaleString()} due ${dueDate} | ${academy.name}`,
-            html,
+            subject: `Your Bat Better subscription expires in 5 days — ${netPayable.toLocaleString()} ${currency} due | ${academy.name}`,
+            html: emailHtml,
           }),
         });
 
@@ -168,6 +228,7 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (err: any) {
+    console.error('run-billing error:', err.message);
     return new Response(JSON.stringify({ error: err.message }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
