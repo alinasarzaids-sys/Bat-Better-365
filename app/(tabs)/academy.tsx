@@ -959,14 +959,12 @@ export default function AcademyScreen() {
                         style={[pendingStyles.actionBtn, { backgroundColor: colors.error + '18', borderColor: colors.error + '40' }]}
                         onPress={async () => {
                           setApprovingId(m.id);
-                          // Optimistically remove from list immediately
+                          // Optimistically remove immediately — don't reload after (avoids race condition)
                           const remaining = pendingMembers.filter(p => p.id !== m.id);
                           setPendingMembers(remaining);
                           if (remaining.length === 0) setShowPendingModal(false);
                           await academyService.rejectPlayer(m.id);
                           setApprovingId(null);
-                          // Reload after short delay to let DB propagate
-                          setTimeout(() => { if (currentMembership) loadCoachData(currentMembership.academy.id); }, 1000);
                         }}
                         disabled={approvingId === m.id}
                       >
@@ -976,14 +974,12 @@ export default function AcademyScreen() {
                         style={[pendingStyles.actionBtn, { backgroundColor: colors.success + '18', borderColor: colors.success + '40' }]}
                         onPress={async () => {
                           setApprovingId(m.id);
-                          // Optimistically remove from list immediately
+                          // Optimistically remove immediately — don't reload after (avoids race condition)
                           const remaining = pendingMembers.filter(p => p.id !== m.id);
                           setPendingMembers(remaining);
                           if (remaining.length === 0) setShowPendingModal(false);
                           await academyService.approvePlayer(m.id);
                           setApprovingId(null);
-                          // Reload after short delay to let DB propagate
-                          setTimeout(() => { if (currentMembership) loadCoachData(currentMembership.academy.id); }, 1000);
                           showAlert('Approved!', `${m.display_name || 'Player'} can now access the academy.`);
                         }}
                         disabled={approvingId === m.id}
