@@ -429,7 +429,10 @@ export default function LoginScreen() {
                     placeholderTextColor={colors.textSecondary}
                     keyboardType="email-address"
                     autoCapitalize="none"
-                    autoFocus
+                    autoCorrect={false}
+                    autoFocus={Platform.OS === 'ios'}
+                    editable={!busy}
+                    selectTextOnFocus
                   />
                   <Pressable style={[styles.btn, busy && styles.btnDisabled]} onPress={handleForgotSend} disabled={busy}>
                     {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Send Reset Code</Text>}

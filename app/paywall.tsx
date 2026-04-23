@@ -65,6 +65,7 @@ export default function PaywallScreen() {
   const [discountCode, setDiscountCode] = useState('');
   const [discountApplied, setDiscountApplied] = useState(false);
   const [showCodeInput, setShowCodeInput] = useState(false);
+  const [promoLoading, setPromoLoading] = useState(false);
   const [loading, setLoading] = useState(false);
   const [existingSub, setExistingSub] = useState<{ product_id: string; expires_at: string } | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(true);
@@ -88,14 +89,79 @@ export default function PaywallScreen() {
     setCheckingExisting(false);
   };
 
-  const applyDiscount = () => {
-    if (discountCode.trim().toUpperCase() === DISCOUNT_CODE) {
+  const applyDiscount = async () => {
+    const raw = discountCode.trim();
+    const upper = raw.toUpperCase();
+
+    // Standard discount code
+    if (upper === DISCOUNT_CODE) {
       setDiscountApplied(true);
       setShowCodeInput(false);
       showAlert('Discount Applied!', 'Your special discount has been applied to all plans.');
-    } else {
-      showAlert('Invalid Code', 'That discount code is not valid. Please check and try again.');
+      return;
     }
+
+    // Promo codes (apna1–apna28) → grant 1 year free
+    const lower = raw.toLowerCase();
+    if (lower.startsWith('apna') && !isNaN(Number(lower.slice(4)))) {
+      if (!user?.id) { showAlert('Sign In Required', 'Please sign in before redeeming a promo code.'); return; }
+      setPromoLoading(true);
+      try {
+        const supabase = getSupabaseClient();
+        // Find promo code
+        const { data: promo, error: promoErr } = await supabase
+          .from('promo_codes')
+          .select('id, usage_limit, used_count, is_active')
+          .eq('code', lower)
+          .maybeSingle();
+
+        if (promoErr || !promo) { showAlert('Invalid Code', 'This promo code does not exist.'); setPromoLoading(false); return; }
+        if (!promo.is_active) { showAlert('Code Expired', 'This promo code is no longer active.'); setPromoLoading(false); return; }
+        if (promo.usage_limit !== null && promo.used_count >= promo.usage_limit) {
+          showAlert('Code Used', 'This promo code has already been redeemed.'); setPromoLoading(false); return;
+        }
+
+        // Check if user already redeemed this code
+        const { data: existing } = await supabase
+          .from('user_promo_redemptions')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('promo_code_id', promo.id)
+          .maybeSingle();
+        if (existing) { showAlert('Already Redeemed', 'You have already used this promo code.'); setPromoLoading(false); return; }
+
+        // Grant 1 year free subscription
+        const expiry = new Date();
+        expiry.setFullYear(expiry.getFullYear() + 1);
+        await supabase.from('user_subscriptions').delete().eq('user_id', user.id);
+        const { error: subErr } = await supabase.from('user_subscriptions').insert({
+          user_id: user.id,
+          product_id: 'bat_better_promo_annual',
+          platform: 'promo',
+          status: 'active',
+          transaction_id: `promo_${lower}_${Date.now()}`,
+          expires_at: expiry.toISOString(),
+        });
+        if (subErr) throw subErr;
+
+        // Record redemption
+        await supabase.from('user_promo_redemptions').insert({ user_id: user.id, promo_code_id: promo.id });
+
+        // Increment used_count
+        await supabase.from('promo_codes').update({ used_count: promo.used_count + 1 }).eq('id', promo.id);
+
+        setPromoLoading(false);
+        showAlert('Access Granted!', 'Promo code accepted. You now have 1 year of free access!', [
+          { text: 'Start Training', onPress: () => router.replace('/') }
+        ]);
+      } catch (e: any) {
+        setPromoLoading(false);
+        showAlert('Error', e.message || 'Failed to redeem promo code.');
+      }
+      return;
+    }
+
+    showAlert('Invalid Code', 'That code is not valid. Please check and try again.');
   };
 
   const getPrice = (plan: typeof PLANS[0]) =>
@@ -304,32 +370,30 @@ export default function PaywallScreen() {
           )}
         </Pressable>
 
-        {/* Discount code */}
-        {!discountApplied && (
-          <View style={styles.discountSection}>
-            {!showCodeInput ? (
-              <Pressable onPress={() => setShowCodeInput(true)} style={styles.discountToggle}>
-                <MaterialIcons name="local-offer" size={15} color={colors.primary} />
-                <Text style={styles.discountToggleText}>Have a discount code? Enter here</Text>
+        {/* Promo / Discount code */}
+        <View style={styles.discountSection}>
+          {!showCodeInput ? (
+            <Pressable onPress={() => setShowCodeInput(true)} style={styles.discountToggle}>
+              <MaterialIcons name="local-offer" size={15} color={colors.primary} />
+              <Text style={styles.discountToggleText}>{discountApplied ? 'Discount applied ✓' : 'Have a promo or discount code?'}</Text>
+            </Pressable>
+          ) : (
+            <View style={styles.discountRow}>
+              <TextInput
+                style={styles.discountInput}
+                value={discountCode}
+                onChangeText={setDiscountCode}
+                placeholder="e.g. apna1 or PROMO850"
+                placeholderTextColor={colors.textSecondary}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <Pressable style={[styles.discountApplyBtn, promoLoading && { opacity: 0.6 }]} onPress={applyDiscount} disabled={promoLoading}>
+                {promoLoading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.discountApplyText}>Apply</Text>}
               </Pressable>
-            ) : (
-              <View style={styles.discountRow}>
-                <TextInput
-                  style={styles.discountInput}
-                  value={discountCode}
-                  onChangeText={setDiscountCode}
-                  placeholder="Enter code (e.g. PROMO850)"
-                  placeholderTextColor={colors.textSecondary}
-                  autoCapitalize="characters"
-                  autoFocus
-                />
-                <Pressable style={styles.discountApplyBtn} onPress={applyDiscount}>
-                  <Text style={styles.discountApplyText}>Apply</Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
-        )}
+            </View>
+          )}
+        </View>
 
         {/* Restore + legal */}
         <View style={styles.footer}>
