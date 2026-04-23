@@ -946,13 +946,13 @@ export default function AcademyScreen() {
                       <MaterialIcons name="person" size={22} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={pendingStyles.requestName}>{m.display_name || profile?.full_name || 'Player'}</Text>
-                      <Text style={pendingStyles.requestEmail}>{profile?.email || 'No email'}</Text>
-                  <Text style={pendingStyles.requestMeta}>
-                      {m.role === 'coach' ? 'Coach' : m.position || 'Batsman'} ·
-                      {m.role === 'coach' ? ' Assistant Coach Request' : ' Player Request'} ·
-                      Requested {new Date(m.joined_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
-                    </Text>
+                      <Text style={pendingStyles.requestName}>{m.display_name || profile?.full_name || profile?.username || 'Unknown Player'}</Text>
+                      <Text style={[pendingStyles.requestMeta, { color: getPositionColor(m.position || 'Batsman'), fontWeight: '700', fontSize: 12 }]}>
+                        {m.role === 'coach' ? 'Assistant Coach' : m.position || 'Batsman'}
+                      </Text>
+                      <Text style={pendingStyles.requestMeta}>
+                        {m.role === 'coach' ? 'Coach Request' : 'Player Request'} · Requested {new Date(m.joined_at).toLocaleDateString('en-US', { day: 'numeric', month: 'short' })}
+                      </Text>
                     </View>
                     <View style={pendingStyles.requestActions}>
                       <Pressable
@@ -1086,7 +1086,6 @@ const pendingStyles = StyleSheet.create({
   requestCard: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.background, borderRadius: borderRadius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.md },
   requestAvatar: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center' },
   requestName: { fontSize: 14, fontWeight: '700', color: colors.text },
-  requestEmail: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
   requestMeta: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
   requestActions: { flexDirection: 'row', gap: spacing.sm },
   actionBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', borderWidth: 1.5 },
