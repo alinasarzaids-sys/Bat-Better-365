@@ -398,7 +398,17 @@ export default function AcademyRegisterScreen() {
                 </Text>
               </View>
 
-              <Pressable style={styles.btn} onPress={() => router.replace('/')}>
+              {/* Portal hint */}
+              <View style={styles.portalHintCard}>
+                <MaterialIcons name="vpn-key" size={15} color={colors.primary} />
+                <Text style={styles.portalHintText}>
+                  You can view and reshare these codes anytime inside the{' '}
+                  <Text style={{ fontWeight: '800', color: colors.primary }}>Academy Portal</Text>
+                  {' '}by tapping the key icon in the top-right corner.
+                </Text>
+              </View>
+
+              <Pressable style={styles.btn} onPress={() => router.replace('/(tabs)/academy' as any)}>
                 <MaterialIcons name="arrow-forward" size={20} color="#fff" />
                 <Text style={styles.btnText}>Enter My Academy Portal</Text>
               </Pressable>
@@ -498,4 +508,11 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   billingReminderText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
+  portalHintCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: colors.primary + '08', borderRadius: borderRadius.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.primary + '25',
+    marginBottom: spacing.xs,
+  },
+  portalHintText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
 });

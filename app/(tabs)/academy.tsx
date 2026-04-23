@@ -342,6 +342,7 @@ export default function AcademyScreen() {
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [previewAsPlayer, setPreviewAsPlayer] = useState(false);
+  const [showEditAcademyModal, setShowEditAcademyModal] = useState(false);
 
   // Join modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
