@@ -367,6 +367,9 @@ export default function AcademyScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  // Also reload when user changes (e.g. right after registration session is set)
+  useEffect(() => { if (user?.id) load(); }, [user?.id]);
+
   const currentMembership = memberships[selectedIdx] || null;
   const memberRole = currentMembership?.member.role;
   const isAdmin = memberRole === 'admin';
