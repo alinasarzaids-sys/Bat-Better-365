@@ -393,7 +393,18 @@ function DatePickerModal({ visible, value, onConfirm, onClose, label }: {
   React.useEffect(() => { setMonthText(String(month).padStart(2, '0')); }, [month]);
   React.useEffect(() => { setYearText(String(year)); }, [year]);
   const formatted = `${String(clampedDay).padStart(2, '0')} ${MONTHS[month - 1]} ${year}`;
-  const handleConfirm = () => { onConfirm(`${year}-${String(month).padStart(2, '0')}-${String(clampedDay).padStart(2, '0')}`); onClose(); };
+  const handleConfirm = () => {
+    const fd = parseInt(dayText, 10);
+    const fm = parseInt(monthText, 10);
+    const fy = parseInt(yearText, 10);
+    const finalDay = (!isNaN(fd) && fd >= 1 && fd <= daysInMonth) ? fd : day;
+    const finalMonth = (!isNaN(fm) && fm >= 1 && fm <= 12) ? fm : month;
+    const finalYear = (!isNaN(fy) && fy >= 2020 && fy <= 2099) ? fy : year;
+    const dm = new Date(finalYear, finalMonth, 0).getDate();
+    const safeD = Math.min(finalDay, dm);
+    onConfirm(`${finalYear}-${String(finalMonth).padStart(2, '0')}-${String(safeD).padStart(2, '0')}`);
+    onClose();
+  };
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={tp.overlay} onPress={onClose}>
