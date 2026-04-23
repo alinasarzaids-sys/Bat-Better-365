@@ -70,12 +70,25 @@ export default function AcademyRegisterScreen() {
       // Try sign-up first; if account exists, sign in
       let uid: string | null = null;
 
-      const { error: signUpErr, user } = await signUpWithPassword(emailLower, password, {
+      const { error: signUpErr, user, needsEmailConfirmation } = await signUpWithPassword(emailLower, password, {
         full_name: fullName.trim(),
       });
 
       if (!signUpErr && user) {
         uid = user.id;
+      } else if (!signUpErr && needsEmailConfirmation) {
+        // Email confirmation required — try sign in immediately to get session
+        const { error: loginErr, user: loginUser } = await signInWithPassword(emailLower, password);
+        if (!loginErr && loginUser) {
+          uid = loginUser.id;
+        } else {
+          // Signup succeeded but can't sign in yet — use Supabase directly to get user
+          const supabaseDirect = getSupabaseClient();
+          const { data: sessionData } = await supabaseDirect.auth.getSession();
+          if (sessionData?.session?.user) {
+            uid = sessionData.session.user.id;
+          }
+        }
       } else if (signUpErr) {
         // Account may already exist — try sign in
         const { error: loginErr, user: loginUser } = await signInWithPassword(emailLower, password);
@@ -89,9 +102,15 @@ export default function AcademyRegisterScreen() {
       }
 
       if (!uid) {
-        setLoading(false);
-        showAlert('Error', 'Account creation failed. Please try again.');
-        return;
+        // Last resort: try sign in directly
+        const { error: lastErr, user: lastUser } = await signInWithPassword(emailLower, password);
+        if (!lastErr && lastUser) {
+          uid = lastUser.id;
+        } else {
+          setLoading(false);
+          showAlert('Error', 'Account creation failed. Please try again or contact support.');
+          return;
+        }
       }
 
       const supabase = getSupabaseClient();
