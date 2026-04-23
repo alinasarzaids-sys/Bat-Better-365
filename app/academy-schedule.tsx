@@ -1032,6 +1032,176 @@ function DaySessionsModal({ visible, dateStr, entries, onClose, router, academyI
   );
 }
 
+// ─── AI Session Planner Modal ───────────────────────────────────────────────
+function AIPlannerModal({ visible, sessionColor, onApply, onClose }: {
+  visible: boolean;
+  sessionColor: string;
+  onApply: (title: string, objectives: string[], blocks: PlanBlock[], coachNotes: string) => void;
+  onClose: () => void;
+}) {
+  const [sessionType, setSessionType] = useState('Training');
+  const [duration, setDuration] = useState('90');
+  const [level, setLevel] = useState('Mixed');
+  const [focusArea, setFocusArea] = useState('');
+  const [squadSize, setSquadSize] = useState('12');
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const SESSION_TYPES = ['Training', 'Batting', 'Bowling', 'Fielding', 'Fitness', 'Match Sim'];
+  const LEVELS = ['Beginner', 'Intermediate', 'Advanced', 'Mixed'];
+
+  const handleGenerate = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error: fnErr } = await supabase.functions.invoke('ai-session-planner', {
+        body: {
+          sessionType,
+          durationMinutes: parseInt(duration, 10) || 90,
+          playerLevel: level,
+          focusArea: focusArea.trim() || sessionType,
+          squadSize,
+          additionalNotes: notes.trim() || undefined,
+        },
+      });
+      if (fnErr || !data?.plan) {
+        setError('AI generation failed. Please try again.');
+        setLoading(false);
+        return;
+      }
+      const plan = data.plan;
+      const startTime = now12();
+      const [baseH, baseM] = startTime.split(':').map(Number);
+      const planBlocks: PlanBlock[] = (plan.blocks || []).map((b: any, i: number) => {
+        const startMins = (baseH * 60 + baseM) + (b.startOffset || 0);
+        const endMins = startMins + (b.durationMinutes || 15);
+        const fmt = (m: number) => {
+          const h = Math.floor(m / 60) % 24;
+          const mn = m % 60;
+          return `${String(h).padStart(2, '0')}:${String(mn).padStart(2, '0')}`;
+        };
+        return {
+          id: `ai_${i}_${Date.now()}`,
+          startTime: fmt(startMins),
+          endTime: fmt(endMins),
+          activities: Array.isArray(b.activities) ? b.activities : ['Batting'],
+          notes: [b.drills, b.coachingPoints].filter(Boolean).join('\n'),
+        };
+      });
+      onApply(
+        plan.title || sessionType,
+        (plan.objectives || []).filter(Boolean),
+        planBlocks,
+        plan.coachNotes || '',
+      );
+      onClose();
+    } catch (e: any) {
+      setError(e.message || 'Something went wrong');
+    }
+    setLoading(false);
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <View style={aiPlanStyles.overlay}>
+        <View style={aiPlanStyles.sheet}>
+          <View style={aiPlanStyles.handle} />
+          <View style={aiPlanStyles.header}>
+            <View style={aiPlanStyles.headerLeft}>
+              <View style={[aiPlanStyles.aiIcon, { backgroundColor: sessionColor + '20' }]}>
+                <MaterialIcons name="auto-awesome" size={18} color={sessionColor} />
+              </View>
+              <Text style={aiPlanStyles.headerTitle}>AI Session Planner</Text>
+            </View>
+            <Pressable onPress={onClose} hitSlop={8}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
+          </View>
+          <ScrollView contentContainerStyle={aiPlanStyles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+            <Text style={aiPlanStyles.desc}>
+              Describe your session and AI will generate objectives, training blocks, and drill suggestions instantly.
+            </Text>
+
+            <Text style={aiPlanStyles.label}>Session Focus</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 6, marginBottom: spacing.sm }}>
+                {SESSION_TYPES.map(t => (
+                  <Pressable key={t} style={[aiPlanStyles.chip, sessionType === t && { backgroundColor: sessionColor, borderColor: sessionColor }]} onPress={() => setSessionType(t)}>
+                    <Text style={[aiPlanStyles.chipText, sessionType === t && { color: colors.textLight }]}>{t}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+
+            <Text style={aiPlanStyles.label}>Player Level</Text>
+            <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginBottom: spacing.sm }}>
+              {LEVELS.map(l => (
+                <Pressable key={l} style={[aiPlanStyles.chip, level === l && { backgroundColor: sessionColor, borderColor: sessionColor }]} onPress={() => setLevel(l)}>
+                  <Text style={[aiPlanStyles.chipText, level === l && { color: colors.textLight }]}>{l}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <View style={{ flex: 1 }}>
+                <Text style={aiPlanStyles.label}>Duration (mins)</Text>
+                <TextInput style={aiPlanStyles.input} value={duration} onChangeText={setDuration} keyboardType="number-pad" maxLength={3} placeholder="90" placeholderTextColor={colors.textSecondary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={aiPlanStyles.label}>Squad Size</Text>
+                <TextInput style={aiPlanStyles.input} value={squadSize} onChangeText={setSquadSize} keyboardType="number-pad" maxLength={3} placeholder="12" placeholderTextColor={colors.textSecondary} />
+              </View>
+            </View>
+
+            <Text style={aiPlanStyles.label}>Specific Focus (Optional)</Text>
+            <TextInput style={aiPlanStyles.input} value={focusArea} onChangeText={setFocusArea} placeholder="e.g. Cover drive, yorker bowling, slip catching..." placeholderTextColor={colors.textSecondary} />
+
+            <Text style={aiPlanStyles.label}>Additional Notes (Optional)</Text>
+            <TextInput style={[aiPlanStyles.input, { minHeight: 56, textAlignVertical: 'top' }]} value={notes} onChangeText={setNotes} multiline placeholder="e.g. Match tomorrow, work on confidence under pressure..." placeholderTextColor={colors.textSecondary} />
+
+            {error ? (
+              <View style={aiPlanStyles.errorBox}>
+                <MaterialIcons name="error-outline" size={16} color={colors.error} />
+                <Text style={aiPlanStyles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+
+            <Pressable style={[aiPlanStyles.generateBtn, { backgroundColor: sessionColor }, loading && { opacity: 0.65 }]} onPress={handleGenerate} disabled={loading}>
+              {loading ? (
+                <><ActivityIndicator color={colors.textLight} /><Text style={aiPlanStyles.generateBtnText}>Generating Plan...</Text></>
+              ) : (
+                <><MaterialIcons name="auto-awesome" size={20} color={colors.textLight} /><Text style={aiPlanStyles.generateBtnText}>Generate Session Plan</Text></>
+              )}
+            </Pressable>
+            <Text style={aiPlanStyles.aiNote}>AI fills in title, objectives and training blocks. You can edit everything after.</Text>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const aiPlanStyles = StyleSheet.create({
+  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '90%' },
+  handle: { width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  aiIcon: { width: 34, height: 34, borderRadius: 17, justifyContent: 'center', alignItems: 'center' },
+  headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
+  content: { padding: spacing.md, paddingBottom: 48, gap: spacing.xs },
+  desc: { fontSize: 13, color: colors.textSecondary, lineHeight: 18, marginBottom: spacing.sm },
+  label: { fontSize: 12, color: colors.text, fontWeight: '700', marginBottom: 5, marginTop: spacing.sm },
+  chip: { paddingHorizontal: spacing.md, paddingVertical: 7, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
+  chipText: { fontSize: 12, color: colors.text, fontWeight: '700' },
+  input: { backgroundColor: colors.background, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, fontSize: 14, color: colors.text },
+  errorBox: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.error + '12', borderRadius: borderRadius.md, padding: spacing.sm, borderWidth: 1, borderColor: colors.error + '40' },
+  errorText: { fontSize: 12, color: colors.error, flex: 1 },
+  generateBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md + 2, borderRadius: borderRadius.md, marginTop: spacing.md },
+  generateBtnText: { fontSize: 16, color: colors.textLight, fontWeight: '700' },
+  aiNote: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', lineHeight: 16, marginTop: 6 },
+});
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 export default function AcademyScheduleScreen() {
   const router = useRouter();
@@ -1072,6 +1242,7 @@ export default function AcademyScheduleScreen() {
   const [newSquadId, setNewSquadId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [showCreateTimePicker, setShowCreateTimePicker] = useState(false);
+  const [showAIPlanner, setShowAIPlanner] = useState(false);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -1295,6 +1466,17 @@ export default function AcademyScheduleScreen() {
         )}
       </ScrollView>
 
+      <AIPlannerModal
+        visible={showAIPlanner}
+        sessionColor={colors.primary}
+        onClose={() => setShowAIPlanner(false)}
+        onApply={(aiTitle, aiObjectives, aiBlocks, aiNotes) => {
+          if (aiTitle) setNewTitle(aiTitle);
+          setNewObjectives(aiObjectives.length ? aiObjectives : ['', '']);
+          setNewPlanBlocks(aiBlocks);
+          setNewNotes(aiNotes);
+        }}
+      />
       <DaySessionsModal visible={showDayModal} dateStr={selectedCalDate} entries={selectedCalEntries} isCoach={isCoach} academyId={academyId} memberPosition={memberPosition} router={router} onClose={() => setShowDayModal(false)} />
       <EditAcademySessionModal visible={showEditAcademy} session={editingAcademySession} onClose={() => { setShowEditAcademy(false); setEditingAcademySession(null); }} onSaved={load} />
       <PersonalSessionModal visible={showPersonalModal} editEntry={editingPersonalEntry} userId={userId} onClose={() => { setShowPersonalModal(false); setEditingPersonalEntry(null); }} onSaved={load} />
@@ -1306,7 +1488,15 @@ export default function AcademyScheduleScreen() {
             <View style={modal.handle} />
             <View style={modal.header}>
               <Text style={modal.headerTitle}>Plan Session</Text>
-              <Pressable onPress={() => setShowCreateCoach(false)} style={modal.closeBtn}><MaterialIcons name="close" size={22} color={colors.text} /></Pressable>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Pressable style={modal.aiBadgeBtn} onPress={() => setShowAIPlanner(true)}>
+                  <MaterialIcons name="auto-awesome" size={14} color={colors.primary} />
+                  <Text style={modal.aiBadgeBtnText}>AI Plan</Text>
+                </Pressable>
+                <Pressable onPress={() => setShowCreateCoach(false)} style={modal.closeBtn}>
+                  <MaterialIcons name="close" size={22} color={colors.text} />
+                </Pressable>
+              </View>
             </View>
             <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
               <ScrollView contentContainerStyle={modal.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
@@ -1393,6 +1583,8 @@ const modal = StyleSheet.create({
   objNumText: { fontSize: 11, fontWeight: '900', color: colors.textLight },
   submitBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: borderRadius.md },
   submitBtnText: { fontSize: 16, color: colors.textLight, fontWeight: '700' },
+  aiBadgeBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '15', borderRadius: borderRadius.full, paddingHorizontal: spacing.sm + 2, paddingVertical: 6, borderWidth: 1, borderColor: colors.primary + '40' },
+  aiBadgeBtnText: { fontSize: 12, color: colors.primary, fontWeight: '800' },
 });
 
 const schedSq = StyleSheet.create({
