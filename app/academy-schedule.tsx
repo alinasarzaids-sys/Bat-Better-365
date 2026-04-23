@@ -559,12 +559,13 @@ function SessionCard({ entry, isCoach, academyId, userId, today, router, onEditA
     const sessionMinutes = h * 60 + m;
     const now = new Date();
     const nowMinutes = now.getHours() * 60 + now.getMinutes();
-    // Allow starting from 60 minutes before until end of day
+    // Allow starting from 60 minutes before start time until end of day
     return nowMinutes >= sessionMinutes - 60;
   })();
   const isAcademy = entry.source === 'academy';
   const isPersonal = entry.source === 'personal';
-  const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId) || (!isCoach && isAcademy);  // coaches can always edit academy sessions; players can edit personal
+  // Coaches can edit academy sessions; players can ONLY edit their own personal sessions (never academy sessions)
+  const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId);
   const planBlocks = parsePlanBlocks(entry.notes);
   const objectives = parseObjectives(entry.notes);
   const coachNotes = parseCoachNotes(entry.notes);
@@ -651,14 +652,14 @@ function SessionCard({ entry, isCoach, academyId, userId, today, router, onEditA
             ) : null}
           </View>
         )}
-        {!isCoach && !isDone && !isMissed && (isToday ? canStartNow : entry.date > today) && (
+        {!isCoach && !isDone && !isMissed && isToday && canStartNow && (
           <Pressable style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
             onPress={() => router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any)}>
             <MaterialIcons name="play-circle-filled" size={18} color={colors.textLight} />
             <Text style={styles.startSessionBtnText}>Start Session</Text>
           </Pressable>
         )}
-        {!isCoach && !isDone && isToday && !canStartNow && !isMissed && (
+        {!isCoach && !isDone && !isMissed && isToday && !canStartNow && (
           <View style={[styles.startSessionBtn, { backgroundColor: colors.border, opacity: 0.7 }]}>
             <MaterialIcons name="schedule" size={18} color={colors.textSecondary} />
             <Text style={[styles.startSessionBtnText, { color: colors.textSecondary }]}>
