@@ -360,8 +360,46 @@ export default function AcademyScreen() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const { data } = await academyService.getMyAcademies(user.id);
-    setMemberships(data || []);
+    const supabase = getSupabaseClient();
+
+    // Primary query: memberships via academy_members (RLS-gated)
+    const { data: memberData } = await supabase
+      .from('academy_members')
+      .select('*, academies(*)')
+      .eq('user_id', user.id)
+      .order('joined_at', { ascending: false });
+
+    let memberships = (memberData || []).map((m: any) => ({ academy: m.academies, member: m }));
+
+    // Fallback: if memberships empty, check if user created an academy directly
+    // This handles the case where session propagation is slow after registration
+    if (memberships.length === 0) {
+      const { data: createdAcademies } = await supabase
+        .from('academies')
+        .select('*')
+        .eq('created_by', user.id);
+
+      if (createdAcademies && createdAcademies.length > 0) {
+        // Fetch their member records for these academies
+        const academyIds = createdAcademies.map((a: any) => a.id);
+        const { data: memberRecords } = await supabase
+          .from('academy_members')
+          .select('*')
+          .in('academy_id', academyIds)
+          .eq('user_id', user.id);
+
+        memberships = createdAcademies.map((academy: any) => {
+          const member = (memberRecords || []).find((m: any) => m.academy_id === academy.id) || {
+            id: 'temp', academy_id: academy.id, user_id: user.id,
+            role: 'admin', position: 'Head Coach', display_name: '',
+            joined_at: academy.created_at, is_active: true, status: 'approved',
+          };
+          return { academy, member };
+        });
+      }
+    }
+
+    setMemberships(memberships);
     setLoading(false);
   }, [user]);
 
@@ -369,6 +407,15 @@ export default function AcademyScreen() {
 
   // Also reload when user changes (e.g. right after registration session is set)
   useEffect(() => { if (user?.id) load(); }, [user?.id]);
+
+  // Safety net: if memberships still empty after 1.5s, retry (handles session propagation delay)
+  useEffect(() => {
+    if (!user?.id) return;
+    const timer = setTimeout(() => {
+      if (memberships.length === 0 && !loading) load();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [user?.id, memberships.length, loading]);
 
   const currentMembership = memberships[selectedIdx] || null;
   const memberRole = currentMembership?.member.role;
