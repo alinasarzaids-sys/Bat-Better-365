@@ -547,16 +547,7 @@ export default function AdminDashboardTab() {
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [billingResult, setBillingResult] = useState<string | null>(null);
 
-  if (user?.email && user.email !== SUPER_ADMIN_EMAIL) {
-    return (
-      <SafeAreaView style={styles.container} edges={['top']}>
-        <View style={styles.centered}>
-          <MaterialIcons name="block" size={48} color={colors.error} />
-          <Text style={styles.accessDenied}>Access Denied</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const isSuperAdmin = !user?.email || user.email === SUPER_ADMIN_EMAIL;
 
   const load = useCallback(async () => {
     const supabase = getSupabaseClient();
@@ -590,7 +581,20 @@ export default function AdminDashboardTab() {
     }
   }, []);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    if (isSuperAdmin) load();
+  }, [load, isSuperAdmin]));
+
+  if (!isSuperAdmin) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.centered}>
+          <MaterialIcons name="block" size={48} color={colors.error} />
+          <Text style={styles.accessDenied}>Access Denied</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const onRefresh = async () => { setRefreshing(true); await load(); };
 
