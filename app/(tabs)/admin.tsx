@@ -1,22 +1,23 @@
 /**
  * Super Admin Dashboard (Tab)
  * Visible ONLY when logged in as alinasarzaids@gmail.com
- * Three sections:
+ * Sections:
  *   1. Global Stats  — Total Academies / Active Players / Pending Payments
- *   2. Billing Engine — Manual "Run Daily Billing" trigger
- *   3. Academy Ledger — Scrollable cards per academy with WhatsApp, status, Mark Paid
+ *   2. Invoice Reminders — Auto banner for academies due in ≤5 days without invoice
+ *   3. Billing Engine — Manual "Run Daily Billing" trigger
+ *   4. Academy Ledger — Scrollable cards with day countdown, bank details, codes
  */
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, Pressable,
-  ActivityIndicator, RefreshControl, Linking, Alert,
+  ActivityIndicator, RefreshControl, Linking,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useFocusEffect } from 'expo-router';
 import { useAuth, useAlert, getSupabaseClient } from '@/template';
-import { colors, spacing, typography, borderRadius } from '@/constants/theme';
+import { colors, spacing, borderRadius } from '@/constants/theme';
 import { FunctionsHttpError } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -30,6 +31,10 @@ function daysUntil(dateStr: string | null): number | null {
   return Math.ceil(diff / 86400000);
 }
 
+function getBillingDate(academy: any): string | null {
+  return academy.next_billing_date || academy.trial_end_date || null;
+}
+
 function formatLastRun(iso: string | null): string {
   if (!iso) return 'Never';
   const d = new Date(iso);
@@ -37,9 +42,17 @@ function formatLastRun(iso: string | null): string {
     ' at ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 }
 
-// ─── Status config ─────────────────────────────────────────────────────────────
-type BillingStatus = 'trial' | 'active' | 'locked' | 'invoice_sent';
+// ─── Day countdown ring colors ────────────────────────────────────────────────
+function getDayCountdownStyle(days: number | null): { bg: string; text: string; label: string } {
+  if (days === null) return { bg: colors.border + '40', text: colors.textSecondary, label: '—' };
+  if (days <= 0) return { bg: colors.error + '20', text: colors.error, label: 'EXPIRED' };
+  if (days <= 5) return { bg: colors.error + '20', text: colors.error, label: `${days}d` };
+  if (days <= 10) return { bg: colors.warning + '20', text: colors.warning, label: `${days}d` };
+  if (days <= 20) return { bg: '#F59E0B20', text: '#F59E0B', label: `${days}d` };
+  return { bg: '#22C55E20', text: '#22C55E', label: `${days}d` };
+}
 
+// ─── Status config ─────────────────────────────────────────────────────────────
 function getStatusConfig(academy: any): { label: string; color: string; dot: string } {
   const hasUnpaid = (academy._invoices || []).some((inv: any) => inv.status === 'unpaid');
   const status = academy.billing_status as string;
@@ -59,6 +72,104 @@ function getStatusConfig(academy: any): { label: string; color: string; dot: str
   return { label: status, color: colors.textSecondary, dot: '⚪' };
 }
 
+// ─── Invoice Reminders Banner ─────────────────────────────────────────────────
+function InvoiceReminderBanner({ academies, onGenerateInvoice, loadingId }: {
+  academies: any[];
+  onGenerateInvoice: (a: any) => void;
+  loadingId: string | null;
+}) {
+  // Academies due in ≤5 days with NO unpaid invoice and not locked
+  const due = academies.filter(a => {
+    if (a.billing_status === 'locked') return false;
+    const hasUnpaid = (a._invoices || []).some((inv: any) => inv.status === 'unpaid');
+    if (hasUnpaid) return false;
+    const days = daysUntil(getBillingDate(a));
+    return days !== null && days <= 5 && days >= 0;
+  });
+
+  if (due.length === 0) return null;
+
+  return (
+    <View style={styles.sectionPad}>
+      <View style={rem.banner}>
+        <View style={rem.bannerHeader}>
+          <View style={rem.bellCircle}>
+            <Text style={{ fontSize: 18 }}>🔔</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={rem.bannerTitle}>Invoice Reminders</Text>
+            <Text style={rem.bannerSub}>{due.length} academy{due.length > 1 ? 'ies' : ''} due in ≤5 days — no invoice sent yet</Text>
+          </View>
+        </View>
+
+        {due.map(a => {
+          const days = daysUntil(getBillingDate(a));
+          const isLoading = loadingId === a.id;
+          return (
+            <View key={a.id} style={rem.row}>
+              <View style={[rem.dayPill, { backgroundColor: colors.error + '20' }]}>
+                <Text style={[rem.dayPillText, { color: colors.error }]}>
+                  {days === 0 ? 'TODAY' : `${days}d`}
+                </Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={rem.acName} numberOfLines={1}>{a.name}</Text>
+                <Text style={rem.acSub}>{a._playerCount ?? 0} players · {(a._playerCount ?? 0) * 850} PKR due</Text>
+              </View>
+              <Pressable
+                style={[rem.genBtn, isLoading && { opacity: 0.6 }]}
+                onPress={() => onGenerateInvoice(a)}
+                disabled={isLoading || loadingId !== null}
+              >
+                {isLoading
+                  ? <ActivityIndicator size="small" color="#fff" />
+                  : <Text style={rem.genBtnText}>Generate Now</Text>}
+              </Pressable>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
+const rem = StyleSheet.create({
+  banner: {
+    backgroundColor: colors.error + '08',
+    borderRadius: borderRadius.xl,
+    borderWidth: 1.5, borderColor: colors.error + '35',
+    padding: spacing.md, gap: spacing.sm,
+  },
+  bannerHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
+  bellCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.error + '15',
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 1, borderColor: colors.error + '30',
+  },
+  bannerTitle: { fontSize: 15, fontWeight: '900', color: colors.error },
+  bannerSub: { fontSize: 11, color: colors.error, opacity: 0.75, marginTop: 1 },
+  row: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.surface, borderRadius: borderRadius.md,
+    padding: spacing.sm + 2, borderWidth: 1, borderColor: colors.error + '20',
+  },
+  dayPill: {
+    minWidth: 44, height: 28, borderRadius: 14,
+    justifyContent: 'center', alignItems: 'center', paddingHorizontal: 8,
+  },
+  dayPillText: { fontSize: 11, fontWeight: '900', letterSpacing: 0.5 },
+  acName: { fontSize: 13, fontWeight: '800', color: colors.text },
+  acSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  genBtn: {
+    backgroundColor: colors.error,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.sm + 2, paddingVertical: 8,
+    minWidth: 100, alignItems: 'center',
+  },
+  genBtnText: { fontSize: 12, fontWeight: '900', color: '#fff' },
+});
+
 // ─── Academy Card ─────────────────────────────────────────────────────────────
 function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice, loadingId }: {
   academy: any;
@@ -73,11 +184,19 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
   const hasUnpaid = (academy._invoices || []).some((inv: any) => inv.status === 'unpaid');
   const isLocked = academy.billing_status === 'locked';
   const isLoading = loadingId === academy.id;
-  const daysLeft = academy.trial_end_date
-    ? daysUntil(academy.trial_end_date)
-    : academy.next_billing_date
-    ? daysUntil(academy.next_billing_date)
-    : null;
+
+  // Day countdown — prefer next_billing_date, fall back to trial_end_date
+  const billingDate = getBillingDate(academy);
+  const daysLeft = daysUntil(billingDate);
+  const dayStyle = getDayCountdownStyle(daysLeft);
+
+  // Total cycle days for progress ring estimation (30 days)
+  const cycleStart = academy.trial_start_date || null;
+  const cycleTotal = 30;
+  const daysPassed = cycleStart
+    ? Math.max(0, Math.ceil((Date.now() - new Date(cycleStart).getTime()) / 86400000))
+    : 0;
+  const progressPct = Math.min(1, daysPassed / cycleTotal);
 
   const openWhatsApp = () => {
     if (!academy.owner_phone) return;
@@ -94,8 +213,10 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
     <View style={ac.card}>
       {/* ── Top row ── */}
       <Pressable style={ac.topRow} onPress={() => setExpanded(e => !e)}>
-        <View style={[ac.statusDot, { backgroundColor: statusConfig.color + '25', borderColor: statusConfig.color + '50' }]}>
-          <Text style={{ fontSize: 16 }}>{statusConfig.dot}</Text>
+        {/* Day countdown circle */}
+        <View style={[ac.dayCircle, { backgroundColor: dayStyle.bg, borderColor: dayStyle.text + '40' }]}>
+          <Text style={[ac.dayNum, { color: dayStyle.text }]}>{dayStyle.label}</Text>
+          <Text style={[ac.dayLabel, { color: dayStyle.text }]}>left</Text>
         </View>
 
         <View style={{ flex: 1 }}>
@@ -103,9 +224,12 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
           {academy.description ? (
             <Text style={ac.org} numberOfLines={1}>{academy.description}</Text>
           ) : null}
-          <View style={[ac.statusRow]}>
-            <Text style={[ac.statusLabel, { color: statusConfig.color }]}>{statusConfig.label}</Text>
-          </View>
+          <Text style={[ac.statusLabel, { color: statusConfig.color }]}>{statusConfig.dot} {statusConfig.label}</Text>
+          {billingDate ? (
+            <Text style={ac.billingDateText}>
+              {academy.next_billing_date ? 'Next billing' : 'Trial ends'}: {billingDate}
+            </Text>
+          ) : null}
         </View>
 
         <View style={{ alignItems: 'flex-end', gap: 4, marginLeft: spacing.xs }}>
@@ -116,7 +240,7 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
           {daysLeft !== null && daysLeft <= 5 && daysLeft > 0 && (
             <View style={ac.urgentBadge}>
               <MaterialIcons name="warning" size={10} color={colors.error} />
-              <Text style={ac.urgentText}>{daysLeft}d left</Text>
+              <Text style={ac.urgentText}>URGENT</Text>
             </View>
           )}
           <MaterialIcons
@@ -129,7 +253,6 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
 
       {/* ── Quick action row (always visible) ── */}
       <View style={ac.quickActions}>
-        {/* WhatsApp */}
         {academy.owner_phone ? (
           <Pressable style={ac.waBtn} onPress={openWhatsApp} hitSlop={6}>
             <MaterialIcons name="chat" size={14} color="#25D366" />
@@ -139,7 +262,6 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
           <Text style={ac.noPhone}>No phone on file</Text>
         )}
 
-        {/* Mark Paid / Unlock */}
         {(hasUnpaid || isLocked) && (
           <Pressable
             style={[ac.markPaidBtn, isLoading && { opacity: 0.6 }]}
@@ -161,6 +283,22 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
       {/* ── Expanded details ── */}
       {expanded && (
         <View style={ac.expanded}>
+          {/* Progress bar — days used of 30-day cycle */}
+          {cycleStart && (
+            <View style={ac.progressSection}>
+              <View style={ac.progressHeader}>
+                <Text style={ac.progressLabel}>Cycle Progress</Text>
+                <Text style={ac.progressPct}>{Math.round(progressPct * 100)}% used · Day {Math.min(daysPassed, 30)} of 30</Text>
+              </View>
+              <View style={ac.progressTrack}>
+                <View style={[ac.progressFill, {
+                  width: `${Math.round(progressPct * 100)}%` as any,
+                  backgroundColor: progressPct >= 0.9 ? colors.error : progressPct >= 0.7 ? colors.warning : '#22C55E',
+                }]} />
+              </View>
+            </View>
+          )}
+
           {/* Billing dates */}
           <View style={ac.infoRow}>
             {academy.trial_start_date && (
@@ -215,7 +353,9 @@ function AcademyCard({ academy, onMarkPaid, onLock, onUnlock, onGenerateInvoice,
               {academy.account_number ? (
                 <View style={ac.bankRow}>
                   <Text style={ac.bankLabel}>Account No.</Text>
-                  <Text style={[ac.bankVal, { fontFamily: 'monospace', letterSpacing: 0.8, fontWeight: '800' }]}>{academy.account_number}</Text>
+                  <Text style={[ac.bankVal, { fontFamily: 'monospace', letterSpacing: 0.8, fontWeight: '800' }]}>
+                    {academy.account_number}
+                  </Text>
                 </View>
               ) : null}
             </View>
@@ -307,20 +447,37 @@ const ac = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
   },
   topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md },
-  statusDot: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', borderWidth: 1 },
+  // Day countdown circle replacing status dot
+  dayCircle: {
+    width: 54, height: 54, borderRadius: 27,
+    justifyContent: 'center', alignItems: 'center',
+    borderWidth: 2, flexShrink: 0,
+  },
+  dayNum: { fontSize: 14, fontWeight: '900', lineHeight: 16 },
+  dayLabel: { fontSize: 9, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
   name: { fontSize: 15, fontWeight: '800', color: colors.text },
   org: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
-  statusRow: { marginTop: 3 },
-  statusLabel: { fontSize: 11, fontWeight: '700' },
-  playerBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: colors.primary + '15', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10 },
+  statusLabel: { fontSize: 11, fontWeight: '700', marginTop: 3 },
+  billingDateText: { fontSize: 10, color: colors.textSecondary, marginTop: 2 },
+  playerBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: colors.primary + '15', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10,
+  },
   playerCount: { fontSize: 11, fontWeight: '800', color: colors.primary },
-  urgentBadge: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.error + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  urgentText: { fontSize: 10, fontWeight: '800', color: colors.error },
+  urgentBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: colors.error + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8,
+  },
+  urgentText: { fontSize: 10, fontWeight: '900', color: colors.error },
   quickActions: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingBottom: spacing.md, paddingTop: 0, gap: spacing.sm,
   },
-  waBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#25D36615', paddingHorizontal: spacing.sm, paddingVertical: 7, borderRadius: borderRadius.md, borderWidth: 1, borderColor: '#25D36630', flex: 1 },
+  waBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: '#25D36615', paddingHorizontal: spacing.sm, paddingVertical: 7,
+    borderRadius: borderRadius.md, borderWidth: 1, borderColor: '#25D36630', flex: 1,
+  },
   waBtnText: { fontSize: 12, color: '#25D366', fontWeight: '700', flex: 1 },
   noPhone: { fontSize: 11, color: colors.textSecondary, fontStyle: 'italic', flex: 1 },
   markPaidBtn: {
@@ -331,6 +488,13 @@ const ac = StyleSheet.create({
   },
   markPaidText: { fontSize: 12, fontWeight: '900', color: '#fff' },
   expanded: { borderTopWidth: 1, borderTopColor: colors.border, padding: spacing.md, gap: spacing.sm },
+  // Progress bar
+  progressSection: { gap: 6 },
+  progressHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  progressLabel: { fontSize: 11, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
+  progressPct: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  progressTrack: { height: 6, backgroundColor: colors.border, borderRadius: 3, overflow: 'hidden' },
+  progressFill: { height: 6, borderRadius: 3 },
   infoRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   infoChip: { flex: 1, minWidth: '28%', backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.sm },
   infoChipLabel: { fontSize: 9, color: colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
@@ -360,7 +524,11 @@ const ac = StyleSheet.create({
   codeChipLabel: { fontSize: 9, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 1 },
   codeChipVal: { fontSize: 18, fontWeight: '900', letterSpacing: 4 },
   secondaryActions: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
-  secBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm, paddingVertical: 7, borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary + '40' },
+  secBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: spacing.sm, paddingVertical: 7,
+    borderRadius: borderRadius.md, borderWidth: 1, borderColor: colors.primary + '40',
+  },
   secBtnText: { fontSize: 12, fontWeight: '700' },
 });
 
@@ -379,7 +547,6 @@ export default function AdminDashboardTab() {
   const [lastRun, setLastRun] = useState<string | null>(null);
   const [billingResult, setBillingResult] = useState<string | null>(null);
 
-  // Not admin
   if (user?.email && user.email !== SUPER_ADMIN_EMAIL) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
@@ -393,39 +560,25 @@ export default function AdminDashboardTab() {
 
   const load = useCallback(async () => {
     const supabase = getSupabaseClient();
-
     try {
-      // Load last run timestamp in parallel
       const [adminDataResult, lr] = await Promise.all([
         supabase.functions.invoke('get-admin-data', { body: {} }),
         AsyncStorage.getItem(LAST_RUN_KEY),
       ]);
 
       setLastRun(lr);
-
       const { data, error } = adminDataResult;
 
       if (error) {
         let errMsg = error.message;
-        try {
-          const { FunctionsHttpError } = await import('@supabase/supabase-js');
-          if (error instanceof FunctionsHttpError) {
-            const t = await error.context?.text();
-            errMsg = t || error.message;
-          }
-        } catch {}
+        if (error instanceof FunctionsHttpError) {
+          try { const t = await error.context?.text(); errMsg = t || error.message; } catch {}
+        }
         console.warn('get-admin-data error:', errMsg);
-        setLoading(false);
-        setRefreshing(false);
         return;
       }
 
-      if (!data?.academies) {
-        console.warn('get-admin-data returned no academies');
-        setLoading(false);
-        setRefreshing(false);
-        return;
-      }
+      if (!data?.academies) return;
 
       setAcademies(data.academies);
       setGlobalStats(data.globalStats);
@@ -441,7 +594,6 @@ export default function AdminDashboardTab() {
 
   const onRefresh = async () => { setRefreshing(true); await load(); };
 
-  // ─── Run Daily Billing ────────────────────────────────────────────────────
   const handleRunBilling = async () => {
     const now = new Date().toISOString();
     setBillingRunning(true);
@@ -460,10 +612,7 @@ export default function AdminDashboardTab() {
 
       setBillingRunning(false);
 
-      if (errMsg) {
-        showAlert('Billing Error', errMsg);
-        return;
-      }
+      if (errMsg) { showAlert('Billing Error', errMsg); return; }
 
       await AsyncStorage.setItem(LAST_RUN_KEY, now);
       setLastRun(now);
@@ -481,7 +630,6 @@ export default function AdminDashboardTab() {
     }
   };
 
-  // ─── Mark Paid ────────────────────────────────────────────────────────────
   const handleMarkPaid = async (academy: any) => {
     const unpaid = (academy._invoices || []).find((inv: any) => inv.status === 'unpaid');
     const supabase = getSupabaseClient();
@@ -494,7 +642,6 @@ export default function AdminDashboardTab() {
         p_paid_by: user?.email || 'Admin',
       });
     } else {
-      // No invoice yet — just unlock and set next billing date
       const nextDate = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
       await supabase.from('academies').update({ billing_status: 'active', next_billing_date: nextDate }).eq('id', academy.id);
     }
@@ -538,7 +685,10 @@ export default function AdminDashboardTab() {
       setLoadingId(null);
       if (errMsg) { showAlert('Error', errMsg); return; }
       await load();
-      showAlert('Invoice Sent', `Invoice emailed to ${academy.owner_email || 'owner'}.\n${data?.invoice?.player_count || 0} players · PKR ${data?.invoice?.net_payable?.toLocaleString() || 0}`);
+      showAlert(
+        'Invoice Sent',
+        `Invoice emailed to ${academy.owner_email || 'owner'}.\n${data?.invoice?.player_count || 0} players · PKR ${data?.invoice?.gross_total?.toLocaleString() || 0}`
+      );
     } catch (e: any) {
       setLoadingId(null);
       showAlert('Error', e.message);
@@ -556,7 +706,7 @@ export default function AdminDashboardTab() {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* ── Header ── */}
       <View style={styles.header}>
-        <View style={[styles.crownCircle]}>
+        <View style={styles.crownCircle}>
           <Text style={{ fontSize: 20 }}>👑</Text>
         </View>
         <View style={{ flex: 1 }}>
@@ -600,11 +750,20 @@ export default function AdminDashboardTab() {
           </View>
         </View>
 
-        {/* ══ SECTION 2: BILLING ENGINE ══ */}
+        {/* ══ SECTION 2: INVOICE REMINDERS (auto-appears when needed) ══ */}
+        {!loading && (
+          <InvoiceReminderBanner
+            academies={academies}
+            onGenerateInvoice={handleGenerateInvoice}
+            loadingId={loadingId}
+          />
+        )}
+
+        {/* ══ SECTION 3: BILLING ENGINE ══ */}
         <View style={styles.sectionPad}>
           <View style={styles.billingCard}>
             <View style={styles.billingHeader}>
-              <View style={[styles.billingIconCircle]}>
+              <View style={styles.billingIconCircle}>
                 <MaterialIcons name="bolt" size={24} color={colors.warning} />
               </View>
               <View style={{ flex: 1 }}>
@@ -644,14 +803,13 @@ export default function AdminDashboardTab() {
           </View>
         </View>
 
-        {/* ══ SECTION 3: ACADEMY LEDGER ══ */}
+        {/* ══ SECTION 4: ACADEMY LEDGER ══ */}
         <View style={styles.sectionPad}>
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Academy Ledger</Text>
             <Text style={styles.sectionCount}>{academies.length} academies</Text>
           </View>
 
-          {/* Search */}
           <View style={styles.searchRow}>
             <MaterialIcons name="search" size={16} color={colors.textSecondary} />
             <TextInput
@@ -720,7 +878,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 18, fontWeight: '900', color: colors.text },
   headerSub: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
 
-  // Stats
   statsSection: {
     flexDirection: 'row', gap: spacing.sm,
     paddingHorizontal: spacing.md, paddingTop: spacing.md,
@@ -734,7 +891,6 @@ const styles = StyleSheet.create({
   statVal: { fontSize: 28, fontWeight: '900', lineHeight: 32 },
   statLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', textAlign: 'center', lineHeight: 14 },
 
-  // Billing Engine
   sectionPad: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
   billingCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.xl,
@@ -767,7 +923,6 @@ const styles = StyleSheet.create({
   },
   billingResultText: { fontSize: 13, color: '#22C55E', fontWeight: '700', flex: 1 },
 
-  // Ledger
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   sectionTitle: { fontSize: 16, fontWeight: '900', color: colors.text },
   sectionCount: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
