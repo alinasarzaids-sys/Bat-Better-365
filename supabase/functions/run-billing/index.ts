@@ -10,9 +10,8 @@ const ADMIN_BANK = {
   branch: 'IBB Dehli Mercntl So',
 };
 
-const GROSS_PER_PLAYER = 850;
-const COMMISSION_PER_PLAYER = 300;
-const NET_PER_PLAYER = GROSS_PER_PLAYER - COMMISSION_PER_PLAYER; // 550 PKR
+const GROSS_PER_PLAYER = 850;   // Full amount academy owes Bat Better
+const COMMISSION_PER_PLAYER = 300; // Bat Better pays back to coach within 3-5 days
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -56,9 +55,8 @@ serve(async (req) => {
         .eq('is_active', true);
 
       const playerCount = (members || []).length;
-      const netPayable = NET_PER_PLAYER * playerCount;
-      const grossTotal = GROSS_PER_PLAYER * playerCount;
-      const commissionTotal = COMMISSION_PER_PLAYER * playerCount;
+      const grossTotal = GROSS_PER_PLAYER * playerCount;      // What academy owes Bat Better
+      const commissionTotal = COMMISSION_PER_PLAYER * playerCount; // What Bat Better pays back
       const currency = academy.currency || 'PKR';
       const coachName = academy.name;
 
@@ -79,8 +77,8 @@ serve(async (req) => {
           billing_period_start: periodStart,
           billing_period_end: periodEnd,
           player_count: playerCount,
-          price_per_player: NET_PER_PLAYER,
-          total_amount: netPayable,
+          price_per_player: GROSS_PER_PLAYER,
+          total_amount: grossTotal,
           currency,
           status: 'unpaid',
           sent_to_email: academy.owner_email || '',
@@ -96,7 +94,7 @@ serve(async (req) => {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bat Better 365 — Invoice ${invNum}</title>
+  <title>Bat Better Monthly Invoice — ${academy.name}</title>
 </head>
 <body style="font-family:system-ui,-apple-system,sans-serif;background:#f3f4f6;margin:0;padding:24px;">
   <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
@@ -113,7 +111,7 @@ serve(async (req) => {
         Hi <strong>${coachName}</strong>,
       </p>
       <p style="font-size:15px;color:#374151;line-height:1.7;margin:0 0 24px;">
-        Your current Bat Better subscription cycle will expire in 5 days. To ensure your players do not lose access to their training portal and AI analytics, please settle the invoice below.
+        Your current Bat Better subscription cycle will expire in 5 days. To ensure your players do not lose access to their training portal and AI analytics, please settle the monthly invoice below.
       </p>
 
       <!-- Billing Breakdown -->
@@ -121,20 +119,16 @@ serve(async (req) => {
         <h3 style="margin:0 0 14px;color:#15803d;font-size:16px;font-weight:800;">📊 Billing Breakdown</h3>
         <table style="width:100%;font-size:15px;color:#374151;border-collapse:collapse;">
           <tr>
-            <td style="padding:6px 0;">Approved Players:</td>
+            <td style="padding:6px 0;">Active Approved Players:</td>
             <td style="padding:6px 0;text-align:right;font-weight:700;">${playerCount}</td>
           </tr>
           <tr>
             <td style="padding:6px 0;">Standard Rate:</td>
-            <td style="padding:6px 0;text-align:right;">${playerCount} x ${GROSS_PER_PLAYER} ${currency}</td>
-          </tr>
-          <tr>
-            <td style="padding:6px 0;color:#16a34a;font-weight:700;">Coach Commission:</td>
-            <td style="padding:6px 0;text-align:right;color:#16a34a;font-weight:700;">- ${playerCount} x ${COMMISSION_PER_PLAYER} ${currency} (Your cut!)</td>
+            <td style="padding:6px 0;text-align:right;">850 ${currency} per player</td>
           </tr>
           <tr style="border-top:2px solid #86efac;">
             <td style="padding:12px 0 4px;font-size:17px;font-weight:900;color:#111827;">💰 Total Amount Due:</td>
-            <td style="padding:12px 0 4px;text-align:right;font-size:22px;font-weight:900;color:#1d4ed8;">${netPayable.toLocaleString()} ${currency}</td>
+            <td style="padding:12px 0 4px;text-align:right;font-size:22px;font-weight:900;color:#1d4ed8;">${grossTotal.toLocaleString()} ${currency}</td>
           </tr>
         </table>
       </div>
@@ -143,7 +137,7 @@ serve(async (req) => {
       <div style="background:#fefce8;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #fde68a;">
         <h3 style="margin:0 0 14px;color:#92400e;font-size:16px;font-weight:800;">🏦 Payment Instructions</h3>
         <p style="font-size:14px;color:#78350f;margin:0 0 14px;line-height:1.6;">
-          To renew your academy for the next 30 days, please transfer the Total Amount Due to the following account:
+          To renew your academy for the next 30 days, please transfer the Total Amount Due (${grossTotal.toLocaleString()} ${currency}) to the following account:
         </p>
         <table style="width:100%;font-size:14px;background:#fff;border-radius:10px;overflow:hidden;border-collapse:collapse;">
           <tr style="background:#fef9c3;">
@@ -173,7 +167,15 @@ serve(async (req) => {
       <div style="background:#eff6ff;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #bfdbfe;">
         <h3 style="margin:0 0 12px;color:#1e40af;font-size:15px;font-weight:800;">Next Steps:</h3>
         <p style="font-size:14px;color:#1e40af;line-height:1.7;margin:0;">
-          Once you have made the transfer, please reply directly to this email with a screenshot of the receipt. Our admin team will verify the payment and instantly unlock your roster for the next 30 days!
+          Once you have made the bank transfer, please reply directly to this email with a screenshot of the payment receipt. Our admin team will verify the transfer and instantly unlock your roster for the next 30 days.
+        </p>
+      </div>
+
+      <!-- Commission Payout -->
+      <div style="background:#f0fdf4;border-radius:12px;padding:20px;margin-bottom:24px;border:1px solid #bbf7d0;">
+        <h3 style="margin:0 0 12px;color:#15803d;font-size:15px;font-weight:800;">💸 Your Commission Payout</h3>
+        <p style="font-size:14px;color:#166534;line-height:1.7;margin:0;">
+          You have successfully earned <strong>${commissionTotal.toLocaleString()} ${currency}</strong> in commission for this cycle! Once your invoice payment above is verified by our team, your full commission will be directly transferred to your registered Academy bank account within <strong>3 to 5 working days</strong>.
         </p>
       </div>
 
@@ -201,9 +203,10 @@ serve(async (req) => {
           method: 'POST',
           headers: { Authorization: `Bearer ${resendKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            from: 'Bat Better 365 Billing <onboarding@resend.dev>',  // use resend.dev until batbetter365.com domain is verified in Resend
+            from: 'Bat Better <admin@batbetter365.com>',
             to: [academy.owner_email],
-            subject: `Your Bat Better subscription expires in 5 days — ${netPayable.toLocaleString()} ${currency} due | ${academy.name}`,
+            reply_to: 'admin@batbetter365.com',
+            subject: `Action Required: Bat Better Monthly Invoice - ${academy.name} 🏏`,
             html: emailHtml,
           }),
         });
@@ -215,7 +218,8 @@ serve(async (req) => {
         academy_name: academy.name,
         invoice_number: invNum,
         player_count: playerCount,
-        net_payable: netPayable,
+        gross_total: grossTotal,
+        commission_total: commissionTotal,
         email_sent: !!(resendKey && academy.owner_email),
       });
     }
