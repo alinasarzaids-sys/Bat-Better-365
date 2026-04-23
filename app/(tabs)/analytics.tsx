@@ -773,120 +773,28 @@ export default function AnalyticsScreen() {
   const loadSessions = useCallback(async () => {
     if (!user) return;
     setLoading(true);
-    // ── PROMO DEMO DATA ───────────────────────────────────────────────────────
-    const DEMO_SESSIONS: FreestyleSession[] = [
-      {
-        id: 'demo-1', title: 'Freestyle Session', scheduled_date: '2026-04-17T06:00:00Z',
-        completed_at: '2026-04-17T08:15:00Z', duration_minutes: 75, status: 'completed',
-        notes: '', trainingTypes: ['Batting', 'Footwork'],
-        ballsFaced: 180, ballsMiddled: 134, middlePercent: 74, boundariesHit: 18,
-        shotExecution: 5, footwork: 4, timing: 5,
-        focus: 5, confidence: 4, pressureHandling: 4,
-        energyLevel: 5, reactionSpeed: 4,
-        shotSelection: 4, gameAwareness: 5,
-        sessionNotes: 'Best session this month. Timing was on point throughout. Cover drives felt natural.',
-      },
-      {
-        id: 'demo-2', title: 'Freestyle Session', scheduled_date: '2026-04-15T06:00:00Z',
-        completed_at: '2026-04-15T07:45:00Z', duration_minutes: 60, status: 'completed',
-        notes: '', trainingTypes: ['Batting', 'Defence'],
-        ballsFaced: 150, ballsMiddled: 102, middlePercent: 68, boundariesHit: 11,
-        shotExecution: 4, footwork: 4, timing: 4,
-        focus: 4, confidence: 4, pressureHandling: 3,
-        energyLevel: 4, reactionSpeed: 4,
-        shotSelection: 4, gameAwareness: 4,
-        sessionNotes: 'Good session. Defence was solid. Need to work on pressure situations.',
-      },
-      {
-        id: 'demo-3', title: 'Freestyle Session', scheduled_date: '2026-04-13T06:00:00Z',
-        completed_at: '2026-04-13T07:30:00Z', duration_minutes: 55, status: 'completed',
-        notes: '', trainingTypes: ['Batting'],
-        ballsFaced: 120, ballsMiddled: 78, middlePercent: 65, boundariesHit: 9,
-        shotExecution: 4, footwork: 3, timing: 4,
-        focus: 3, confidence: 3, pressureHandling: 3,
-        energyLevel: 3, reactionSpeed: 4,
-        shotSelection: 3, gameAwareness: 3,
-        sessionNotes: 'Footwork needs attention. Kept falling over to off side.',
-      },
-      {
-        id: 'demo-4', title: 'Freestyle Session', scheduled_date: '2026-04-11T06:00:00Z',
-        completed_at: '2026-04-11T08:00:00Z', duration_minutes: 70, status: 'completed',
-        notes: '', trainingTypes: ['Batting', 'Pulling'],
-        ballsFaced: 160, ballsMiddled: 115, middlePercent: 72, boundariesHit: 14,
-        shotExecution: 4, footwork: 4, timing: 4,
-        focus: 4, confidence: 5, pressureHandling: 4,
-        energyLevel: 4, reactionSpeed: 5,
-        shotSelection: 4, gameAwareness: 4,
-        sessionNotes: 'Pull shot clicking nicely. Reaction speed felt sharp today.',
-      },
-      {
-        id: 'demo-5', title: 'Freestyle Session', scheduled_date: '2026-04-09T06:00:00Z',
-        completed_at: '2026-04-09T07:15:00Z', duration_minutes: 50, status: 'completed',
-        notes: '', trainingTypes: ['Batting'],
-        ballsFaced: 100, ballsMiddled: 62, middlePercent: 62, boundariesHit: 7,
-        shotExecution: 3, footwork: 3, timing: 3,
-        focus: 4, confidence: 3, pressureHandling: 3,
-        energyLevel: 3, reactionSpeed: 3,
-        shotSelection: 3, gameAwareness: 3,
-        sessionNotes: 'Below par. Tired from match day. Short session.',
-      },
-      {
-        id: 'demo-6', title: 'Freestyle Session', scheduled_date: '2026-04-07T06:00:00Z',
-        completed_at: '2026-04-07T07:50:00Z', duration_minutes: 65, status: 'completed',
-        notes: '', trainingTypes: ['Batting', 'Sweep shots'],
-        ballsFaced: 140, ballsMiddled: 98, middlePercent: 70, boundariesHit: 12,
-        shotExecution: 4, footwork: 4, timing: 4,
-        focus: 4, confidence: 4, pressureHandling: 4,
-        energyLevel: 4, reactionSpeed: 4,
-        shotSelection: 5, gameAwareness: 4,
-        sessionNotes: 'Sweep shots were excellent. Game awareness improving.',
-      },
-      {
-        id: 'demo-7', title: 'Freestyle Session', scheduled_date: '2026-04-05T06:00:00Z',
-        completed_at: '2026-04-05T08:05:00Z', duration_minutes: 80, status: 'completed',
-        notes: '', trainingTypes: ['Batting', 'Running between wickets'],
-        ballsFaced: 200, ballsMiddled: 148, middlePercent: 74, boundariesHit: 20,
-        shotExecution: 5, footwork: 4, timing: 4,
-        focus: 5, confidence: 5, pressureHandling: 5,
-        energyLevel: 5, reactionSpeed: 4,
-        shotSelection: 4, gameAwareness: 5,
-        sessionNotes: 'Excellent session — peak confidence and focus. 200 balls faced personal best.',
-      },
-      {
-        id: 'demo-8', title: 'Freestyle Session', scheduled_date: '2026-04-03T06:00:00Z',
-        completed_at: '2026-04-03T07:20:00Z', duration_minutes: 50, status: 'completed',
-        notes: '', trainingTypes: ['Defence'],
-        ballsFaced: 90, ballsMiddled: 55, middlePercent: 61, boundariesHit: 4,
-        shotExecution: 3, footwork: 3, timing: 3,
-        focus: 3, confidence: 3, pressureHandling: 2,
-        energyLevel: 3, reactionSpeed: 3,
-        shotSelection: 3, gameAwareness: 3,
-        sessionNotes: 'Pressure handling struggled under short-pitch bowling drill.',
-      },
-      {
-        id: 'demo-9', title: 'Freestyle Session', scheduled_date: '2026-04-01T06:00:00Z',
-        completed_at: '2026-04-01T07:45:00Z', duration_minutes: 60, status: 'completed',
-        notes: '', trainingTypes: ['Batting', 'Timing drills'],
-        ballsFaced: 130, ballsMiddled: 90, middlePercent: 69, boundariesHit: 10,
-        shotExecution: 4, footwork: 4, timing: 5,
-        focus: 4, confidence: 4, pressureHandling: 3,
-        energyLevel: 4, reactionSpeed: 4,
-        shotSelection: 4, gameAwareness: 4,
-        sessionNotes: 'Timing felt electric today. On-drive was the best shot of the session.',
-      },
-      {
-        id: 'demo-10', title: 'Freestyle Session', scheduled_date: '2026-03-29T06:00:00Z',
-        completed_at: '2026-03-29T07:30:00Z', duration_minutes: 55, status: 'completed',
-        notes: '', trainingTypes: ['Batting'],
-        ballsFaced: 110, ballsMiddled: 71, middlePercent: 65, boundariesHit: 8,
-        shotExecution: 3, footwork: 4, timing: 3,
-        focus: 4, confidence: 3, pressureHandling: 3,
-        energyLevel: 4, reactionSpeed: 3,
-        shotSelection: 3, gameAwareness: 3,
-        sessionNotes: 'First session of the month. Getting back into rhythm.',
-      },
-    ];
-    setSessions(DEMO_SESSIONS);
+    const supabase = getSupabaseClient();
+    const { data } = await supabase
+      .from('sessions')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('status', 'completed')
+      .order('completed_at', { ascending: false })
+      .limit(50);
+    const mapped: FreestyleSession[] = (data || []).map((s: any) => {
+      const parsed = parseSessionNotes(s.notes || '');
+      return {
+        id: s.id,
+        title: s.title || 'Freestyle Session',
+        scheduled_date: s.scheduled_date,
+        completed_at: s.completed_at || s.scheduled_date,
+        duration_minutes: s.duration_minutes || 0,
+        notes: s.notes || '',
+        status: s.status,
+        ...parsed,
+      };
+    });
+    setSessions(mapped);
     setLoading(false);
   }, [user]);
 
