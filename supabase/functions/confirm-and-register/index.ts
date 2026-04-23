@@ -1,9 +1,10 @@
 /**
  * confirm-and-register edge function
- * Uses service role to:
- * 1. Sign up user (or get existing)
- * 2. Auto-confirm their email
- * 3. Return a valid session via admin.generateLink or direct confirm
+ * Strategy:
+ * 1. Sign up with standard auth (anon client)
+ * 2. Force-confirm email via confirm_user_email() SQL function (service role)
+ * 3. Sign in with password to return a real session
+ * If user already exists: force-confirm then sign in directly
  */
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -26,52 +27,39 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
     );
 
-    // Step 1: Try to create the user with email_confirm = true
-    const { data: createData, error: createErr } = await supabaseAdmin.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,  // Auto-confirm immediately
-      user_metadata: { full_name: full_name || '' },
-    });
-
-    let userId: string | null = null;
-
-    if (!createErr && createData?.user) {
-      userId = createData.user.id;
-      console.log('Created new user:', userId);
-    } else if (createErr?.message?.includes('already been registered') || createErr?.message?.includes('already exists')) {
-      // User exists — find them and ensure they're confirmed
-      const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
-      const existingUser = listData?.users?.find((u: any) => u.email === email);
-      if (existingUser) {
-        userId = existingUser.id;
-        // Ensure email is confirmed
-        if (!existingUser.email_confirmed_at) {
-          await supabaseAdmin.auth.admin.updateUserById(userId, {
-            email_confirm: true,
-          });
-        }
-        console.log('Found existing user:', userId);
-      }
-    } else if (createErr) {
-      console.error('createUser error:', createErr.message);
-      return new Response(JSON.stringify({ error: createErr.message }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    if (!userId) {
-      return new Response(JSON.stringify({ error: 'Could not create or find user account' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Step 2: Now sign in with password to get a real session token
     const supabaseAnon = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
     );
 
+    // Step 1: Attempt signup (will create user OR fail if already exists)
+    const { data: signUpData, error: signUpErr } = await supabaseAnon.auth.signUp({
+      email,
+      password,
+      options: { data: { full_name: full_name || '' } },
+    });
+
+    if (signUpErr) {
+      console.log('Signup note:', signUpErr.message);
+      // User may already exist — that's okay, continue to confirm + sign in
+    } else {
+      console.log('Signed up user:', signUpData?.user?.id);
+    }
+
+    // Step 2: Force-confirm the email using our SQL SECURITY DEFINER function
+    // This bypasses email verification entirely — works even if user already existed
+    const { error: confirmErr } = await supabaseAdmin.rpc('confirm_user_email', {
+      p_email: email,
+    });
+
+    if (confirmErr) {
+      console.error('confirm_user_email error:', confirmErr.message);
+      // Non-fatal: continue and attempt sign in anyway
+    } else {
+      console.log('Email confirmed for:', email);
+    }
+
+    // Step 3: Sign in with password — should succeed now that email is confirmed
     const { data: signInData, error: signInErr } = await supabaseAnon.auth.signInWithPassword({
       email,
       password,
@@ -79,10 +67,14 @@ serve(async (req) => {
 
     if (signInErr || !signInData?.session) {
       console.error('signIn error:', signInErr?.message);
-      return new Response(JSON.stringify({ error: signInErr?.message || 'Login failed after account creation' }), {
+      return new Response(JSON.stringify({
+        error: signInErr?.message || 'Login failed after registration. Please try again.',
+      }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    console.log('Successfully signed in:', signInData.user.id);
 
     return new Response(JSON.stringify({
       success: true,
