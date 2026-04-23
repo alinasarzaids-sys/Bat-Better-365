@@ -878,7 +878,6 @@ function MonthlyCalendar({ entries, isCoach, today, loggedDates, onDayPress }: {
 
   const entriesByDate: Record<string, ScheduleEntry[]> = {};
   entries.forEach(e => {
-    if (isCoach && e.date >= today) return;
     if (!entriesByDate[e.date]) entriesByDate[e.date] = [];
     entriesByDate[e.date].push(e);
   });
@@ -1337,7 +1336,7 @@ export default function AcademyScheduleScreen() {
   const windowedEntries = filteredEntries.filter(e => e.date >= windowStartStr && e.date <= windowEndStr);
   const upcoming = windowedEntries.filter(e => e.date >= today).sort((a, b) => a.date !== b.date ? a.date.localeCompare(b.date) : a.time.localeCompare(b.time));
   const past = windowedEntries.filter(e => e.date < today).sort((a, b) => b.date !== a.date ? b.date.localeCompare(a.date) : b.time.localeCompare(a.time));
-  const calendarEntries = isCoach ? filteredEntries.filter(e => e.date < today) : filteredEntries;
+  const calendarEntries = filteredEntries;
   const userId = user?.id || '';
 
   if (loading) {
@@ -1415,12 +1414,6 @@ export default function AcademyScheduleScreen() {
 
         {viewMode === 'calendar' && (
           <>
-            {isCoach && (
-              <View style={{ backgroundColor: colors.primary + '10', borderRadius: borderRadius.md, padding: spacing.sm, marginBottom: spacing.sm, flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.primary + '30' }}>
-                <MaterialIcons name="info-outline" size={14} color={colors.primary} />
-                <Text style={{ fontSize: 11, color: colors.primary, flex: 1, lineHeight: 15 }}>As coach, you see completed session dates. Upcoming sessions are managed in List view.</Text>
-              </View>
-            )}
             <MonthlyCalendar
               entries={calendarEntries}
               isCoach={isCoach}
