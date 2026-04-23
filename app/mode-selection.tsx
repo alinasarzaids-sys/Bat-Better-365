@@ -191,6 +191,10 @@ export default function ModeSelectionScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+        <Pressable style={styles.backBtn} onPress={() => router.replace('/login' as any)}>
+          <MaterialIcons name="arrow-back" size={22} color={colors.text} />
+          <Text style={styles.backText}>Back to Login</Text>
+        </Pressable>
         <View style={styles.headerSection}>
           <MaterialIcons name="sports-cricket" size={48} color={colors.primary} />
           <Text style={styles.title}>How will you use{'\n'}Bat Better 365?</Text>
