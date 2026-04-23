@@ -130,9 +130,9 @@ export default function PaywallScreen() {
           .maybeSingle();
         if (existing) { showAlert('Already Redeemed', 'You have already used this promo code.'); setPromoLoading(false); return; }
 
-        // Grant 1 year free subscription
+        // Grant 1 month free subscription
         const expiry = new Date();
-        expiry.setFullYear(expiry.getFullYear() + 1);
+        expiry.setMonth(expiry.getMonth() + 1);
         await supabase.from('user_subscriptions').delete().eq('user_id', user.id);
         const { error: subErr } = await supabase.from('user_subscriptions').insert({
           user_id: user.id,

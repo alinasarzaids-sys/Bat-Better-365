@@ -965,7 +965,8 @@ export default function AcademyScreen() {
                           if (remaining.length === 0) setShowPendingModal(false);
                           await academyService.rejectPlayer(m.id);
                           setApprovingId(null);
-                          if (currentMembership) loadCoachData(currentMembership.academy.id);
+                          // Reload after short delay to let DB propagate
+                          setTimeout(() => { if (currentMembership) loadCoachData(currentMembership.academy.id); }, 1000);
                         }}
                         disabled={approvingId === m.id}
                       >
@@ -981,7 +982,8 @@ export default function AcademyScreen() {
                           if (remaining.length === 0) setShowPendingModal(false);
                           await academyService.approvePlayer(m.id);
                           setApprovingId(null);
-                          if (currentMembership) loadCoachData(currentMembership.academy.id);
+                          // Reload after short delay to let DB propagate
+                          setTimeout(() => { if (currentMembership) loadCoachData(currentMembership.academy.id); }, 1000);
                           showAlert('Approved!', `${m.display_name || 'Player'} can now access the academy.`);
                         }}
                         disabled={approvingId === m.id}
