@@ -334,6 +334,11 @@ export default function AcademyScreen() {
   const previewAsPlayer = false;
   const [showEditAcademyModal, setShowEditAcademyModal] = useState(false);
 
+  // Edit position modal state
+  const [showEditPositionModal, setShowEditPositionModal] = useState(false);
+  const [editPositionValue, setEditPositionValue] = useState('');
+  const [savingPosition, setSavingPosition] = useState(false);
+
   // Join modal state
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showJoinConfirm, setShowJoinConfirm] = useState(false);
@@ -683,12 +688,18 @@ export default function AcademyScreen() {
             <MaterialIcons name={isCoach ? 'school' : 'sports-cricket'} size={20} color={isCoach ? colors.warning : colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.academyStripName} numberOfLines={1}>{currentMembership!.academy.name}</Text>
-            {currentMembership!.academy.description ? <Text style={styles.academyStripDesc} numberOfLines={1}>{currentMembership!.academy.description}</Text> : null}
+            {/* Player display name — prominent */}
+            {currentMembership!.member.display_name ? (
+              <Text style={[styles.academyStripName, { fontSize: 16 }]} numberOfLines={1}>{currentMembership!.member.display_name}</Text>
+            ) : null}
+            <Text style={[styles.academyStripDesc, { fontWeight: '600' }]} numberOfLines={1}>{currentMembership!.academy.name}</Text>
             {!isCoach && memberRole !== 'admin' && currentMembership!.member.position ? (
-              <Text style={[styles.academyStripSub, { color: getPositionColor(currentMembership!.member.position) }]}>
-                {currentMembership!.member.position}{currentMembership!.member.jersey_number ? ` · #${currentMembership!.member.jersey_number}` : ''}
-              </Text>
+              <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={() => { setEditPositionValue(currentMembership!.member.position || 'Batsman'); setShowEditPositionModal(true); }} hitSlop={6}>
+                <Text style={[styles.academyStripSub, { color: getPositionColor(currentMembership!.member.position) }]}>
+                  {currentMembership!.member.position}{currentMembership!.member.jersey_number ? ` · #${currentMembership!.member.jersey_number}` : ''}
+                </Text>
+                <MaterialIcons name="edit" size={11} color={getPositionColor(currentMembership!.member.position)} />
+              </Pressable>
             ) : null}
           </View>
           {isCoach && <Pressable style={styles.editAcademyBtn} onPress={() => setShowEditAcademyModal(true)} hitSlop={8}><MaterialIcons name="edit" size={15} color={colors.warning} /></Pressable>}
@@ -918,6 +929,41 @@ export default function AcademyScreen() {
       </ScrollView>
 
       <EditAcademyModal visible={showEditAcademyModal} academy={currentMembership?.academy || null} onClose={() => setShowEditAcademyModal(false)} onSaved={load} />
+
+      {/* ── Edit Position Modal ── */}
+      <Modal visible={showEditPositionModal} transparent animationType="fade" onRequestClose={() => setShowEditPositionModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.lg, width: '100%', gap: spacing.md }}>
+            <Text style={{ ...typography.h4, color: colors.text, fontWeight: '800', textAlign: 'center' }}>Update Your Position</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, justifyContent: 'center' }}>
+              {(['Batsman', 'Bowler', 'All-Rounder', 'Wicket-Keeper', 'Fielder'] as string[]).map(p => {
+                const isSelected = editPositionValue === p;
+                return (
+                  <Pressable key={p} style={[{ paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, borderRadius: borderRadius.full, borderWidth: 1.5, backgroundColor: isSelected ? getPositionColor(p) : colors.background, borderColor: isSelected ? getPositionColor(p) : colors.border }]} onPress={() => setEditPositionValue(p)}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: isSelected ? colors.textLight : colors.text }}>{p}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <Pressable style={{ flex: 1, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' }} onPress={() => setShowEditPositionModal(false)}>
+                <Text style={{ ...typography.body, color: colors.text, fontWeight: '700' }}>Cancel</Text>
+              </Pressable>
+              <Pressable style={[{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: spacing.md, borderRadius: borderRadius.md, backgroundColor: getPositionColor(editPositionValue) }, savingPosition && { opacity: 0.6 }]} onPress={async () => {
+                if (!currentMembership) return;
+                setSavingPosition(true);
+                const supabase = getSupabaseClient();
+                await supabase.from('academy_members').update({ position: editPositionValue }).eq('id', currentMembership.member.id);
+                setSavingPosition(false);
+                setShowEditPositionModal(false);
+                await load();
+              }} disabled={savingPosition}>
+                {savingPosition ? <ActivityIndicator color={colors.textLight} size="small" /> : <><MaterialIcons name="check" size={18} color={colors.textLight} /><Text style={{ ...typography.body, color: colors.textLight, fontWeight: '700' }}>Save</Text></>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <InviteModal visible={showInviteModal} academy={currentMembership?.academy || null} onClose={() => setShowInviteModal(false)} />
       <JoinModal visible={showJoinModal} step={joinStep} code={joinCode} onCodeChange={c => setJoinCode(c.toUpperCase())} academyName={joinAcademyName} displayName={joinDisplayName} onDisplayNameChange={setJoinDisplayName} position={joinPosition} onPositionChange={setJoinPosition} jersey={joinJersey} onJerseyChange={setJoinJersey} squads={joinSquads} selectedSquadId={joinSquadId} onSquadChange={setJoinSquadId} verifyLoading={joinCodeLoading} joining={joining} onVerify={handleVerifyCode} onBack={() => setJoinStep('code')} onClose={() => { setShowJoinModal(false); resetJoinModal(); }} onSubmit={handleConfirmJoin} />
       <JoinConfirmModal visible={showJoinConfirm} squadName={joinSquads.find(s => s.id === joinSquadId)?.name || null} squadColor={joinSquads.find(s => s.id === joinSquadId)?.color || colors.primary} position={joinPosition} displayName={joinDisplayName} academyName={joinAcademyName} joining={joining} onConfirm={handleJoin} onCancel={() => setShowJoinConfirm(false)} />

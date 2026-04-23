@@ -537,38 +537,53 @@ const pb = StyleSheet.create({
 });
 
 // ─── Session Card ─────────────────────────────────────────────────────────────
-function SessionCard({ entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal, memberPosition }: {
+function SessionCard({ entry, isCoach, academyId, userId, today, router, onEditAcademy, onEditPersonal, memberPosition, loggedDates }: {
   entry: ScheduleEntry; isCoach: boolean; academyId: string; userId: string; today: string;
   router: any; onEditAcademy: (s: AcademySession) => void; onEditPersonal: (entry: ScheduleEntry) => void;
-  memberPosition?: string;
+  memberPosition?: string; loggedDates?: Set<string>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const color = typeColor(entry.sessionType);
   const isToday = entry.date === today;
   const isPast = entry.date < today;
-  const isMissed = isPast && !isCoach;
-  const isDone = isPast && isCoach;
+  // A session is "completed" if there's a training log on that date
+  const isCompleted = !!(loggedDates && loggedDates.has(entry.date));
+  const isMissed = isPast && !isCoach && !isCompleted;
+  const isDone = (isPast || isToday) && !isCoach && isCompleted;
+  const isDoneCoach = isPast && isCoach;
+
+  // Only show Start Session within 1 hour before the scheduled time (or after)
+  const canStartNow = (() => {
+    if (!isToday) return false;
+    const [h, m] = (entry.time || '10:00').split(':').map(Number);
+    const sessionMinutes = h * 60 + m;
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // Allow starting from 60 minutes before until end of day
+    return nowMinutes >= sessionMinutes - 60;
+  })();
   const isAcademy = entry.source === 'academy';
   const isPersonal = entry.source === 'personal';
-  const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId);
+  const canEdit = isCoach ? isAcademy : (isPersonal && entry.createdBy === userId) || (!isCoach && isAcademy);  // coaches can always edit academy sessions; players can edit personal
   const planBlocks = parsePlanBlocks(entry.notes);
   const objectives = parseObjectives(entry.notes);
   const coachNotes = parseCoachNotes(entry.notes);
   const hasPlan = planBlocks.length > 0 || objectives.length > 0 || !!coachNotes;
   const sourceC = SOURCE_COLORS[entry.source];
-  const stripeColor = isMissed ? colors.error : isPersonal ? colors.success : color;
+  const stripeColor = isMissed ? colors.error : isDone ? colors.success : isPersonal ? colors.success : color;
 
   return (
-    <Pressable style={[styles.sessionCard, isToday && styles.sessionCardToday, isMissed && styles.sessionCardMissed, isDone && styles.sessionCardPast]} onPress={() => setExpanded(e => !e)} activeOpacity={0.85}>
-      <View style={[styles.sessionStripe, { backgroundColor: isMissed ? colors.error : isDone ? colors.border : stripeColor }]} />
+    <Pressable style={[styles.sessionCard, isToday && !isDone && styles.sessionCardToday, isMissed && styles.sessionCardMissed, (isDoneCoach || isDone) && styles.sessionCardPast, isDone && { borderColor: colors.success + '60', borderWidth: 1.5 }]} onPress={() => setExpanded(e => !e)} activeOpacity={0.85}>
+      <View style={[styles.sessionStripe, { backgroundColor: isMissed ? colors.error : isDone ? colors.success : isDoneCoach ? colors.border : stripeColor }]} />
       <View style={styles.sessionContent}>
         <View style={styles.sessionTop}>
           <View style={{ flex: 1 }}>
             <View style={styles.sessionTitleRow}>
-              <Text style={[styles.sessionTitle, isMissed && { color: colors.error }, isDone && { color: colors.textSecondary }]}>{entry.title}</Text>
-              {isToday && <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>}
+              <Text style={[styles.sessionTitle, isMissed && { color: colors.error }, (isDoneCoach || isDone) && { color: colors.textSecondary }]}>{entry.title}</Text>
+              {isToday && !isDone && <View style={styles.todayBadge}><Text style={styles.todayBadgeText}>TODAY</Text></View>}
               {isMissed && <View style={styles.missedBadge}><MaterialIcons name="cancel" size={12} color={colors.textLight} /><Text style={styles.missedBadgeText}>MISSED</Text></View>}
-              {isDone && <View style={styles.doneBadge}><MaterialIcons name="check-circle" size={12} color={colors.success} /><Text style={styles.doneBadgeText}>Done</Text></View>}
+              {isDone && <View style={[styles.doneBadge, { backgroundColor: colors.success + '25', borderWidth: 1, borderColor: colors.success + '50' }]}><MaterialIcons name="check-circle" size={12} color={colors.success} /><Text style={[styles.doneBadgeText, { color: colors.success, fontWeight: '900' }]}>COMPLETED</Text></View>}
+              {isDoneCoach && !isDone && <View style={styles.doneBadge}><MaterialIcons name="check-circle" size={12} color={colors.success} /><Text style={styles.doneBadgeText}>Done</Text></View>}
             </View>
             <Text style={styles.sessionMeta}>{formatDateReadable(entry.date)} · {formatTime12(entry.time)}{entry.location ? ` · ${entry.location}` : ''}</Text>
           </View>
@@ -636,12 +651,20 @@ function SessionCard({ entry, isCoach, academyId, userId, today, router, onEditA
             ) : null}
           </View>
         )}
-        {!isCoach && !isPast && (
+        {!isCoach && !isDone && !isMissed && (isToday ? canStartNow : entry.date > today) && (
           <Pressable style={[styles.startSessionBtn, isPersonal && { backgroundColor: colors.success }]}
             onPress={() => router.push({ pathname: '/academy-log', params: { academyId, position: memberPosition || 'Batsman', isAcademyMember: 'true' } } as any)}>
             <MaterialIcons name="play-circle-filled" size={18} color={colors.textLight} />
             <Text style={styles.startSessionBtnText}>Start Session</Text>
           </Pressable>
+        )}
+        {!isCoach && !isDone && isToday && !canStartNow && !isMissed && (
+          <View style={[styles.startSessionBtn, { backgroundColor: colors.border, opacity: 0.7 }]}>
+            <MaterialIcons name="schedule" size={18} color={colors.textSecondary} />
+            <Text style={[styles.startSessionBtnText, { color: colors.textSecondary }]}>
+              Available 1h before session time ({formatTime12(entry.time)})
+            </Text>
+          </View>
         )}
         {!isCoach && isMissed && (
           <Pressable style={styles.logLateBtn}
@@ -922,13 +945,16 @@ function MonthlyCalendar({ entries, isCoach, today, loggedDates, onDayPress }: {
                 <View style={cal.dotsRow}>
                   {dayEntries.slice(0, 3).map((e, di) => {
                     // Match legend: Completed=green filled, Missed=red filled, Upcoming=outlined dot
-                    if (isFuture || isToday) {
+                    if (isFuture || (isToday && !isCompleted)) {
                       // Upcoming: outlined ring (blue for academy, green for personal)
                       const ringColor = e.source === 'personal' ? colors.success : colors.primary;
                       return <View key={di} style={[cal.dot, { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: ringColor }]} />;
+                    } else if (isCompleted) {
+                      // Completed (has a log on this date)
+                      return <View key={di} style={[cal.dot, { backgroundColor: colors.success }]} />;
                     } else if (isPast) {
-                      // Past: green if logged (completed), red if not (missed)
-                      return <View key={di} style={[cal.dot, { backgroundColor: isCompleted ? colors.success : colors.error }]} />;
+                      // Past without log = missed
+                      return <View key={di} style={[cal.dot, { backgroundColor: colors.error }]} />;
                     }
                     return <View key={di} style={[cal.dot, { backgroundColor: colors.border }]} />;
                   })}
@@ -1438,7 +1464,7 @@ export default function AcademyScheduleScreen() {
                 <Text style={styles.sectionLabel}>Upcoming ({upcoming.length}) · Tap to see plan</Text>
                 {upcoming.map(e => (
                   <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
-                    memberPosition={memberPosition}
+                    memberPosition={memberPosition} loggedDates={loggedDates}
                     onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
                     onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }} />
                 ))}
@@ -1449,7 +1475,7 @@ export default function AcademyScheduleScreen() {
                 <Text style={[styles.sectionLabel, { marginTop: spacing.md }]}>Recent / Missed ({past.length})</Text>
                 {past.map(e => (
                   <SessionCard key={e.id} entry={e} isCoach={isCoach} academyId={academyId} userId={userId} today={today} router={router}
-                    memberPosition={memberPosition}
+                    memberPosition={memberPosition} loggedDates={loggedDates}
                     onEditAcademy={s => { setEditingAcademySession(s); setShowEditAcademy(true); }}
                     onEditPersonal={ent => { setEditingPersonalEntry(ent); setShowPersonalModal(true); }} />
                 ))}
