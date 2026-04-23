@@ -21,7 +21,7 @@ type Step = 'form' | 'success';
 
 export default function AcademyRegisterScreen() {
   const router = useRouter();
-  const { signUpWithPassword, signInWithPassword, operationLoading } = useAuth();
+  const { operationLoading } = useAuth();
   const { showAlert } = useAlert();
 
   const [step, setStep] = useState<Step>('form');
@@ -67,56 +67,43 @@ export default function AcademyRegisterScreen() {
     const emailLower = email.trim().toLowerCase();
 
     try {
-      // Try sign-up first; if account exists, sign in
+      // Use edge function to create/confirm account and get session back
+      const supabase = getSupabaseClient();
       let uid: string | null = null;
 
-      const { error: signUpErr, user, needsEmailConfirmation } = await signUpWithPassword(emailLower, password, {
-        full_name: fullName.trim(),
+      const { data: regData, error: regErr } = await supabase.functions.invoke('confirm-and-register', {
+        body: { email: emailLower, password, full_name: fullName.trim() },
       });
 
-      if (!signUpErr && user) {
-        uid = user.id;
-      } else if (!signUpErr && needsEmailConfirmation) {
-        // Email confirmation required — try sign in immediately to get session
-        const { error: loginErr, user: loginUser } = await signInWithPassword(emailLower, password);
-        if (!loginErr && loginUser) {
-          uid = loginUser.id;
-        } else {
-          // Signup succeeded but can't sign in yet — use Supabase directly to get user
-          const supabaseDirect = getSupabaseClient();
-          const { data: sessionData } = await supabaseDirect.auth.getSession();
-          if (sessionData?.session?.user) {
-            uid = sessionData.session.user.id;
-          }
-        }
-      } else if (signUpErr) {
-        // Account may already exist — try sign in
-        const { error: loginErr, user: loginUser } = await signInWithPassword(emailLower, password);
-        if (!loginErr && loginUser) {
-          uid = loginUser.id;
-        } else {
-          setLoading(false);
-          showAlert('Error', signUpErr || 'Could not create account. Check your email and password.');
-          return;
-        }
+      if (regErr || !regData?.success) {
+        let errMsg = 'Account creation failed. Please check your details and try again.';
+        if (regErr?.message) errMsg = regErr.message;
+        if (regData?.error) errMsg = regData.error;
+        setLoading(false);
+        showAlert('Error', errMsg);
+        return;
+      }
+
+      uid = regData.user?.id;
+
+      // Set the session returned by the edge function
+      if (regData.session?.access_token) {
+        await supabase.auth.setSession({
+          access_token: regData.session.access_token,
+          refresh_token: regData.session.refresh_token,
+        });
       }
 
       if (!uid) {
-        // Last resort: try sign in directly
-        const { error: lastErr, user: lastUser } = await signInWithPassword(emailLower, password);
-        if (!lastErr && lastUser) {
-          uid = lastUser.id;
-        } else {
-          setLoading(false);
-          showAlert('Error', 'Account creation failed. Please try again or contact support.');
-          return;
-        }
+        setLoading(false);
+        showAlert('Error', 'Could not get user account. Please try again.');
+        return;
       }
 
-      const supabase = getSupabaseClient();
+      const supabaseFinal = getSupabaseClient();
 
       // Check if this user already owns an academy
-      const { data: existingAcademy } = await supabase
+      const { data: existingAcademy } = await supabaseFinal
         .from('academies')
         .select('id, player_code, coach_code')
         .eq('created_by', uid)
@@ -141,7 +128,7 @@ export default function AcademyRegisterScreen() {
       const trialStart = new Date().toISOString().split('T')[0];
       const trialEnd = new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0];
 
-      const { data: academy, error: createErr } = await supabase
+      const { data: academy, error: createErr } = await supabaseFinal
         .from('academies')
         .insert({
           name: academyName.trim(),
@@ -171,7 +158,7 @@ export default function AcademyRegisterScreen() {
       }
 
       // Auto-add as admin/head coach — immediately approved, no waiting room
-      await supabase.from('academy_members').insert({
+      await supabaseFinal.from('academy_members').insert({
         academy_id: academy.id,
         user_id: uid,
         role: 'admin',
@@ -182,7 +169,7 @@ export default function AcademyRegisterScreen() {
       });
 
       // Update profile
-      await supabase.from('user_profiles').update({
+      await supabaseFinal.from('user_profiles').update({
         app_mode: 'academy',
         full_name: fullName.trim(),
       }).eq('id', uid);
