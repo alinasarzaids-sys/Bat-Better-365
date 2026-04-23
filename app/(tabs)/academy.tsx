@@ -126,7 +126,6 @@ function InviteModal({ visible, academy, onClose }: { visible: boolean; academy:
   if (!academy) return null;
   const sharePlayerCode = () => Share.share({ message: `Join ${academy.name} on Bat Better 365 as a Player!\n\nPlayer Code: ${academy.player_code}\n\nDownload Bat Better 365 and enter this code under Academy Portal.`, title: `Player Code — ${academy.name}` });
   const shareCoachCode = () => Share.share({ message: `Join ${academy.name} on Bat Better 365 as a Coach!\n\nCoach Code: ${academy.coach_code}\n\nDownload Bat Better 365 and enter this code under Academy Portal.`, title: `Coach Code — ${academy.name}` });
-  const shareAdminCode = () => Share.share({ message: `Join ${academy.name} on Bat Better 365 as an Admin!\n\nAdmin Code: ${(academy as any).admin_code}\n\nThis gives full access to both coach and player portals.`, title: `Admin Code — ${academy.name}` });
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={inviteModalStyles.overlay} onPress={onClose}>
@@ -134,15 +133,6 @@ function InviteModal({ visible, academy, onClose }: { visible: boolean; academy:
           <View style={inviteModalStyles.handle} />
           <Text style={inviteModalStyles.title}>Invite to {academy.name}</Text>
           <Text style={inviteModalStyles.subtitle}>Share the relevant code with your squad members</Text>
-          <View style={[inviteModalStyles.codeBlock, { borderColor: colors.error + '40', backgroundColor: colors.error + '06' }]}>
-            <View style={[inviteModalStyles.codeIconCircle, { backgroundColor: colors.error + '15' }]}><MaterialIcons name="admin-panel-settings" size={22} color={colors.error} /></View>
-            <View style={{ flex: 1 }}>
-              <Text style={inviteModalStyles.codeRoleLabel}>ADMIN CODE (Full Access)</Text>
-              <Text style={[inviteModalStyles.codeValue, { color: colors.error }]}>{(academy as any).admin_code}</Text>
-              <Text style={{ fontSize: 10, color: colors.textSecondary, marginTop: 2 }}>Views both coach and player portals</Text>
-            </View>
-            <Pressable style={[inviteModalStyles.shareBtn, { backgroundColor: colors.error }]} onPress={shareAdminCode}><MaterialIcons name="share" size={16} color={colors.textLight} /><Text style={inviteModalStyles.shareBtnText}>Share</Text></Pressable>
-          </View>
           <View style={[inviteModalStyles.codeBlock, { borderColor: colors.primary + '40' }]}>
             <View style={[inviteModalStyles.codeIconCircle, { backgroundColor: colors.primary + '15' }]}><MaterialIcons name="sports-cricket" size={22} color={colors.primary} /></View>
             <View style={{ flex: 1 }}><Text style={inviteModalStyles.codeRoleLabel}>PLAYER CODE</Text><Text style={[inviteModalStyles.codeValue, { color: colors.primary }]}>{academy.player_code}</Text></View>
@@ -341,7 +331,7 @@ export default function AcademyScreen() {
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [selectedSquadFilter, setSelectedSquadFilter] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
-  const [previewAsPlayer, setPreviewAsPlayer] = useState(false);
+  const previewAsPlayer = false;
   const [showEditAcademyModal, setShowEditAcademyModal] = useState(false);
 
   // Join modal state
@@ -647,12 +637,6 @@ export default function AcademyScreen() {
           {memberships.length > 1 && <Text style={styles.headerSub}>{memberships.length} academies</Text>}
         </View>
         <View style={styles.headerActions}>
-          {isAdmin && (
-            <Pressable style={[styles.previewToggleBtn, previewAsPlayer && styles.previewToggleBtnActive]} onPress={() => setPreviewAsPlayer(p => !p)} hitSlop={8}>
-              <MaterialIcons name={previewAsPlayer ? 'manage-accounts' : 'person'} size={16} color={previewAsPlayer ? colors.textLight : colors.textSecondary} />
-              <Text style={[styles.previewToggleText, previewAsPlayer && styles.previewToggleTextActive]}>{previewAsPlayer ? 'Player View' : 'Coach View'}</Text>
-            </Pressable>
-          )}
           <Pressable style={styles.joinMoreBtn} onPress={() => setShowJoinModal(true)} hitSlop={8}>
             <MaterialIcons name="vpn-key" size={18} color={colors.primary} />
           </Pressable>
@@ -766,16 +750,9 @@ export default function AcademyScreen() {
             </Pressable>
             <Pressable style={[styles.inviteBtn, { marginTop: 0, borderColor: colors.border }]} onPress={() => router.push({ pathname: '/academy-history', params: { academyId: currentMembership!.academy.id, isCoach: 'true' } } as any)}>
               <View style={[styles.inviteBtnIconCircle, { backgroundColor: colors.technical + '15' }]}><MaterialIcons name="history" size={20} color={colors.technical} /></View>
-              <View style={{ flex: 1 }}><Text style={styles.inviteBtnTitle}>Training History</Text><Text style={styles.inviteBtnSub}>All logged academy sessions</Text></View>
+              <View style={{ flex: 1, gap: 2 }}><Text style={styles.inviteBtnTitle}>Training History</Text><Text style={styles.inviteBtnSub}>All logged academy sessions</Text></View>
               <MaterialIcons name="chevron-right" size={20} color={colors.textSecondary} />
             </Pressable>
-            {isAdmin && (
-              <Pressable style={[styles.inviteBtn, { marginTop: 0, borderColor: colors.error + '40' }]} onPress={() => router.push('/admin-panel' as any)}>
-                <View style={[styles.inviteBtnIconCircle, { backgroundColor: colors.error + '15' }]}><MaterialIcons name="admin-panel-settings" size={20} color={colors.error} /></View>
-                <View style={{ flex: 1 }}><Text style={styles.inviteBtnTitle}>Super Admin Panel</Text><Text style={styles.inviteBtnSub}>Invoices, billing, lock/unlock</Text></View>
-                <MaterialIcons name="chevron-right" size={20} color={colors.error} />
-              </Pressable>
-            )}
           </>
         )}
 
