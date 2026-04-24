@@ -1,56 +1,26 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  Pressable,
-  ActivityIndicator,
-  Modal,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
+  View, Text, ScrollView, StyleSheet, Pressable, ActivityIndicator,
+  Modal, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, {
+  Circle, Polygon, Line, Text as SvgText, G, Rect,
+} from 'react-native-svg';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
-interface FreestyleSession {
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+interface PersonalSession {
   id: string;
-  title: string;
-  scheduled_date: string;
   completed_at: string;
   duration_minutes: number;
   notes: string;
-  status: string;
-  ballsFaced?: number;
-  ballsMiddled?: number;
-  middlePercent?: number;
-  boundariesHit?: number;
-  shotExecution?: number;
-  footwork?: number;
-  timing?: number;
-  focus?: number;
-  confidence?: number;
-  pressureHandling?: number;
-  energyLevel?: number;
-  reactionSpeed?: number;
-  shotSelection?: number;
-  gameAwareness?: number;
-  physicalRating?: number;
-  mentalRating?: number;
-  tacticalRating?: number;
-  technicalRating?: number;
-  trainingTypes?: string[];
-  sessionNotes?: string;
-}
-
-interface EditForm {
-  ballsFaced: string;
-  ballsMiddled: string;
   shotExecution: number;
   footwork: number;
   timing: number;
@@ -61,811 +31,990 @@ interface EditForm {
   reactionSpeed: number;
   shotSelection: number;
   gameAwareness: number;
-  sessionNotes: string;
 }
 
-function parseSessionNotes(notes: string): Partial<FreestyleSession> {
-  const result: Partial<FreestyleSession> = {};
+interface AcademyLog {
+  id: string;
+  log_date: string;
+  session_type: string;
+  duration_minutes: number;
+  intensity: number;
+  technical_rating: number;
+  effort_rating: number;
+  fitness_rating: number;
+  balls_faced: number;
+  balls_bowled: number;
+  wickets: number;
+  catches: number;
+  notes: string;
+}
+
+interface PillarData {
+  technical: number;
+  physical: number;
+  mental: number;
+  tactical: number;
+}
+
+// ─── Parsers ───────────────────────────────────────────────────────────────────
+function parseNotes(notes: string): Partial<PersonalSession> {
+  const result: Partial<PersonalSession> = {};
   if (!notes) return result;
   const lines = notes.split('\n');
   for (const line of lines) {
-    const clean = line.trim();
-    if (clean.startsWith('Training Types:')) result.trainingTypes = clean.replace('Training Types:', '').trim().split(', ').filter(Boolean);
-    else if (clean.startsWith('Balls Faced:')) result.ballsFaced = parseInt(clean.replace('Balls Faced:', '').trim()) || 0;
-    else if (clean.startsWith('Balls Middled:')) result.ballsMiddled = parseInt(clean.replace('Balls Middled:', '').trim()) || 0;
-    else if (clean.startsWith('Middle %:')) result.middlePercent = parseInt(clean.replace('Middle %:', '').trim()) || 0;
-    else if (clean.startsWith('Boundaries Hit:')) result.boundariesHit = parseInt(clean.replace('Boundaries Hit:', '').trim()) || 0;
-    else if (clean.startsWith('Shot Execution:')) result.shotExecution = parseInt(clean.replace('Shot Execution:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Footwork:')) result.footwork = parseInt(clean.replace('Footwork:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Timing:')) result.timing = parseInt(clean.replace('Timing:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Focus:')) result.focus = parseInt(clean.replace('Focus:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Confidence:')) result.confidence = parseInt(clean.replace('Confidence:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Pressure Handling:')) result.pressureHandling = parseInt(clean.replace('Pressure Handling:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Energy Level:')) result.energyLevel = parseInt(clean.replace('Energy Level:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Reaction Speed:')) result.reactionSpeed = parseInt(clean.replace('Reaction Speed:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Shot Selection:')) result.shotSelection = parseInt(clean.replace('Shot Selection:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Game Awareness:')) result.gameAwareness = parseInt(clean.replace('Game Awareness:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Physical:')) result.physicalRating = parseInt(clean.replace('Physical:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Mental:')) result.mentalRating = parseInt(clean.replace('Mental:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Tactical:')) result.tacticalRating = parseInt(clean.replace('Tactical:', '').replace('/5', '').trim()) || 0;
-    else if (clean.startsWith('Technical:')) result.technicalRating = parseInt(clean.replace('Technical:', '').replace('/5', '').trim()) || 0;
+    const c = line.trim();
+    if (c.startsWith('Shot Execution:')) result.shotExecution = parseInt(c.replace('Shot Execution:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Footwork:')) result.footwork = parseInt(c.replace('Footwork:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Timing:')) result.timing = parseInt(c.replace('Timing:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Focus:')) result.focus = parseInt(c.replace('Focus:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Confidence:')) result.confidence = parseInt(c.replace('Confidence:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Pressure Handling:')) result.pressureHandling = parseInt(c.replace('Pressure Handling:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Energy Level:')) result.energyLevel = parseInt(c.replace('Energy Level:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Reaction Speed:')) result.reactionSpeed = parseInt(c.replace('Reaction Speed:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Shot Selection:')) result.shotSelection = parseInt(c.replace('Shot Selection:', '').replace('/5', '').trim()) || 0;
+    else if (c.startsWith('Game Awareness:')) result.gameAwareness = parseInt(c.replace('Game Awareness:', '').replace('/5', '').trim()) || 0;
   }
-  const notesIdx = notes.indexOf('\n\nNotes:');
-  if (notesIdx !== -1) result.sessionNotes = notes.substring(notesIdx + 8).trim();
   return result;
 }
 
-function buildNotesString(session: FreestyleSession, form: EditForm): string {
-  const trainingTypesText = (session.trainingTypes || []).join(', ');
-  const middlePct = form.ballsFaced && form.ballsMiddled && parseInt(form.ballsFaced) > 0
-    ? Math.round((parseInt(form.ballsMiddled) / parseInt(form.ballsFaced)) * 100) : 0;
-
-  const physicalRating = avgOfNums([form.energyLevel, form.reactionSpeed]);
-  const mentalRating = avgOfNums([form.focus, form.confidence, form.pressureHandling]);
-  const tacticalRating = avgOfNums([form.shotSelection, form.gameAwareness]);
-  const technicalRating = avgOfNums([form.shotExecution, form.footwork, form.timing]);
-
-  let notes = `Training Types: ${trainingTypesText}\n`;
-  notes += `\n--- Batting Stats ---\n`;
-  if (form.ballsFaced) notes += `Balls Faced: ${form.ballsFaced}\n`;
-  if (form.ballsMiddled) notes += `Balls Middled: ${form.ballsMiddled}\n`;
-  if (middlePct > 0) notes += `Middle %: ${middlePct}\n`;
-  notes += `\n--- Technical ---\n`;
-  notes += `Shot Execution: ${form.shotExecution}/5\n`;
-  notes += `Footwork: ${form.footwork}/5\n`;
-  notes += `Timing: ${form.timing}/5\n`;
-  notes += `\n--- Mental ---\n`;
-  notes += `Focus: ${form.focus}/5\n`;
-  notes += `Confidence: ${form.confidence}/5\n`;
-  notes += `Pressure Handling: ${form.pressureHandling}/5\n`;
-  notes += `\n--- Physical ---\n`;
-  notes += `Energy Level: ${form.energyLevel}/5\n`;
-  notes += `Reaction Speed: ${form.reactionSpeed}/5\n`;
-  notes += `\n--- Tactical ---\n`;
-  notes += `Shot Selection: ${form.shotSelection}/5\n`;
-  notes += `Game Awareness: ${form.gameAwareness}/5\n`;
-  notes += `\nPhysical: ${physicalRating}/5\n`;
-  notes += `Mental: ${mentalRating}/5\n`;
-  notes += `Tactical: ${tacticalRating}/5\n`;
-  notes += `Technical: ${technicalRating}/5`;
-  if (form.sessionNotes) notes += `\n\nNotes: ${form.sessionNotes}`;
-  return notes;
+function avg(vals: (number | undefined)[]): number {
+  const v = vals.filter((x): x is number => (x || 0) > 0) as number[];
+  if (!v.length) return 0;
+  return Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10;
 }
 
-function avgOfNums(vals: number[]): number {
-  const valid = vals.filter(v => v > 0);
-  if (!valid.length) return 0;
-  return Math.round(valid.reduce((a, b) => a + b, 0) / valid.length);
-}
-
-function formatDate(iso: string): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-}
-
-function getPerformanceLabel(avg: number): { label: string; color: string } {
-  if (avg >= 4.5) return { label: 'Elite', color: '#7C3AED' };
-  if (avg >= 4) return { label: 'Excellent', color: colors.success };
-  if (avg >= 3.5) return { label: 'Good', color: colors.primary };
-  if (avg >= 2.5) return { label: 'Average', color: colors.warning };
-  return { label: 'Needs Work', color: colors.error };
-}
-
-function avgOf(vals: (number | undefined)[]): number {
-  const valid = vals.filter((v): v is number => (v || 0) > 0) as number[];
-  if (!valid.length) return 0;
-  return Math.round((valid.reduce((a, b) => a + b, 0) / valid.length) * 10) / 10;
-}
-
-const METRIC_DESCRIPTIONS: Record<string, string> = {
-  'Shot Execution': 'How clean & correct your technique was',
-  'Footwork': 'Foot movement & positioning into the ball',
-  'Timing': 'How well you timed the ball off the bat',
-  'Focus': 'Concentration & staying in the zone',
-  'Confidence': 'Overall confidence at the crease',
-  'Pressure Handling': 'Managing pressure & high-stakes moments',
-  'Energy Level': 'Physical energy & fitness during session',
-  'Reaction Speed': 'How quickly you picked up the ball',
-  'Shot Selection': 'Choosing the right shot at the right time',
-  'Game Awareness': 'Reading the game situation & field',
-};
-
-function MetricBar({ label, value, max = 5, color }: { label: string; value: number; max?: number; color: string }) {
-  const pct = max > 0 ? Math.min(1, value / max) * 100 : 0;
-  const desc = METRIC_DESCRIPTIONS[label];
-  return (
-    <View style={barStyles.wrapper}>
-      <View style={barStyles.labelCol}>
-        <Text style={barStyles.label} numberOfLines={1}>{label}</Text>
-        {desc ? <Text style={barStyles.desc} numberOfLines={2}>{desc}</Text> : null}
-      </View>
-      <View style={barStyles.trackCol}>
-        <View style={barStyles.track}>
-          <View style={[barStyles.fill, { width: `${pct}%`, backgroundColor: color }]} />
-        </View>
-      </View>
-      <Text style={[barStyles.val, { color }]}>{value > 0 ? `${value}/5` : '—'}</Text>
-    </View>
-  );
-}
-const barStyles = StyleSheet.create({
-  wrapper: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  labelCol: { width: 120, marginRight: spacing.sm },
-  label: { ...typography.caption, color: colors.text, fontWeight: '700', fontSize: 13 },
-  desc: { fontSize: 10, color: colors.textSecondary, lineHeight: 13, marginTop: 1 },
-  trackCol: { flex: 1, justifyContent: 'center' },
-  track: { height: 8, backgroundColor: colors.border, borderRadius: 4 },
-  fill: { height: 8, borderRadius: 4, minWidth: 4 },
-  val: { ...typography.caption, fontWeight: '800', width: 38, textAlign: 'right', fontSize: 13, marginLeft: 4 },
-});
-
-function BarChart({ data, color, maxVal = 5 }: { data: { label: string; value: number }[]; color: string; maxVal?: number }) {
-  const BAR_HEIGHT = 120;
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 6, height: BAR_HEIGHT + 40 }}>
-      {data.map((item, i) => {
-        const pct = maxVal > 0 ? item.value / maxVal : 0;
-        const barH = Math.max(4, Math.round(pct * BAR_HEIGHT));
-        return (
-          <View key={i} style={{ flex: 1, alignItems: 'center' }}>
-            <Text style={{ fontSize: 10, fontWeight: '700', color: colors.text, marginBottom: 2 }}>
-              {item.value > 0 ? item.value : ''}
-            </Text>
-            <View style={{ height: barH, width: '100%', backgroundColor: color, borderRadius: 4 }} />
-            <Text style={{ fontSize: 9, color: colors.textSecondary, marginTop: 4, textAlign: 'center' }} numberOfLines={1}>
-              {item.label}
-            </Text>
-          </View>
-        );
-      })}
-    </View>
-  );
-}
-
-function Stars({ rating, color }: { rating: number; color: string }) {
-  return (
-    <View style={{ flexDirection: 'row', gap: 2 }}>
-      {[1, 2, 3, 4, 5].map(s => (
-        <MaterialIcons key={s} name={s <= rating ? 'star' : 'star-border'} size={14} color={s <= rating ? color : colors.border} />
-      ))}
-    </View>
-  );
-}
-
-// ─── Edit Modal ───────────────────────────────────────────────────────────────
-function EditSessionModal({
-  session,
-  visible,
-  onClose,
-  onSaved,
-}: {
-  session: FreestyleSession | null;
-  visible: boolean;
-  onClose: () => void;
-  onSaved: (updated: FreestyleSession) => void;
+// ─── 1. AI Coach Header Card ───────────────────────────────────────────────────
+function AICoachCard({ personalSessions, academyLogs, pillarData, loading }: {
+  personalSessions: PersonalSession[];
+  academyLogs: AcademyLog[];
+  pillarData: PillarData;
+  loading: boolean;
 }) {
-  const [form, setForm] = useState<EditForm>({
-    ballsFaced: '', ballsMiddled: '',
-    shotExecution: 0, footwork: 0, timing: 0,
-    focus: 0, confidence: 0, pressureHandling: 0,
-    energyLevel: 0, reactionSpeed: 0,
-    shotSelection: 0, gameAwareness: 0,
-    sessionNotes: '',
-  });
-  const [saving, setSaving] = useState(false);
+  const { user } = useAuth();
+  const [insight, setInsight] = useState<string>('');
+  const [insightLoading, setInsightLoading] = useState(false);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [plan, setPlan] = useState<string>('');
+  const [showPlan, setShowPlan] = useState(false);
+  const generated = useRef(false);
 
-  // Populate form when session changes
-  React.useEffect(() => {
-    if (!session) return;
-    setForm({
-      ballsFaced: session.ballsFaced ? String(session.ballsFaced) : '',
-      ballsMiddled: session.ballsMiddled ? String(session.ballsMiddled) : '',
-      shotExecution: session.shotExecution || 0,
-      footwork: session.footwork || 0,
-      timing: session.timing || 0,
-      focus: session.focus || 0,
-      confidence: session.confidence || 0,
-      pressureHandling: session.pressureHandling || 0,
-      energyLevel: session.energyLevel || 0,
-      reactionSpeed: session.reactionSpeed || 0,
-      shotSelection: session.shotSelection || 0,
-      gameAwareness: session.gameAwareness || 0,
-      sessionNotes: session.sessionNotes || '',
-    });
-  }, [session]);
+  const generateInsight = useCallback(async () => {
+    if (!user || generated.current || loading) return;
+    const hasSessions = personalSessions.length > 0 || academyLogs.length > 0;
+    if (!hasSessions) return;
+    generated.current = true;
+    setInsightLoading(true);
 
-  const setRating = (field: keyof EditForm, val: number) =>
-    setForm(f => ({ ...f, [field]: val }));
+    const pillars = [
+      { name: 'Technical', val: pillarData.technical },
+      { name: 'Physical', val: pillarData.physical },
+      { name: 'Mental', val: pillarData.mental },
+      { name: 'Tactical', val: pillarData.tactical },
+    ].filter(p => p.val > 0).sort((a, b) => a.val - b.val);
 
-  const middlePct = form.ballsFaced && form.ballsMiddled && parseInt(form.ballsFaced) > 0
-    ? Math.round((parseInt(form.ballsMiddled) / parseInt(form.ballsFaced)) * 100) : null;
+    const weakest = pillars[0]?.name || 'Technical';
+    const strongest = pillars[pillars.length - 1]?.name || 'Physical';
+    const avgIntensity = academyLogs.length > 0
+      ? (academyLogs.reduce((a, l) => a + (l.intensity || 5), 0) / academyLogs.length).toFixed(1) : 'N/A';
+    const totalBalls = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
 
-  const handleSave = async () => {
-    if (!session) return;
-    setSaving(true);
-    const supabase = getSupabaseClient();
-    const newNotes = buildNotesString(session, form);
-    const { error } = await supabase
-      .from('sessions')
-      .update({ notes: newNotes })
-      .eq('id', session.id);
-    setSaving(false);
-    if (error) return;
-    const updatedSession: FreestyleSession = {
-      ...session,
-      notes: newNotes,
-      ...parseSessionNotes(newNotes),
-    };
-    onSaved(updatedSession);
-    onClose();
-  };
+    const ctx = `Personal sessions (last 7 days): ${personalSessions.length}. ` +
+      `Academy logs: ${academyLogs.length}. ` +
+      `${strongest} pillar is highest (${pillars[pillars.length - 1]?.val || '—'}/5). ` +
+      `${weakest} pillar is lowest (${pillars[0]?.val || '—'}/5). ` +
+      `Academy avg intensity: ${avgIntensity}/10. Total balls faced: ${totalBalls}.`;
 
-  const StarRow = ({
-    label, sublabel, field, color,
-  }: { label: string; sublabel: string; field: keyof EditForm; color: string }) => {
-    const val = form[field] as number;
-    return (
-      <View style={editStyles.ratingRow}>
-        <View style={editStyles.ratingLabels}>
-          <Text style={editStyles.ratingLabel}>{label}</Text>
-          <Text style={editStyles.ratingSub}>{sublabel}</Text>
-        </View>
-        <View style={editStyles.starsRow}>
-          {[1, 2, 3, 4, 5].map(s => (
-            <Pressable key={s} onPress={() => setRating(field, s)} hitSlop={6}>
-              <MaterialIcons name={s <= val ? 'star' : 'star-border'} size={28} color={s <= val ? color : colors.border} />
-            </Pressable>
-          ))}
-          {val > 0 && (
-            <Text style={[editStyles.ratingVal, { color }]}>{val}/5</Text>
-          )}
-        </View>
-      </View>
-    );
-  };
-
-  return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-      <View style={editStyles.overlay}>
-        <View style={editStyles.sheet}>
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          {/* Handle bar */}
-          <View style={editStyles.handle} />
-
-          {/* Header */}
-          <View style={editStyles.header}>
-            <Pressable onPress={onClose} style={editStyles.headerBtn}>
-              <MaterialIcons name="close" size={22} color={colors.text} />
-            </Pressable>
-            <Text style={editStyles.headerTitle}>Edit Session</Text>
-            <Pressable
-              onPress={handleSave}
-              style={[editStyles.saveBtn, saving && { opacity: 0.6 }]}
-            >
-              {saving
-                ? <ActivityIndicator size="small" color={colors.textLight} />
-                : <Text style={editStyles.saveBtnText}>Save</Text>}
-            </Pressable>
-          </View>
-
-          <ScrollView
-            style={editStyles.scroll}
-            contentContainerStyle={editStyles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Batting Stats */}
-            <View style={editStyles.section}>
-              <View style={editStyles.sectionHeader}>
-                <MaterialIcons name="sports-cricket" size={16} color={colors.primary} />
-                <Text style={editStyles.sectionTitle}>Batting Stats</Text>
-              </View>
-              <View style={editStyles.statsRow}>
-                <View style={editStyles.statBlock}>
-                  <Text style={editStyles.statLabel}>Balls Faced</Text>
-                  <TextInput
-                    style={editStyles.statInput}
-                    value={form.ballsFaced}
-                    onChangeText={v => setForm(f => ({ ...f, ballsFaced: v.replace(/[^0-9]/g, '') }))}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={colors.textSecondary}
-                  />
-                </View>
-                <View style={editStyles.statBlock}>
-                  <Text style={editStyles.statLabel}>Balls Middled</Text>
-                  <TextInput
-                    style={editStyles.statInput}
-                    value={form.ballsMiddled}
-                    onChangeText={v => setForm(f => ({ ...f, ballsMiddled: v.replace(/[^0-9]/g, '') }))}
-                    keyboardType="number-pad"
-                    placeholder="0"
-                    placeholderTextColor={colors.textSecondary}
-                  />
-                </View>
-              </View>
-              {middlePct !== null && (
-                <View style={editStyles.middleBadge}>
-                  <MaterialIcons name="gps-fixed" size={13} color={colors.success} />
-                  <Text style={editStyles.middleBadgeText}>Middle %: {middlePct}%</Text>
-                </View>
-              )}
-            </View>
-
-            {/* Technical */}
-            <View style={editStyles.section}>
-              <View style={editStyles.sectionHeader}>
-                <MaterialIcons name="sports-cricket" size={16} color={colors.technical} />
-                <Text style={[editStyles.sectionTitle, { color: colors.technical }]}>Technical</Text>
-              </View>
-              <StarRow label="Shot Execution" sublabel="How clean & correct was your technique?" field="shotExecution" color={colors.technical} />
-              <StarRow label="Footwork" sublabel="Foot movement & positioning into the ball" field="footwork" color={colors.technical} />
-              <StarRow label="Timing" sublabel="How well you timed the ball off the bat" field="timing" color={colors.technical} />
-            </View>
-
-            {/* Mental */}
-            <View style={editStyles.section}>
-              <View style={editStyles.sectionHeader}>
-                <MaterialIcons name="psychology" size={16} color={colors.mental} />
-                <Text style={[editStyles.sectionTitle, { color: colors.mental }]}>Mental</Text>
-              </View>
-              <StarRow label="Focus" sublabel="Concentration & staying in the zone" field="focus" color={colors.mental} />
-              <StarRow label="Confidence" sublabel="Overall confidence at the crease" field="confidence" color={colors.mental} />
-              <StarRow label="Pressure Handling" sublabel="Managing pressure & high-stakes moments" field="pressureHandling" color={colors.mental} />
-            </View>
-
-            {/* Physical */}
-            <View style={editStyles.section}>
-              <View style={editStyles.sectionHeader}>
-                <MaterialIcons name="fitness-center" size={16} color={colors.physical} />
-                <Text style={[editStyles.sectionTitle, { color: colors.physical }]}>Physical</Text>
-              </View>
-              <StarRow label="Energy Level" sublabel="Physical energy & fitness during session" field="energyLevel" color={colors.physical} />
-              <StarRow label="Reaction Speed" sublabel="How quickly you picked up the ball" field="reactionSpeed" color={colors.physical} />
-            </View>
-
-            {/* Tactical */}
-            <View style={editStyles.section}>
-              <View style={editStyles.sectionHeader}>
-                <MaterialIcons name="lightbulb" size={16} color={colors.tactical} />
-                <Text style={[editStyles.sectionTitle, { color: colors.tactical }]}>Tactical</Text>
-              </View>
-              <StarRow label="Shot Selection" sublabel="Choosing the right shot at the right time" field="shotSelection" color={colors.tactical} />
-              <StarRow label="Game Awareness" sublabel="Reading the game situation & field" field="gameAwareness" color={colors.tactical} />
-            </View>
-
-            {/* Notes */}
-            <View style={editStyles.section}>
-              <Text style={editStyles.sectionTitle}>Session Notes</Text>
-              <TextInput
-                style={editStyles.notesInput}
-                value={form.sessionNotes}
-                onChangeText={v => setForm(f => ({ ...f, sessionNotes: v }))}
-                multiline
-                numberOfLines={4}
-                placeholder="Any observations or key takeaways..."
-                placeholderTextColor={colors.textSecondary}
-                textAlignVertical="top"
-              />
-            </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
-        </View>
-      </View>
-    </Modal>
-  );
-}
-
-const editStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  sheet: {
-    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
-    maxHeight: '92%', minHeight: 420,
-  },
-  handle: {
-    width: 40, height: 4, backgroundColor: colors.border,
-    borderRadius: 2, alignSelf: 'center', marginTop: 10, marginBottom: 4,
-  },
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.md, paddingVertical: spacing.md,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  headerBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center' },
-  headerTitle: { ...typography.h4, color: colors.text, fontWeight: '700' },
-  saveBtn: {
-    backgroundColor: colors.primary, paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm, borderRadius: borderRadius.md, minWidth: 60, alignItems: 'center',
-  },
-  saveBtnText: { ...typography.bodySmall, color: colors.textLight, fontWeight: '700' },
-  scroll: { flex: 1 },
-  scrollContent: { padding: spacing.md, paddingBottom: 40 },
-  section: {
-    backgroundColor: colors.background, borderRadius: borderRadius.lg,
-    padding: spacing.md, marginBottom: spacing.md,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
-  sectionTitle: { ...typography.body, color: colors.text, fontWeight: '700' },
-  statsRow: { flexDirection: 'row', gap: spacing.sm },
-  statBlock: { flex: 1 },
-  statLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.xs, textAlign: 'center' },
-  statInput: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.md, borderWidth: 1,
-    borderColor: colors.border, paddingVertical: spacing.md,
-    ...typography.h4, color: colors.text, fontWeight: '700', textAlign: 'center',
-  },
-  middleBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.sm,
-    backgroundColor: colors.success + '15', paddingHorizontal: spacing.sm,
-    paddingVertical: 5, borderRadius: borderRadius.sm, alignSelf: 'flex-start',
-  },
-  middleBadgeText: { ...typography.caption, color: colors.success, fontWeight: '700' },
-  ratingRow: { marginBottom: spacing.md, paddingBottom: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border + '60' },
-  ratingLabels: { marginBottom: spacing.sm },
-  ratingLabel: { ...typography.bodySmall, color: colors.text, fontWeight: '600' },
-  ratingSub: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
-  starsRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  ratingVal: { ...typography.caption, fontWeight: '800', marginLeft: spacing.sm },
-  notesInput: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.md, borderWidth: 1,
-    borderColor: colors.border, padding: spacing.md, ...typography.body, color: colors.text,
-    minHeight: 90, marginTop: spacing.sm,
-  },
-});
-
-// ─── AI Improvement Panel ─────────────────────────────────────────────────────
-function AIImprovementPanel({ sessions }: { sessions: FreestyleSession[] }) {
-  const [struggle, setStruggle] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ advice: string; drills: { name: string; pillar: string; description: string; why: string }[] } | null>(null);
-
-  // Build a concise performance summary from recent sessions
-  const buildContext = () => {
-    const recent = sessions.slice(0, 5);
-    if (!recent.length) return '';
-    const avgOf = (key: keyof FreestyleSession) => {
-      const vals = recent.map(s => (s[key] as number) || 0).filter(v => v > 0);
-      if (!vals.length) return null;
-      return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1);
-    };
-    const parts: string[] = [`Sessions reviewed: ${recent.length}`];
-    if (avgOf('shotExecution')) parts.push(`Shot Execution avg: ${avgOf('shotExecution')}/5`);
-    if (avgOf('footwork')) parts.push(`Footwork avg: ${avgOf('footwork')}/5`);
-    if (avgOf('timing')) parts.push(`Timing avg: ${avgOf('timing')}/5`);
-    if (avgOf('focus')) parts.push(`Focus avg: ${avgOf('focus')}/5`);
-    if (avgOf('confidence')) parts.push(`Confidence avg: ${avgOf('confidence')}/5`);
-    if (avgOf('pressureHandling')) parts.push(`Pressure Handling avg: ${avgOf('pressureHandling')}/5`);
-    if (avgOf('energyLevel')) parts.push(`Energy avg: ${avgOf('energyLevel')}/5`);
-    if (avgOf('reactionSpeed')) parts.push(`Reaction Speed avg: ${avgOf('reactionSpeed')}/5`);
-    if (avgOf('shotSelection')) parts.push(`Shot Selection avg: ${avgOf('shotSelection')}/5`);
-    if (avgOf('gameAwareness')) parts.push(`Game Awareness avg: ${avgOf('gameAwareness')}/5`);
-    const totalBalls = recent.reduce((a, s) => a + (s.ballsFaced || 0), 0);
-    if (totalBalls > 0) parts.push(`Total balls faced: ${totalBalls}`);
-    const avgMid = recent.filter(s => (s.middlePercent || 0) > 0);
-    if (avgMid.length > 0) {
-      const mp = Math.round(avgMid.reduce((a, s) => a + (s.middlePercent || 0), 0) / avgMid.length);
-      parts.push(`Avg middle %: ${mp}%`);
-    }
-    return parts.join(', ');
-  };
-
-  const handleGenerate = async () => {
-    if (!struggle.trim()) return;
-    setLoading(true);
-    setResult(null);
     try {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase.functions.invoke('academy-ai-questions', {
         body: {
-          mode: 'analytics_improvement',
-          struggle: struggle.trim(),
-          performanceContext: buildContext(),
+          mode: 'smart_insight',
+          context: ctx,
+          weakestPillar: weakest,
+          strongestPillar: strongest,
         },
       });
-      if (!error && data) {
-        setResult(data);
+      if (!error && data?.insight) {
+        setInsight(data.insight);
       } else {
-        setResult({
-          advice: 'Focus on the fundamentals and work with your coach to identify specific technical adjustments.',
-          drills: [],
-        });
+        const insightText = totalBalls > 0
+          ? `Your ${strongest.toLowerCase()} is peaking this week. Focus next session on your ${weakest.toLowerCase()} — it needs specific attention to bring your overall game into balance.`
+          : `Complete a session this week and your AI coach will analyse your performance patterns and provide personalised insights.`;
+        setInsight(insightText);
       }
     } catch {
-      setResult({
-        advice: 'Focus on the fundamentals and work with your coach to identify specific technical adjustments.',
-        drills: [],
-      });
+      setInsight(`Your ${strongest.toLowerCase()} is showing strong results. Target your ${weakest.toLowerCase()} in the next session to create a more balanced performance profile.`);
     }
-    setLoading(false);
+    setInsightLoading(false);
+  }, [user, loading, personalSessions, academyLogs, pillarData]);
+
+  useFocusEffect(useCallback(() => {
+    generated.current = false;
+    setInsight('');
+    setPlan('');
+  }, []));
+
+  useFocusEffect(useCallback(() => {
+    if (!loading && !generated.current) generateInsight();
+  }, [loading, generateInsight]));
+
+  const generatePlan = async () => {
+    if (!user) return;
+    setPlanLoading(true);
+    try {
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.functions.invoke('ai-coach-analysis', {
+        body: { userId: user.id, analysisType: 'weekly_report', days: 7 },
+      });
+      if (!error && data?.report) {
+        setPlan(data.report);
+        setShowPlan(true);
+      }
+    } catch { }
+    setPlanLoading(false);
   };
 
+  const pillarsAvailable = Object.values(pillarData).some(v => v > 0);
+
   return (
-    <View style={aiStyles.panel}>
-      <View style={aiStyles.header}>
-        <View style={aiStyles.iconCircle}>
-          <MaterialIcons name="psychology" size={22} color={colors.primary} />
+    <>
+      <View style={aiCard.container}>
+        <View style={aiCard.topRow}>
+          <View style={aiCard.iconCircle}>
+            <MaterialIcons name="psychology" size={22} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={aiCard.label}>AI PERFORMANCE COACH</Text>
+            <Text style={aiCard.title}>Smart Insight</Text>
+          </View>
+          <View style={aiCard.liveBadge}>
+            <View style={aiCard.liveDot} />
+            <Text style={aiCard.liveText}>LIVE</Text>
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={aiStyles.title}>AI Improvement Plan</Text>
-          <Text style={aiStyles.sub}>Describe a struggle — get personalised advice + drill recommendations</Text>
+
+        {insightLoading ? (
+          <View style={aiCard.loadingRow}>
+            <ActivityIndicator size="small" color={colors.primary} />
+            <Text style={aiCard.loadingText}>Analysing your training data...</Text>
+          </View>
+        ) : insight ? (
+          <Text style={aiCard.insightText}>{insight}</Text>
+        ) : !pillarsAvailable ? (
+          <Text style={aiCard.emptyText}>
+            Complete your first session to unlock AI performance insights. Go to Training → Start a Session.
+          </Text>
+        ) : null}
+
+        <Pressable
+          style={[aiCard.planBtn, (planLoading || !pillarsAvailable) && { opacity: 0.5 }]}
+          onPress={generatePlan}
+          disabled={planLoading || !pillarsAvailable}
+        >
+          {planLoading ? (
+            <><ActivityIndicator size="small" color={colors.textLight} /><Text style={aiCard.planBtnText}>Generating...</Text></>
+          ) : (
+            <><MaterialIcons name="auto-awesome" size={16} color={colors.textLight} /><Text style={aiCard.planBtnText}>Generate Today's AI Training Plan</Text></>
+          )}
+        </Pressable>
+      </View>
+
+      <Modal visible={showPlan} animationType="slide" transparent onRequestClose={() => setShowPlan(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '88%' }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 }} />
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <MaterialIcons name="auto-awesome" size={20} color={colors.primary} />
+                <Text style={{ fontSize: 16, fontWeight: '800', color: colors.text }}>Your AI Training Plan</Text>
+              </View>
+              <Pressable onPress={() => setShowPlan(false)} hitSlop={8}>
+                <MaterialIcons name="close" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+              <Text style={{ fontSize: 14, color: colors.text, lineHeight: 24 }}>{plan}</Text>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+const aiCard = StyleSheet.create({
+  container: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1.5, borderColor: colors.primary + '40',
+    gap: spacing.sm,
+  },
+  topRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  iconCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primary + '18',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  label: { fontSize: 9, fontWeight: '800', color: colors.primary, letterSpacing: 1, textTransform: 'uppercase' },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text, marginTop: 1 },
+  liveBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.success + '15', borderRadius: 20,
+    paddingHorizontal: 8, paddingVertical: 4,
+    borderWidth: 1, borderColor: colors.success + '40',
+  },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  liveText: { fontSize: 9, fontWeight: '900', color: colors.success, letterSpacing: 0.5 },
+  insightText: { fontSize: 14, color: colors.text, lineHeight: 22, fontStyle: 'italic' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
+  loadingText: { fontSize: 13, color: colors.textSecondary, fontStyle: 'italic' },
+  planBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
+    backgroundColor: colors.primary, borderRadius: borderRadius.md, paddingVertical: spacing.sm + 4,
+  },
+  planBtnText: { fontSize: 14, fontWeight: '800', color: colors.textLight },
+});
+
+// ─── 2. Objective Strike Rate (Donut) ─────────────────────────────────────────
+function ObjectiveStrikeRate({ personalSessions, academyLogs }: {
+  personalSessions: PersonalSession[];
+  academyLogs: AcademyLog[];
+}) {
+  const SIZE = 140;
+  const STROKE = 18;
+  const R = (SIZE - STROKE) / 2;
+  const CIRCUM = 2 * Math.PI * R;
+
+  const totalSessions = personalSessions.length + academyLogs.length;
+  const metObjective = [
+    ...personalSessions.filter(s => {
+      const overall = avg([s.shotExecution, s.footwork, s.timing, s.focus, s.confidence, s.pressureHandling, s.energyLevel, s.reactionSpeed, s.shotSelection, s.gameAwareness]);
+      return overall >= 3.5;
+    }),
+    ...academyLogs.filter(l => (l.technical_rating || 0) >= 3 || (l.intensity || 0) >= 6),
+  ].length;
+
+  const rate = totalSessions > 0 ? Math.round((metObjective / totalSessions) * 100) : 0;
+  const dashOffset = CIRCUM * (1 - rate / 100);
+
+  const { label, color } = rate >= 80
+    ? { label: 'Elite Execution', color: colors.success }
+    : rate >= 50
+    ? { label: 'Developing Consistency', color: colors.warning }
+    : { label: 'Recalibration Needed', color: colors.error };
+
+  return (
+    <View style={donut.card}>
+      <View style={donut.headerRow}>
+        <MaterialIcons name="track-changes" size={18} color={color} />
+        <Text style={donut.title}>Objective Strike Rate</Text>
+      </View>
+      <Text style={donut.subtitle}>Sessions where you hit your target</Text>
+
+      {totalSessions === 0 ? (
+        <View style={donut.empty}>
+          <Text style={donut.emptyText}>No sessions yet — log a session to track your objective completion rate.</Text>
+        </View>
+      ) : (
+        <View style={donut.content}>
+          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+            <Svg width={SIZE} height={SIZE}>
+              <Circle
+                cx={SIZE / 2} cy={SIZE / 2} r={R}
+                stroke={colors.border} strokeWidth={STROKE} fill="none"
+              />
+              <Circle
+                cx={SIZE / 2} cy={SIZE / 2} r={R}
+                stroke={color} strokeWidth={STROKE} fill="none"
+                strokeDasharray={`${CIRCUM} ${CIRCUM}`}
+                strokeDashoffset={dashOffset}
+                strokeLinecap="round"
+                rotation="-90"
+                originX={SIZE / 2} originY={SIZE / 2}
+              />
+              <SvgText
+                x={SIZE / 2} y={SIZE / 2 - 8}
+                textAnchor="middle" fontSize="28" fontWeight="900"
+                fill={color}
+              >{rate}%</SvgText>
+              <SvgText
+                x={SIZE / 2} y={SIZE / 2 + 14}
+                textAnchor="middle" fontSize="10" fontWeight="600"
+                fill={colors.textSecondary}
+              >of sessions</SvgText>
+            </Svg>
+          </View>
+          <View style={donut.statsCol}>
+            <View style={[donut.labelBadge, { backgroundColor: color + '18', borderColor: color + '40' }]}>
+              <Text style={[donut.labelBadgeText, { color }]}>{label}</Text>
+            </View>
+            <View style={donut.statRow}>
+              <MaterialIcons name="check-circle" size={14} color={colors.success} />
+              <Text style={donut.statText}>{metObjective} objectives met</Text>
+            </View>
+            <View style={donut.statRow}>
+              <MaterialIcons name="event" size={14} color={colors.textSecondary} />
+              <Text style={donut.statText}>{totalSessions} total sessions</Text>
+            </View>
+            <View style={donut.statRow}>
+              <MaterialIcons name="info-outline" size={13} color={colors.textSecondary} />
+              <Text style={[donut.statText, { fontSize: 10, lineHeight: 14, color: colors.textSecondary }]}>
+                Target: avg rating ≥3.5/5 or academy intensity ≥6/10
+              </Text>
+            </View>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const donut = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: -4 },
+  content: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, flexWrap: 'wrap' },
+  statsCol: { flex: 1, gap: spacing.sm, minWidth: 140 },
+  labelBadge: {
+    paddingHorizontal: spacing.sm, paddingVertical: 5,
+    borderRadius: borderRadius.full, borderWidth: 1.5, alignSelf: 'flex-start',
+  },
+  labelBadgeText: { fontSize: 12, fontWeight: '800' },
+  statRow: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs },
+  statText: { fontSize: 13, color: colors.text, fontWeight: '600', flex: 1 },
+  empty: { paddingVertical: spacing.lg, alignItems: 'center' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md },
+});
+
+// ─── 3. Player DNA Radar Chart ─────────────────────────────────────────────────
+function PlayerDNARadar({ pillarData }: { pillarData: PillarData }) {
+  const SIZE = 200;
+  const CX = SIZE / 2;
+  const CY = SIZE / 2;
+  const MAX_R = 70;
+  const LEVELS = 5;
+
+  const pillars = [
+    { name: 'Technical', val: pillarData.technical, color: colors.technical || '#2196F3', angle: -90 },
+    { name: 'Physical', val: pillarData.physical, color: colors.physical || '#4CAF50', angle: 0 },
+    { name: 'Tactical', val: pillarData.tactical, color: colors.tactical || '#FF9800', angle: 90 },
+    { name: 'Mental', val: pillarData.mental, color: colors.mental || '#9C27B0', angle: 180 },
+  ];
+
+  const pt = (angle: number, r: number) => {
+    const rad = (angle * Math.PI) / 180;
+    return { x: CX + r * Math.cos(rad), y: CY + r * Math.sin(rad) };
+  };
+
+  // Grid levels (background rings)
+  const gridPolygons = Array.from({ length: LEVELS }, (_, i) => {
+    const r = (MAX_R / LEVELS) * (i + 1);
+    const pts = pillars.map(p => pt(p.angle, r));
+    return pts.map(({ x, y }) => `${x},${y}`).join(' ');
+  });
+
+  // Data polygon
+  const dataPoints = pillars.map(p => {
+    const r = p.val > 0 ? (p.val / 5) * MAX_R : 0;
+    return pt(p.angle, r);
+  });
+  const dataPolygon = dataPoints.map(({ x, y }) => `${x},${y}`).join(' ');
+
+  // Axis lines
+  const axisLines = pillars.map(p => ({
+    from: pt(p.angle, 0),
+    to: pt(p.angle, MAX_R),
+  }));
+
+  // Label positions (slightly further out)
+  const labelOffset = MAX_R + 24;
+  const labelPositions = pillars.map(p => ({ ...pt(p.angle, labelOffset), ...p }));
+
+  const hasData = Object.values(pillarData).some(v => v > 0);
+
+  return (
+    <View style={radar.card}>
+      <View style={radar.headerRow}>
+        <MaterialIcons name="radar" size={18} color={colors.primary} />
+        <Text style={radar.title}>Player DNA</Text>
+        <Text style={radar.subtitle}>4 Pillars · out of 5</Text>
+      </View>
+
+      {!hasData ? (
+        <View style={radar.empty}>
+          <Text style={radar.emptyText}>Complete freestyle sessions with ratings to see your Player DNA shape.</Text>
+        </View>
+      ) : (
+        <>
+          <View style={{ alignItems: 'center' }}>
+            <Svg width={SIZE + 60} height={SIZE + 60} viewBox={`${-30} ${-30} ${SIZE + 60} ${SIZE + 60}`}>
+              {/* Grid polygons */}
+              {gridPolygons.map((pts, i) => (
+                <Polygon key={i} points={pts} fill="none" stroke={colors.border} strokeWidth={1} opacity={0.6} />
+              ))}
+
+              {/* Axis lines */}
+              {axisLines.map((line, i) => (
+                <Line key={i} x1={line.from.x} y1={line.from.y} x2={line.to.x} y2={line.to.y}
+                  stroke={colors.border} strokeWidth={1} />
+              ))}
+
+              {/* Data polygon */}
+              <Polygon
+                points={dataPolygon}
+                fill={colors.primary + '25'}
+                stroke={colors.primary}
+                strokeWidth={2.5}
+              />
+
+              {/* Data points */}
+              {dataPoints.map((p, i) => (
+                <Circle key={i} cx={p.x} cy={p.y} r={5}
+                  fill={pillars[i].color} stroke={colors.surface} strokeWidth={2} />
+              ))}
+
+              {/* Labels */}
+              {labelPositions.map((p, i) => (
+                <G key={i}>
+                  <SvgText
+                    x={p.x} y={p.y - 4}
+                    textAnchor="middle" fontSize="11" fontWeight="800"
+                    fill={p.color}
+                  >{p.name}</SvgText>
+                  <SvgText
+                    x={p.x} y={p.y + 10}
+                    textAnchor="middle" fontSize="13" fontWeight="900"
+                    fill={p.val > 0 ? p.color : colors.border}
+                  >{p.val > 0 ? p.val.toFixed(1) : '—'}</SvgText>
+                </G>
+              ))}
+            </Svg>
+          </View>
+
+          {/* Legend pills */}
+          <View style={radar.legendRow}>
+            {pillars.map(p => (
+              <View key={p.name} style={[radar.legendPill, { borderColor: p.color + '60', backgroundColor: p.color + '12' }]}>
+                <View style={[radar.legendDot, { backgroundColor: p.color }]} />
+                <Text style={[radar.legendText, { color: p.color }]}>{p.name}</Text>
+                <Text style={[radar.legendVal, { color: p.color }]}>{p.val > 0 ? p.val.toFixed(1) : '—'}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* Imbalance alert */}
+          {(() => {
+            const vals = pillars.filter(p => p.val > 0);
+            if (vals.length < 2) return null;
+            const minP = vals.reduce((a, b) => a.val < b.val ? a : b);
+            const maxP = vals.reduce((a, b) => a.val > b.val ? a : b);
+            if (maxP.val - minP.val >= 2) {
+              return (
+                <View style={[radar.alertBox, { borderColor: colors.warning + '60', backgroundColor: colors.warning + '10' }]}>
+                  <MaterialIcons name="warning" size={14} color={colors.warning} />
+                  <Text style={radar.alertText}>
+                    <Text style={{ fontWeight: '800' }}>Pillar imbalance detected.</Text> {minP.name} ({minP.val.toFixed(1)}) is significantly lower than {maxP.name} ({maxP.val.toFixed(1)}). Target {minP.name.toLowerCase()} drills in your next session.
+                  </Text>
+                </View>
+              );
+            }
+            return null;
+          })()}
+        </>
+      )}
+    </View>
+  );
+}
+
+const radar = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 11, color: colors.textSecondary, marginLeft: 2 },
+  empty: { paddingVertical: spacing.xl, alignItems: 'center' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md },
+  legendRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'center' },
+  legendPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: borderRadius.full,
+    borderWidth: 1,
+  },
+  legendDot: { width: 7, height: 7, borderRadius: 3.5 },
+  legendText: { fontSize: 11, fontWeight: '700' },
+  legendVal: { fontSize: 12, fontWeight: '900' },
+  alertBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs,
+    borderRadius: borderRadius.md, borderWidth: 1, padding: spacing.sm,
+  },
+  alertText: { fontSize: 12, color: colors.text, lineHeight: 18, flex: 1 },
+});
+
+// ─── 4. Discipline Breakdown ───────────────────────────────────────────────────
+function DisciplineBreakdown({ academyLogs }: { academyLogs: AcademyLog[] }) {
+  const [selectedDiscipline, setSelectedDiscipline] = useState<string | null>(null);
+
+  const DISCIPLINES = [
+    { key: 'Batting', icon: 'sports-cricket', color: colors.technical || '#2196F3' },
+    { key: 'Bowling', icon: 'sports-cricket', color: colors.physical || '#4CAF50' },
+    { key: 'Fielding', icon: 'flag', color: colors.tactical || '#FF9800' },
+    { key: 'Fitness', icon: 'fitness-center', color: colors.mental || '#9C27B0' },
+  ];
+
+  const grouped = DISCIPLINES.map(d => {
+    const logs = academyLogs.filter(l =>
+      l.session_type?.toLowerCase().includes(d.key.toLowerCase()) ||
+      (d.key === 'Batting' && (l.balls_faced || 0) > 0 && !l.session_type?.toLowerCase().includes('bowl')) ||
+      (d.key === 'Fitness' && l.session_type?.toLowerCase().includes('fitness'))
+    );
+    const avgRating = logs.length > 0
+      ? avg(logs.map(l => l.technical_rating || l.effort_rating || 0))
+      : 0;
+    const totalBalls = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+    const totalWickets = logs.reduce((a, l) => a + (l.wickets || 0), 0);
+    const totalCatches = logs.reduce((a, l) => a + (l.catches || 0), 0);
+    return { ...d, logs, count: logs.length, avgRating, totalBalls, totalWickets, totalCatches };
+  });
+
+  const maxCount = Math.max(...grouped.map(d => d.count), 1);
+  const BAR_MAX_H = 80;
+
+  const selectedData = grouped.find(d => d.key === selectedDiscipline);
+
+  return (
+    <>
+      <View style={disc.card}>
+        <View style={disc.headerRow}>
+          <MaterialIcons name="bar-chart" size={18} color={colors.primary} />
+          <Text style={disc.title}>Discipline Breakdown</Text>
+        </View>
+        <Text style={disc.subtitle}>Academy sessions by type — tap a bar to deep dive</Text>
+
+        {academyLogs.length === 0 ? (
+          <View style={disc.empty}>
+            <Text style={disc.emptyText}>Log academy sessions to see your discipline breakdown here.</Text>
+          </View>
+        ) : (
+          <View style={disc.barsRow}>
+            {grouped.map(d => {
+              const barH = Math.max(4, Math.round((d.count / maxCount) * BAR_MAX_H));
+              const isSelected = selectedDiscipline === d.key;
+              return (
+                <Pressable
+                  key={d.key}
+                  style={disc.barCol}
+                  onPress={() => setSelectedDiscipline(isSelected ? null : d.key)}
+                >
+                  <Text style={[disc.barVal, { color: d.count > 0 ? d.color : colors.border }]}>
+                    {d.count > 0 ? d.count : ''}
+                  </Text>
+                  <View style={disc.barTrack}>
+                    <View style={[disc.barFill, {
+                      height: barH, backgroundColor: d.count > 0 ? d.color : colors.border,
+                      borderRadius: 4, opacity: isSelected ? 1 : 0.7,
+                    }]} />
+                  </View>
+                  {d.avgRating > 0 && (
+                    <View style={[disc.ratingBadge, { backgroundColor: d.color + '18' }]}>
+                      <Text style={[disc.ratingBadgeText, { color: d.color }]}>{d.avgRating.toFixed(1)}</Text>
+                    </View>
+                  )}
+                  <Text style={[disc.barLabel, isSelected && { color: d.color, fontWeight: '800' }]}>{d.key}</Text>
+                  {isSelected && <View style={[disc.selectedIndicator, { backgroundColor: d.color }]} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+      </View>
+
+      {/* Deep Dive Modal */}
+      <Modal visible={!!selectedData} animationType="slide" transparent onRequestClose={() => setSelectedDiscipline(null)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: '75%' }}>
+            <View style={{ width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2, alignSelf: 'center', marginTop: 10 }} />
+            {selectedData && (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: selectedData.color + '20', justifyContent: 'center', alignItems: 'center' }}>
+                      <MaterialIcons name={selectedData.icon as any} size={18} color={selectedData.color} />
+                    </View>
+                    <Text style={{ fontSize: 18, fontWeight: '800', color: colors.text }}>{selectedData.key} Deep Dive</Text>
+                  </View>
+                  <Pressable onPress={() => setSelectedDiscipline(null)} hitSlop={8}>
+                    <MaterialIcons name="close" size={22} color={colors.text} />
+                  </Pressable>
+                </View>
+                <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 40, gap: spacing.md }} showsVerticalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm }}>
+                    {[
+                      { label: 'Sessions', val: String(selectedData.count), color: selectedData.color },
+                      { label: 'Avg Rating', val: selectedData.avgRating > 0 ? `${selectedData.avgRating.toFixed(1)}/5` : '—', color: selectedData.color },
+                      selectedData.key === 'Batting' && { label: 'Balls Faced', val: String(selectedData.totalBalls), color: colors.technical },
+                      selectedData.key === 'Bowling' && { label: 'Wickets', val: String(selectedData.totalWickets), color: colors.physical },
+                      selectedData.key === 'Fielding' && { label: 'Catches', val: String(selectedData.totalCatches), color: colors.tactical },
+                    ].filter(Boolean).map((stat: any, i) => (
+                      <View key={i} style={{ flex: 1, minWidth: '28%', backgroundColor: stat.color + '12', borderRadius: borderRadius.lg, padding: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: stat.color + '30' }}>
+                        <Text style={{ fontSize: 22, fontWeight: '900', color: stat.color }}>{stat.val}</Text>
+                        <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2, textAlign: 'center' }}>{stat.label}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text, marginBottom: spacing.xs }}>Recent Sessions</Text>
+                  {selectedData.logs.slice(0, 8).map((log, i) => (
+                    <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.border + '60' }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: selectedData.color }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{log.log_date}</Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                          {log.duration_minutes}min · Intensity {log.intensity}/10
+                          {log.balls_faced ? ` · ${log.balls_faced} balls` : ''}
+                          {log.wickets ? ` · ${log.wickets} wkts` : ''}
+                        </Text>
+                        {log.notes ? <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2, fontStyle: 'italic' }} numberOfLines={1}>{log.notes}</Text> : null}
+                      </View>
+                      {(log.technical_rating || log.effort_rating) > 0 && (
+                        <View style={{ backgroundColor: selectedData.color + '20', borderRadius: borderRadius.sm, paddingHorizontal: 6, paddingVertical: 2 }}>
+                          <Text style={{ fontSize: 12, fontWeight: '800', color: selectedData.color }}>
+                            {(log.technical_rating || log.effort_rating)}/5
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                  {selectedData.logs.length === 0 && (
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center', paddingVertical: spacing.lg }}>No {selectedData.key.toLowerCase()} sessions logged yet.</Text>
+                  )}
+                </ScrollView>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+}
+
+const disc = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: -4 },
+  empty: { paddingVertical: spacing.lg, alignItems: 'center' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md },
+  barsRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'flex-end', paddingTop: spacing.sm },
+  barCol: { flex: 1, alignItems: 'center', gap: 4, position: 'relative' },
+  barVal: { fontSize: 14, fontWeight: '900' },
+  barTrack: { width: '70%', height: 80, justifyContent: 'flex-end' },
+  barFill: { width: '100%' },
+  ratingBadge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: borderRadius.sm },
+  ratingBadgeText: { fontSize: 10, fontWeight: '800' },
+  barLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', textAlign: 'center' },
+  selectedIndicator: { position: 'absolute', bottom: -6, width: '40%', height: 3, borderRadius: 1.5 },
+});
+
+// ─── 5. Consistency Heatmap ────────────────────────────────────────────────────
+function ConsistencyHeatmap({ sessionDates }: { sessionDates: Set<string> }) {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = today.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const CELL = Math.floor((SCREEN_WIDTH - spacing.md * 2 - spacing.md * 2 - 4 * 6) / 7);
+
+  const monthName = today.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+  const cells = Array.from({ length: daysInMonth }, (_, i) => {
+    const d = i + 1;
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const count = sessionDates.has(dateStr) ? 1 : 0;
+    const isFuture = dateStr > today.toISOString().split('T')[0];
+    const isToday = dateStr === today.toISOString().split('T')[0];
+    return { d, dateStr, count, isFuture, isToday };
+  });
+
+  // Pad so week starts on Monday
+  const firstDow = (new Date(year, month, 1).getDay() + 6) % 7;
+  const padded: (typeof cells[0] | null)[] = [...Array(firstDow).fill(null), ...cells];
+
+  const logged = cells.filter(c => c.count > 0).length;
+  const pct = daysInMonth > 0 ? Math.round((logged / Math.min(daysInMonth, today.getDate())) * 100) : 0;
+
+  const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+  return (
+    <View style={heat.card}>
+      <View style={heat.headerRow}>
+        <MaterialIcons name="grid-on" size={18} color={colors.primary} />
+        <Text style={heat.title}>Consistency Heatmap</Text>
+      </View>
+      <View style={heat.metaRow}>
+        <Text style={heat.monthLabel}>{monthName}</Text>
+        <View style={[heat.statBadge, { backgroundColor: pct >= 70 ? colors.success + '18' : colors.warning + '18', borderColor: pct >= 70 ? colors.success + '40' : colors.warning + '40' }]}>
+          <Text style={[heat.statBadgeText, { color: pct >= 70 ? colors.success : colors.warning }]}>{logged} days trained · {pct}%</Text>
         </View>
       </View>
 
-      <TextInput
-        style={aiStyles.input}
-        value={struggle}
-        onChangeText={setStruggle}
-        placeholder="e.g. I keep getting out to short-pitched bowling, my pull shot timing is off..."
-        placeholderTextColor={colors.textSecondary}
-        multiline
-        numberOfLines={3}
-        textAlignVertical="top"
-      />
+      {/* Day headers */}
+      <View style={heat.daysRow}>
+        {DAYS.map((d, i) => <Text key={i} style={heat.dayHdr}>{d}</Text>)}
+      </View>
 
-      <Pressable
-        style={[aiStyles.btn, (!struggle.trim() || loading) && aiStyles.btnDisabled]}
-        onPress={handleGenerate}
-        disabled={!struggle.trim() || loading}
-      >
-        {loading ? (
-          <>
-            <ActivityIndicator size="small" color={colors.textLight} />
-            <Text style={aiStyles.btnText}>Analysing your data...</Text>
-          </>
-        ) : (
-          <>
-            <MaterialIcons name="auto-awesome" size={18} color={colors.textLight} />
-            <Text style={aiStyles.btnText}>Generate Improvement Plan</Text>
-          </>
-        )}
+      {/* Grid */}
+      <View style={heat.grid}>
+        {padded.map((cell, i) => {
+          if (!cell) return <View key={`pad_${i}`} style={[heat.cell, { width: CELL, height: CELL, opacity: 0 }]} />;
+          const bg = cell.isFuture
+            ? colors.background
+            : cell.count >= 2
+            ? '#166534'
+            : cell.count === 1
+            ? '#22C55E'
+            : '#E5E7EB';
+          return (
+            <View
+              key={cell.dateStr}
+              style={[
+                heat.cell,
+                { width: CELL, height: CELL, backgroundColor: bg, borderRadius: 3 },
+                cell.isToday && { borderWidth: 2, borderColor: colors.primary },
+              ]}
+            />
+          );
+        })}
+      </View>
+
+      {/* Legend */}
+      <View style={heat.legendRow}>
+        <Text style={heat.legendLabel}>Less</Text>
+        {['#E5E7EB', '#22C55E', '#166534'].map((c, i) => (
+          <View key={i} style={[heat.legendCell, { backgroundColor: c, borderRadius: 3 }]} />
+        ))}
+        <Text style={heat.legendLabel}>More</Text>
+        <View style={{ flex: 1 }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <View style={[heat.legendCell, { borderWidth: 1.5, borderColor: colors.primary, backgroundColor: 'transparent', borderRadius: 3 }]} />
+          <Text style={heat.legendLabel}>Today</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+const heat = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
+  metaRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: spacing.xs },
+  monthLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+  statBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: borderRadius.full, borderWidth: 1 },
+  statBadgeText: { fontSize: 11, fontWeight: '800' },
+  daysRow: { flexDirection: 'row', justifyContent: 'space-around' },
+  dayHdr: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, textAlign: 'center', flex: 1 },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
+  cell: { margin: 1 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendCell: { width: 12, height: 12 },
+  legendLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+});
+
+// ─── Session History (collapsible) ────────────────────────────────────────────
+function SessionHistoryCard({ personalSessions }: { personalSessions: PersonalSession[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (personalSessions.length === 0) return null;
+
+  function getLabel(overall: number) {
+    if (overall >= 4.5) return { label: 'Elite', color: '#7C3AED' };
+    if (overall >= 4) return { label: 'Excellent', color: colors.success };
+    if (overall >= 3.5) return { label: 'Good', color: colors.primary };
+    if (overall >= 2.5) return { label: 'Average', color: colors.warning };
+    return { label: 'Needs Work', color: colors.error };
+  }
+  function fmtDate(iso: string) {
+    return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  const shown = expanded ? personalSessions : personalSessions.slice(0, 3);
+
+  return (
+    <View style={hist.card}>
+      <Pressable style={hist.headerRow} onPress={() => setExpanded(e => !e)}>
+        <MaterialIcons name="history" size={18} color={colors.textSecondary} />
+        <Text style={hist.title}>Personal Session History</Text>
+        <View style={hist.badge}><Text style={hist.badgeText}>{personalSessions.length}</Text></View>
+        <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={20} color={colors.textSecondary} style={{ marginLeft: 'auto' }} />
       </Pressable>
 
-      {result ? (
-        <View style={aiStyles.result}>
-          {/* Advice block */}
-          <View style={aiStyles.adviceBlock}>
-            <View style={aiStyles.adviceHeader}>
-              <MaterialIcons name="lightbulb" size={16} color={colors.warning} />
-              <Text style={aiStyles.adviceLabel}>Coach Advice</Text>
+      {shown.map((s, i) => {
+        const overall = avg([s.shotExecution, s.footwork, s.timing, s.focus, s.confidence, s.pressureHandling, s.energyLevel, s.reactionSpeed, s.shotSelection, s.gameAwareness]);
+        const { label, color } = getLabel(overall);
+        return (
+          <View key={s.id} style={[hist.row, i === 0 && { marginTop: spacing.xs }]}>
+            <View style={{ flex: 1 }}>
+              <Text style={hist.date}>{fmtDate(s.completed_at || '')}</Text>
+              <Text style={hist.meta}>{s.duration_minutes}min</Text>
             </View>
-            <Text style={aiStyles.adviceText}>{result.advice}</Text>
+            <View style={[hist.labelBadge, { backgroundColor: color + '18' }]}>
+              <Text style={[hist.labelBadgeText, { color }]}>{label}</Text>
+            </View>
+            <Text style={[hist.score, { color }]}>{overall > 0 ? overall.toFixed(1) : '—'}</Text>
           </View>
+        );
+      })}
 
-          {/* Drill recommendations */}
-          {result.drills && result.drills.length > 0 ? (
-            <View style={aiStyles.drillsSection}>
-              <View style={aiStyles.drillsHeader}>
-                <MaterialIcons name="fitness-center" size={15} color={colors.primary} />
-                <Text style={aiStyles.drillsTitle}>Recommended Drills</Text>
-              </View>
-              {result.drills.map((drill, i) => {
-                const pillarColor =
-                  drill.pillar === 'Technical' ? colors.technical
-                  : drill.pillar === 'Mental' ? colors.mental
-                  : drill.pillar === 'Physical' ? colors.physical
-                  : drill.pillar === 'Tactical' ? colors.tactical
-                  : colors.primary;
-                return (
-                  <View key={i} style={[aiStyles.drillCard, { borderLeftColor: pillarColor }]}>
-                    <View style={aiStyles.drillTop}>
-                      <View style={[aiStyles.pillarBadge, { backgroundColor: pillarColor + '20' }]}>
-                        <Text style={[aiStyles.pillarBadgeText, { color: pillarColor }]}>{drill.pillar}</Text>
-                      </View>
-                      <Text style={aiStyles.drillName}>{drill.name}</Text>
-                    </View>
-                    <Text style={aiStyles.drillDesc}>{drill.description}</Text>
-                    <View style={aiStyles.drillWhy}>
-                      <MaterialIcons name="track-changes" size={12} color={pillarColor} />
-                      <Text style={[aiStyles.drillWhyText, { color: pillarColor }]}>{drill.why}</Text>
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-const aiStyles = StyleSheet.create({
-  panel: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
-    padding: spacing.md, marginBottom: spacing.md,
-    borderWidth: 1.5, borderColor: colors.primary + '30',
-    gap: spacing.md,
-  },
-  header: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm },
-  iconCircle: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: colors.primary + '15',
-    justifyContent: 'center', alignItems: 'center',
-  },
-  title: { fontSize: 15, fontWeight: '800', color: colors.text },
-  sub: { fontSize: 11, color: colors.textSecondary, lineHeight: 15, marginTop: 2 },
-  input: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md,
-    borderWidth: 1.5, borderColor: colors.border, padding: spacing.sm,
-    fontSize: 14, color: colors.text, lineHeight: 20, minHeight: 80,
-  },
-  btn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
-    backgroundColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.sm + 4,
-  },
-  btnDisabled: { opacity: 0.45 },
-  btnText: { fontSize: 15, fontWeight: '800', color: colors.textLight },
-  result: { gap: spacing.md },
-  adviceBlock: {
-    backgroundColor: colors.warning + '12', borderRadius: borderRadius.md,
-    borderWidth: 1.5, borderColor: colors.warning + '40', padding: spacing.md, gap: spacing.sm,
-  },
-  adviceHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  adviceLabel: { fontSize: 12, fontWeight: '800', color: colors.warning, textTransform: 'uppercase', letterSpacing: 0.5 },
-  adviceText: { fontSize: 14, color: colors.text, lineHeight: 22 },
-  drillsSection: { gap: spacing.sm },
-  drillsHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 2 },
-  drillsTitle: { fontSize: 13, fontWeight: '800', color: colors.text },
-  drillCard: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md,
-    padding: spacing.md, borderLeftWidth: 3, borderWidth: 1,
-    borderColor: colors.border, gap: spacing.xs,
-  },
-  drillTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  pillarBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 20 },
-  pillarBadgeText: { fontSize: 10, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.4 },
-  drillName: { fontSize: 14, fontWeight: '800', color: colors.text, flex: 1 },
-  drillDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
-  drillWhy: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginTop: 2 },
-  drillWhyText: { fontSize: 11, fontWeight: '700', flex: 1, lineHeight: 15 },
-});
-
-// ─── Main Screen ──────────────────────────────────────────────────────────────
-// ─── Data Source Toggle ───────────────────────────────────────────────────────
-type DataFilter = 'all' | 'academy' | 'personal';
-
-function DataFilterBar({ value, onChange }: { value: DataFilter; onChange: (v: DataFilter) => void }) {
-  const opts: { key: DataFilter; label: string; icon: string }[] = [
-    { key: 'all', label: 'All Data', icon: 'analytics' },
-    { key: 'academy', label: 'Academy Assigned', icon: 'shield' },
-    { key: 'personal', label: 'Personal', icon: 'person' },
-  ];
-  return (
-    <View style={dfStyles.bar}>
-      {opts.map(o => (
-        <Pressable
-          key={o.key}
-          style={[dfStyles.chip, value === o.key && dfStyles.chipActive]}
-          onPress={() => onChange(o.key)}
-        >
-          <MaterialIcons name={o.icon as any} size={12} color={value === o.key ? colors.textLight : colors.textSecondary} />
-          <Text style={[dfStyles.chipText, value === o.key && dfStyles.chipTextActive]}>{o.label}</Text>
+      {personalSessions.length > 3 && (
+        <Pressable style={hist.showMoreBtn} onPress={() => setExpanded(e => !e)}>
+          <Text style={hist.showMoreText}>{expanded ? 'Show less' : `Show all ${personalSessions.length} sessions`}</Text>
+          <MaterialIcons name={expanded ? 'expand-less' : 'expand-more'} size={14} color={colors.primary} />
         </Pressable>
-      ))}
+      )}
     </View>
   );
 }
-const dfStyles = StyleSheet.create({
-  bar: { flexDirection: 'row', gap: 5, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
-  chip: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 3, paddingVertical: 7, borderRadius: borderRadius.md, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
-  chipText: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
-  chipTextActive: { color: colors.textLight },
+
+const hist = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: 0,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  title: { fontSize: 15, fontWeight: '700', color: colors.text },
+  badge: { backgroundColor: colors.border, borderRadius: 10, paddingHorizontal: 6, paddingVertical: 1 },
+  badgeText: { fontSize: 11, fontWeight: '800', color: colors.textSecondary },
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border + '60' },
+  date: { fontSize: 13, fontWeight: '700', color: colors.text },
+  meta: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  labelBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm },
+  labelBadgeText: { fontSize: 10, fontWeight: '700' },
+  score: { fontSize: 18, fontWeight: '900', minWidth: 36, textAlign: 'right' },
+  showMoreBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border + '60' },
+  showMoreText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
 });
 
-// ─── Main Screen ──────────────────────────────────────────────────────────────
+// ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function AnalyticsScreen() {
   const { user } = useAuth();
-  const [sessions, setSessions] = useState<FreestyleSession[]>([]);
-  const [academySessions, setAcademySessions] = useState<FreestyleSession[]>([]);
+  const [personalSessions, setPersonalSessions] = useState<PersonalSession[]>([]);
+  const [academyLogs, setAcademyLogs] = useState<AcademyLog[]>([]);
+  const [pillarData, setPillarData] = useState<PillarData>({ technical: 0, physical: 0, mental: 0, tactical: 0 });
+  const [sessionDates, setSessionDates] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'latest' | 'history' | 'trends'>('latest');
-  const [dataFilter, setDataFilter] = useState<DataFilter>('all');
-  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(null);
-  const [editingSession, setEditingSession] = useState<FreestyleSession | null>(null);
 
-  const loadSessions = useCallback(async () => {
+  const loadAll = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     const supabase = getSupabaseClient();
-    const { data } = await supabase
+
+    // Personal sessions (all completed)
+    const { data: sessData } = await supabase
       .from('sessions')
       .select('*')
       .eq('user_id', user.id)
       .eq('status', 'completed')
       .order('completed_at', { ascending: false })
       .limit(50);
-    const mapped: FreestyleSession[] = (data || []).map((s: any) => {
-      const parsed = parseSessionNotes(s.notes || '');
+
+    const personal: PersonalSession[] = (sessData || []).map((s: any) => {
+      const parsed = parseNotes(s.notes || '');
       return {
         id: s.id,
-        title: s.title || 'Freestyle Session',
-        scheduled_date: s.scheduled_date,
         completed_at: s.completed_at || s.scheduled_date,
         duration_minutes: s.duration_minutes || 0,
         notes: s.notes || '',
-        status: s.status,
-        ...parsed,
+        shotExecution: parsed.shotExecution || 0,
+        footwork: parsed.footwork || 0,
+        timing: parsed.timing || 0,
+        focus: parsed.focus || 0,
+        confidence: parsed.confidence || 0,
+        pressureHandling: parsed.pressureHandling || 0,
+        energyLevel: parsed.energyLevel || 0,
+        reactionSpeed: parsed.reactionSpeed || 0,
+        shotSelection: parsed.shotSelection || 0,
+        gameAwareness: parsed.gameAwareness || 0,
       };
     });
-    setSessions(mapped);
-    setLoading(false);
-  }, [user]);
+    setPersonalSessions(personal);
 
-  const loadAcademySessions = useCallback(async () => {
-    if (!user) return;
-    const supabase = getSupabaseClient();
-    const { data } = await supabase
+    // Academy logs
+    const { data: logData } = await supabase
       .from('academy_training_logs')
       .select('*')
       .eq('user_id', user.id)
       .order('log_date', { ascending: false })
-      .limit(50);
-    const mapped: FreestyleSession[] = (data || []).map((l: any) => ({
-      id: `acad_${l.id}`,
-      title: `Academy · ${l.session_type}`,
-      scheduled_date: l.log_date,
-      completed_at: l.created_at || l.log_date,
+      .limit(100);
+
+    const academy: AcademyLog[] = (logData || []).map((l: any) => ({
+      id: l.id,
+      log_date: l.log_date,
+      session_type: l.session_type || 'Training',
       duration_minutes: l.duration_minutes || 0,
+      intensity: l.intensity || 5,
+      technical_rating: l.technical_rating || 0,
+      effort_rating: l.effort_rating || 0,
+      fitness_rating: l.fitness_rating || 0,
+      balls_faced: l.balls_faced || 0,
+      balls_bowled: l.balls_bowled || 0,
+      wickets: l.wickets || 0,
+      catches: l.catches || 0,
       notes: l.notes || '',
-      status: 'completed',
-      ballsFaced: l.balls_faced || 0,
-      ballsMiddled: l.runs_scored || 0,
-      middlePercent: (l.balls_faced || 0) > 0 ? Math.round(((l.runs_scored || 0) / l.balls_faced) * 100) : 0,
-      sessionNotes: l.notes || '',
-      technicalRating: l.technical_rating || 0,
-      physicalRating: l.fitness_rating || 0,
-      mentalRating: 0,
-      tacticalRating: 0,
     }));
-    setAcademySessions(mapped);
+    setAcademyLogs(academy);
+
+    // Compute pillar averages from personal sessions
+    const techVals = personal.map(s => avg([s.shotExecution, s.footwork, s.timing])).filter(v => v > 0);
+    const physVals = personal.map(s => avg([s.energyLevel, s.reactionSpeed])).filter(v => v > 0);
+    const mentalVals = personal.map(s => avg([s.focus, s.confidence, s.pressureHandling])).filter(v => v > 0);
+    const tacVals = personal.map(s => avg([s.shotSelection, s.gameAwareness])).filter(v => v > 0);
+    const avgArr = (arr: number[]) => arr.length > 0 ? Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10 : 0;
+
+    // Also incorporate academy technical/fitness ratings
+    const acadTechVals = academy.map(l => l.technical_rating).filter(v => v > 0);
+    const acadFitVals = academy.map(l => l.fitness_rating).filter(v => v > 0);
+
+    setPillarData({
+      technical: avgArr([...techVals, ...acadTechVals]),
+      physical: avgArr([...physVals, ...acadFitVals]),
+      mental: avgArr(mentalVals),
+      tactical: avgArr(tacVals),
+    });
+
+    // Build session dates set for heatmap (current month)
+    const today = new Date();
+    const monthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const allDates = new Set<string>();
+    personal
+      .filter(s => (s.completed_at || '').startsWith(monthStr))
+      .forEach(s => allDates.add(s.completed_at.split('T')[0]));
+    academy
+      .filter(l => l.log_date.startsWith(monthStr))
+      .forEach(l => allDates.add(l.log_date));
+    setSessionDates(allDates);
+
+    setLoading(false);
   }, [user]);
 
-  useFocusEffect(useCallback(() => { loadSessions(); loadAcademySessions(); }, [loadSessions, loadAcademySessions]));
+  useFocusEffect(useCallback(() => { loadAll(); }, [loadAll]));
 
-  const handleSessionSaved = (updated: FreestyleSession) => {
-    setSessions(prev => prev.map(s => s.id === updated.id ? updated : s));
-  };
+  // Last 7 days for AI card
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+  const recentPersonal = personalSessions.filter(s => (s.completed_at || '').split('T')[0] >= sevenDaysAgoStr);
+  const recentAcademy = academyLogs.filter(l => l.log_date >= sevenDaysAgoStr);
 
-  // Apply data source filter
-  const filteredSessions: FreestyleSession[] = dataFilter === 'academy'
-    ? academySessions
-    : dataFilter === 'personal'
-    ? sessions
-    : [...sessions, ...academySessions].sort((a, b) =>
-        new Date(b.completed_at).getTime() - new Date(a.completed_at).getTime()
-      );
-
-  const latest = filteredSessions[0] || null;
-  const latestTechnical = avgOf([latest?.shotExecution, latest?.footwork, latest?.timing]) || latest?.technicalRating || 0;
-  const latestMental = avgOf([latest?.focus, latest?.confidence, latest?.pressureHandling]) || latest?.mentalRating || 0;
-  const latestPhysical = avgOf([latest?.energyLevel, latest?.reactionSpeed]) || latest?.physicalRating || 0;
-  const latestTactical = avgOf([latest?.shotSelection, latest?.gameAwareness]) || latest?.tacticalRating || 0;
-  const latestOverall = avgOf([latestTechnical, latestMental, latestPhysical, latestTactical]);
-  const latestMiddlePct = latest?.middlePercent || (latest?.ballsFaced && latest?.ballsMiddled && (latest.ballsFaced || 0) > 0
-    ? Math.round(((latest.ballsMiddled || 0) / (latest.ballsFaced || 1)) * 100) : null);
-
-  const trendSessions = filteredSessions.slice(0, 10).reverse();
-
-  const avgAcrossSessions = (key: keyof FreestyleSession) => {
-    const vals = filteredSessions.map(s => (s[key] as number) || 0).filter(v => v > 0);
-    if (!vals.length) return 0;
-    return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
-  };
-
-  const totalBallsFaced = filteredSessions.reduce((a, s) => a + (s.ballsFaced || 0), 0);
-  const totalBoundaries = filteredSessions.reduce((a, s) => a + (s.boundariesHit || 0), 0);
-  const avgMiddlePct = (() => {
-    const sessWithPct = filteredSessions.filter(s => (s.middlePercent || 0) > 0);
-    if (!sessWithPct.length) return null;
-    return Math.round(sessWithPct.reduce((a, s) => a + (s.middlePercent || 0), 0) / sessWithPct.length);
-  })();
+  const totalSessions = personalSessions.length + academyLogs.length;
 
   if (loading) {
     return (
@@ -875,7 +1024,7 @@ export default function AnalyticsScreen() {
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading performance data...</Text>
+          <Text style={styles.loadingText}>Loading your performance data...</Text>
         </View>
       </SafeAreaView>
     );
@@ -886,527 +1035,57 @@ export default function AnalyticsScreen() {
       <View style={styles.headerBar}>
         <View>
           <Text style={styles.headerTitle}>Performance Hub</Text>
-          <Text style={styles.headerSub}>{filteredSessions.length} sessions · {dataFilter === 'all' ? 'All Data' : dataFilter === 'academy' ? 'Academy Only' : 'Personal Only'}</Text>
+          <Text style={styles.headerSub}>
+            {totalSessions} sessions · Personal + Academy
+          </Text>
         </View>
-        <View style={[styles.badge, { backgroundColor: colors.primary + '20' }]}>
-          <MaterialIcons name="analytics" size={18} color={colors.primary} />
-          <Text style={[styles.badgeText, { color: colors.primary }]}>Live Data</Text>
+        <View style={styles.headerBadge}>
+          <MaterialIcons name="analytics" size={16} color={colors.primary} />
+          <Text style={styles.headerBadgeText}>Smart Analytics</Text>
         </View>
       </View>
 
-      {/* Data Source Toggle */}
-      <DataFilterBar value={dataFilter} onChange={setDataFilter} />
-
-      {/* Sub-tabs */}
-      <View style={styles.tabBar}>
-        {(['latest', 'history', 'trends'] as const).map(tab => (
-          <Pressable
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <MaterialIcons
-              name={tab === 'latest' ? 'analytics' : tab === 'history' ? 'history' : 'show-chart'}
-              size={16}
-              color={activeTab === tab ? colors.primary : colors.textSecondary}
-            />
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>
-              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {totalSessions === 0 && (
+          <View style={styles.emptyHero}>
+            <MaterialIcons name="sports-cricket" size={64} color={colors.border} />
+            <Text style={styles.emptyTitle}>Your Dashboard Awaits</Text>
+            <Text style={styles.emptySubtitle}>
+              Complete a training session to unlock your AI Coach, Player DNA radar, discipline breakdown, and consistency heatmap.
             </Text>
-          </Pressable>
-        ))}
-      </View>
+          </View>
+        )}
 
-      {/* Tab description banner */}
-      <View style={styles.tabInfoBanner}>
-        <MaterialIcons
-          name={activeTab === 'latest' ? 'info-outline' : activeTab === 'history' ? 'history' : 'show-chart'}
-          size={14}
-          color={colors.primary}
+        {/* ── Section 1: AI Coach Card ── */}
+        <AICoachCard
+          personalSessions={recentPersonal}
+          academyLogs={recentAcademy}
+          pillarData={pillarData}
+          loading={loading}
         />
-        <Text style={styles.tabInfoText}>
-          {activeTab === 'latest'
-            ? 'Your most recent session breakdown — 10 metrics self-rated 1–5 immediately after each session'
-            : activeTab === 'history'
-            ? 'All completed freestyle sessions — tap a card to expand, then tap Edit to correct your data'
-            : 'Long-term performance patterns across all sessions — averages and per-session bar charts for every metric'}
-        </Text>
-      </View>
 
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* ── Section 2: Objective Strike Rate ── */}
+        <ObjectiveStrikeRate
+          personalSessions={personalSessions}
+          academyLogs={academyLogs}
+        />
 
-        {/* ─── LATEST ─── */}
-        {activeTab === 'latest' && (
-          <>
-            {!latest ? (
-              <View style={styles.emptyState}>
-                <MaterialIcons name="sports-cricket" size={72} color={colors.border} />
-                <Text style={styles.emptyTitle}>No sessions yet</Text>
-                <Text style={styles.emptySubtitle}>{dataFilter === 'academy'
-                  ? 'Finish an academy session to see your performance breakdown here. Go to Academy → Log Training Session.'
-                  : dataFilter === 'personal'
-                  ? 'Complete a freestyle session to see your performance breakdown here. Go to Training → Start Freestyle Session.'
-                  : 'Complete a session to see your performance breakdown here. Go to Training → Start Freestyle Session or log an academy session.'}</Text>
-              </View>
-            ) : (
-              <>
-                <View style={[styles.card, { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }]}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.heroLabel}>Overall Performance</Text>
-                    <Text style={styles.heroScore}>{latestOverall.toFixed(1)}<Text style={styles.heroMax}>/5</Text></Text>
-                    <View style={[styles.badgeSmall, { backgroundColor: getPerformanceLabel(latestOverall).color + '25' }]}>
-                      <Text style={[styles.badgeSmallText, { color: getPerformanceLabel(latestOverall).color }]}>
-                        {getPerformanceLabel(latestOverall).label}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                    {latest.duration_minutes ? (
-                      <View style={styles.statChip}>
-                        <MaterialIcons name="timer" size={13} color={colors.textSecondary} />
-                        <Text style={styles.statChipText}>{latest.duration_minutes} min</Text>
-                      </View>
-                    ) : null}
-                    {(latest.ballsFaced || 0) > 0 ? (
-                      <View style={styles.statChip}>
-                        <MaterialIcons name="sports-cricket" size={13} color={colors.textSecondary} />
-                        <Text style={styles.statChipText}>{latest.ballsFaced} balls</Text>
-                      </View>
-                    ) : null}
-                    {latestMiddlePct !== null ? (
-                      <View style={styles.statChip}>
-                        <MaterialIcons name="gps-fixed" size={13} color={colors.success} />
-                        <Text style={[styles.statChipText, { color: colors.success, fontWeight: '700' }]}>{latestMiddlePct}% middle</Text>
-                      </View>
-                    ) : null}
-                  </View>
-                </View>
+        {/* ── Section 3: Player DNA Radar ── */}
+        <PlayerDNARadar pillarData={pillarData} />
 
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Pillar Averages</Text>
-                  <View style={styles.pillarGrid}>
-                    {[
-                      { label: 'Technical', value: latestTechnical, color: colors.technical, icon: 'sports-cricket' as const },
-                      { label: 'Mental', value: latestMental, color: colors.mental, icon: 'psychology' as const },
-                      { label: 'Physical', value: latestPhysical, color: colors.physical, icon: 'fitness-center' as const },
-                      { label: 'Tactical', value: latestTactical, color: colors.tactical, icon: 'lightbulb' as const },
-                    ].map(p => (
-                      <View key={p.label} style={[styles.pillarCard, { borderTopColor: p.color }]}>
-                        <MaterialIcons name={p.icon} size={20} color={p.color} />
-                        <Text style={[styles.pillarScore, { color: p.color }]}>{p.value > 0 ? p.value.toFixed(1) : '—'}</Text>
-                        <Text style={styles.pillarLabel}>{p.label}</Text>
-                        <Stars rating={Math.round(p.value)} color={p.color} />
-                      </View>
-                    ))}
-                  </View>
-                </View>
+        {/* ── Section 4: Discipline Breakdown ── */}
+        <DisciplineBreakdown academyLogs={academyLogs} />
 
-                <View style={styles.card}>
-                  <View style={styles.cardTitleRow}>
-                    <MaterialIcons name="sports-cricket" size={18} color={colors.technical} />
-                    <Text style={[styles.cardTitle, { color: colors.technical }]}>Technical</Text>
-                  </View>
-                  <MetricBar label="Shot Execution" value={latest.shotExecution || 0} color={colors.technical} />
-                  <MetricBar label="Footwork" value={latest.footwork || 0} color={colors.technical} />
-                  <MetricBar label="Timing" value={latest.timing || 0} color={colors.technical} />
-                </View>
+        {/* ── Section 5: Consistency Heatmap ── */}
+        <ConsistencyHeatmap sessionDates={sessionDates} />
 
-                <View style={styles.card}>
-                  <View style={styles.cardTitleRow}>
-                    <MaterialIcons name="psychology" size={18} color={colors.mental} />
-                    <Text style={[styles.cardTitle, { color: colors.mental }]}>Mental</Text>
-                  </View>
-                  <MetricBar label="Focus" value={latest.focus || 0} color={colors.mental} />
-                  <MetricBar label="Confidence" value={latest.confidence || 0} color={colors.mental} />
-                  <MetricBar label="Pressure Handling" value={latest.pressureHandling || 0} color={colors.mental} />
-                </View>
-
-                <View style={styles.card}>
-                  <View style={styles.cardTitleRow}>
-                    <MaterialIcons name="fitness-center" size={18} color={colors.physical} />
-                    <Text style={[styles.cardTitle, { color: colors.physical }]}>Physical</Text>
-                  </View>
-                  <MetricBar label="Energy Level" value={latest.energyLevel || 0} color={colors.physical} />
-                  <MetricBar label="Reaction Speed" value={latest.reactionSpeed || 0} color={colors.physical} />
-                </View>
-
-                <View style={styles.card}>
-                  <View style={styles.cardTitleRow}>
-                    <MaterialIcons name="lightbulb" size={18} color={colors.tactical} />
-                    <Text style={[styles.cardTitle, { color: colors.tactical }]}>Tactical</Text>
-                  </View>
-                  <MetricBar label="Shot Selection" value={latest.shotSelection || 0} color={colors.tactical} />
-                  <MetricBar label="Game Awareness" value={latest.gameAwareness || 0} color={colors.tactical} />
-                </View>
-
-                {/* AI Improvement Panel */}
-                <AIImprovementPanel sessions={filteredSessions} />
-
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Session Analysis</Text>
-                  <Text style={styles.cardSubtitle}>Based on your self-rated metrics from this session</Text>
-                  {(
-                    [latest?.shotExecution, latest?.footwork, latest?.timing,
-                     latest?.focus, latest?.confidence, latest?.pressureHandling,
-                     latest?.energyLevel, latest?.reactionSpeed,
-                     latest?.shotSelection, latest?.gameAwareness].every(v => !v || v === 0)
-                  ) && (
-                    <View style={[styles.analysisBlock, { backgroundColor: colors.background, borderLeftColor: colors.border }]}>
-                      <View style={styles.analysisHeader}>
-                        <MaterialIcons name="info-outline" size={16} color={colors.textSecondary} />
-                        <Text style={[styles.analysisTitle, { color: colors.textSecondary }]}>No detailed metrics recorded</Text>
-                      </View>
-                      <Text style={styles.analysisText}>This session was logged before per-metric tracking was introduced. Complete a new freestyle session to see your strengths and areas for improvement.</Text>
-                    </View>
-                  )}
-                  {[
-                    { label: 'Shot Execution', value: latest.shotExecution || 0 },
-                    { label: 'Footwork', value: latest.footwork || 0 },
-                    { label: 'Timing', value: latest.timing || 0 },
-                    { label: 'Focus', value: latest.focus || 0 },
-                    { label: 'Confidence', value: latest.confidence || 0 },
-                    { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
-                    { label: 'Energy Level', value: latest.energyLevel || 0 },
-                    { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
-                    { label: 'Shot Selection', value: latest.shotSelection || 0 },
-                    { label: 'Game Awareness', value: latest.gameAwareness || 0 },
-                  ].filter(m => m.value >= 4).length > 0 && (
-                    <View style={[styles.analysisBlock, { backgroundColor: '#E8F5E9', borderLeftColor: colors.success }]}>
-                      <View style={styles.analysisHeader}>
-                        <MaterialIcons name="thumb-up" size={16} color={colors.success} />
-                        <Text style={[styles.analysisTitle, { color: colors.success }]}>Strengths this session</Text>
-                      </View>
-                      {[
-                        { label: 'Shot Execution', value: latest.shotExecution || 0 },
-                        { label: 'Footwork', value: latest.footwork || 0 },
-                        { label: 'Timing', value: latest.timing || 0 },
-                        { label: 'Focus', value: latest.focus || 0 },
-                        { label: 'Confidence', value: latest.confidence || 0 },
-                        { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
-                        { label: 'Energy Level', value: latest.energyLevel || 0 },
-                        { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
-                        { label: 'Shot Selection', value: latest.shotSelection || 0 },
-                        { label: 'Game Awareness', value: latest.gameAwareness || 0 },
-                      ].filter(m => m.value >= 4).map(m => (
-                        <View key={m.label} style={styles.analysisBullet}>
-                          <View style={[styles.bullet, { backgroundColor: colors.success }]} />
-                          <Text style={styles.analysisText}>{m.label} — {m.value}/5</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                  {[
-                    { label: 'Shot Execution', value: latest.shotExecution || 0 },
-                    { label: 'Footwork', value: latest.footwork || 0 },
-                    { label: 'Timing', value: latest.timing || 0 },
-                    { label: 'Focus', value: latest.focus || 0 },
-                    { label: 'Confidence', value: latest.confidence || 0 },
-                    { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
-                    { label: 'Energy Level', value: latest.energyLevel || 0 },
-                    { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
-                    { label: 'Shot Selection', value: latest.shotSelection || 0 },
-                    { label: 'Game Awareness', value: latest.gameAwareness || 0 },
-                  ].filter(m => m.value > 0 && m.value <= 2).length > 0 && (
-                    <View style={[styles.analysisBlock, { backgroundColor: '#FFF4E6', borderLeftColor: colors.warning, marginTop: spacing.sm }]}>
-                      <View style={styles.analysisHeader}>
-                        <MaterialIcons name="trending-up" size={16} color={colors.warning} />
-                        <Text style={[styles.analysisTitle, { color: colors.warning }]}>Focus for next session</Text>
-                      </View>
-                      {[
-                        { label: 'Shot Execution', value: latest.shotExecution || 0 },
-                        { label: 'Footwork', value: latest.footwork || 0 },
-                        { label: 'Timing', value: latest.timing || 0 },
-                        { label: 'Focus', value: latest.focus || 0 },
-                        { label: 'Confidence', value: latest.confidence || 0 },
-                        { label: 'Pressure Handling', value: latest.pressureHandling || 0 },
-                        { label: 'Energy Level', value: latest.energyLevel || 0 },
-                        { label: 'Reaction Speed', value: latest.reactionSpeed || 0 },
-                        { label: 'Shot Selection', value: latest.shotSelection || 0 },
-                        { label: 'Game Awareness', value: latest.gameAwareness || 0 },
-                      ].filter(m => m.value > 0 && m.value <= 2).map(m => (
-                        <View key={m.label} style={styles.analysisBullet}>
-                          <View style={[styles.bullet, { backgroundColor: colors.warning }]} />
-                          <Text style={styles.analysisText}>{m.label} — needs work ({m.value}/5)</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-                </View>
-              </>
-            )}
-          </>
-        )}
-
-        {/* ─── HISTORY ─── */}
-        {activeTab === 'history' && (
-          <>
-            {filteredSessions.length === 0 ? (
-              <View style={styles.emptyState}>
-                <MaterialIcons name="history" size={72} color={colors.border} />
-                <Text style={styles.emptyTitle}>No history yet</Text>
-                <Text style={styles.emptySubtitle}>Your completed sessions will appear here</Text>
-              </View>
-            ) : (
-              <>
-                <Text style={styles.sectionLabel}>{filteredSessions.length} sessions recorded — tap a card to expand</Text>
-                {filteredSessions.map((s, idx) => {
-                  const sessionKey = s.id || String(idx);
-                  const isExpanded = expandedSessionId === sessionKey;
-                  const tech = avgOf([s.shotExecution, s.footwork, s.timing]) || s.technicalRating || 0;
-                  const ment = avgOf([s.focus, s.confidence, s.pressureHandling]) || s.mentalRating || 0;
-                  const phys = avgOf([s.energyLevel, s.reactionSpeed]) || s.physicalRating || 0;
-                  const tact = avgOf([s.shotSelection, s.gameAwareness]) || s.tacticalRating || 0;
-                  const overall = avgOf([tech, ment, phys, tact]);
-                  const perf = getPerformanceLabel(overall);
-                  const mPct = s.middlePercent || (s.ballsFaced && s.ballsMiddled && (s.ballsFaced || 0) > 0
-                    ? Math.round(((s.ballsMiddled || 0) / (s.ballsFaced || 1)) * 100) : null);
-                  const allMetrics = [
-                    { label: 'Shot Execution', value: s.shotExecution || 0, color: colors.technical, group: 'Technical' },
-                    { label: 'Footwork', value: s.footwork || 0, color: colors.technical, group: 'Technical' },
-                    { label: 'Timing', value: s.timing || 0, color: colors.technical, group: 'Technical' },
-                    { label: 'Focus', value: s.focus || 0, color: colors.mental, group: 'Mental' },
-                    { label: 'Confidence', value: s.confidence || 0, color: colors.mental, group: 'Mental' },
-                    { label: 'Pressure Handling', value: s.pressureHandling || 0, color: colors.mental, group: 'Mental' },
-                    { label: 'Energy Level', value: s.energyLevel || 0, color: colors.physical, group: 'Physical' },
-                    { label: 'Reaction Speed', value: s.reactionSpeed || 0, color: colors.physical, group: 'Physical' },
-                    { label: 'Shot Selection', value: s.shotSelection || 0, color: colors.tactical, group: 'Tactical' },
-                    { label: 'Game Awareness', value: s.gameAwareness || 0, color: colors.tactical, group: 'Tactical' },
-                  ];
-                  const hasDetailedMetrics = allMetrics.some(m => m.value > 0);
-                  return (
-                    <Pressable
-                      key={sessionKey}
-                      style={[styles.historyCard, isExpanded && styles.historyCardExpanded]}
-                      onPress={() => setExpandedSessionId(isExpanded ? null : sessionKey)}
-                    >
-                      {/* Card header row */}
-                      <View style={styles.historyTop}>
-                        <View style={styles.historyLeft}>
-                          <Text style={styles.historyDate}>{formatDate(s.completed_at || s.scheduled_date)}</Text>
-                          <View style={styles.historyMeta}>
-                            {(s.duration_minutes || 0) > 0 && (
-                              <View style={styles.metaChip}>
-                                <MaterialIcons name="timer" size={11} color={colors.textSecondary} />
-                                <Text style={styles.metaChipText}>{s.duration_minutes} min</Text>
-                              </View>
-                            )}
-                            {(s.ballsFaced || 0) > 0 && (
-                              <View style={styles.metaChip}>
-                                <MaterialIcons name="sports-cricket" size={11} color={colors.textSecondary} />
-                                <Text style={styles.metaChipText}>{s.ballsFaced} balls</Text>
-                              </View>
-                            )}
-                            {mPct !== null && (
-                              <View style={[styles.metaChip, { backgroundColor: colors.success + '15' }]}>
-                                <MaterialIcons name="gps-fixed" size={11} color={colors.success} />
-                                <Text style={[styles.metaChipText, { color: colors.success, fontWeight: '700' }]}>{mPct}% mid</Text>
-                              </View>
-                            )}
-                          </View>
-                        </View>
-                        <View style={styles.historyRight}>
-                          <View style={[styles.badgeSmall, { backgroundColor: perf.color + '20' }]}>
-                            <Text style={[styles.badgeSmallText, { color: perf.color }]}>{perf.label}</Text>
-                          </View>
-                          <Text style={[styles.historyAvg, { color: perf.color }]}>{overall > 0 ? overall.toFixed(1) : '—'}<Text style={styles.historyAvgMax}>/5</Text></Text>
-                        </View>
-                        <MaterialIcons
-                          name={isExpanded ? 'expand-less' : 'expand-more'}
-                          size={20}
-                          color={colors.textSecondary}
-                          style={{ marginLeft: 4 }}
-                        />
-                      </View>
-
-                      {/* Compact metric chips (collapsed) */}
-                      {!isExpanded && hasDetailedMetrics && (
-                        <View style={styles.historyMetrics}>
-                          {allMetrics.filter(m => m.value > 0).map(m => (
-                            <View key={m.label} style={styles.historyMetricChip}>
-                              <Text style={[styles.historyMetricLabel, { color: m.color }]}>
-                                {m.label === 'Shot Execution' ? 'Shot Exec' :
-                                 m.label === 'Pressure Handling' ? 'Pressure' :
-                                 m.label === 'Energy Level' ? 'Energy' :
-                                 m.label === 'Reaction Speed' ? 'Reaction' :
-                                 m.label === 'Shot Selection' ? 'Shot Sel.' :
-                                 m.label === 'Game Awareness' ? 'Game IQ' : m.label}
-                              </Text>
-                              <Text style={[styles.historyMetricVal, { color: m.color }]}>{m.value}</Text>
-                            </View>
-                          ))}
-                        </View>
-                      )}
-
-                      {/* Expanded full breakdown */}
-                      {isExpanded && (
-                        <View style={styles.expandedContent}>
-                          {/* Edit button */}
-                          <Pressable
-                            style={styles.editBtn}
-                            onPress={(e) => { e.stopPropagation(); setEditingSession(s); }}
-                          >
-                            <MaterialIcons name="edit" size={15} color={colors.primary} />
-                            <Text style={styles.editBtnText}>Edit Session Data</Text>
-                          </Pressable>
-
-                          {/* Pillar summary row */}
-                          <View style={styles.expandedPillarRow}>
-                            {[
-                              { label: 'Technical', value: tech, color: colors.technical },
-                              { label: 'Mental', value: ment, color: colors.mental },
-                              { label: 'Physical', value: phys, color: colors.physical },
-                              { label: 'Tactical', value: tact, color: colors.tactical },
-                            ].map(p => (
-                              <View key={p.label} style={styles.expandedPillarCard}>
-                                <Text style={[styles.expandedPillarVal, { color: p.color }]}>{p.value > 0 ? p.value.toFixed(1) : '—'}</Text>
-                                <Text style={styles.expandedPillarLabel}>{p.label}</Text>
-                              </View>
-                            ))}
-                          </View>
-                          {/* Detailed metric bars grouped by pillar */}
-                          {(['Technical', 'Mental', 'Physical', 'Tactical'] as const).map(group => {
-                            const groupMetrics = allMetrics.filter(m => m.group === group && m.value > 0);
-                            if (!groupMetrics.length) return null;
-                            const groupColor = groupMetrics[0].color;
-                            return (
-                              <View key={group} style={styles.expandedGroup}>
-                                <Text style={[styles.expandedGroupTitle, { color: groupColor }]}>{group}</Text>
-                                {groupMetrics.map(m => (
-                                  <View key={m.label} style={styles.expandedMetricRow}>
-                                    <Text style={styles.expandedMetricLabel}>{m.label}</Text>
-                                    <View style={styles.expandedTrack}>
-                                      <View style={[styles.expandedFill, { width: `${(m.value / 5) * 100}%`, backgroundColor: m.color }]} />
-                                    </View>
-                                    <Text style={[styles.expandedMetricVal, { color: m.color }]}>{m.value}/5</Text>
-                                  </View>
-                                ))}
-                              </View>
-                            );
-                          })}
-                          {s.sessionNotes ? (
-                            <View style={styles.expandedNotes}>
-                              <Text style={styles.expandedNotesLabel}>Notes</Text>
-                              <Text style={styles.expandedNotesText}>{s.sessionNotes}</Text>
-                            </View>
-                          ) : null}
-                        </View>
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </>
-            )}
-          </>
-        )}
-
-        {/* ─── TRENDS ─── */}
-        {activeTab === 'trends' && (
-          <>
-            {filteredSessions.length < 2 ? (
-              <View style={styles.emptyState}>
-                <MaterialIcons name="show-chart" size={72} color={colors.border} />
-                <Text style={styles.emptyTitle}>Not enough data</Text>
-                <Text style={styles.emptySubtitle}>Complete at least 2 sessions to see trends</Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Career Stats</Text>
-                  <View style={styles.careerGrid}>
-                    <View style={styles.careerStat}>
-                      <MaterialIcons name="event" size={20} color={colors.primary} />
-                      <Text style={styles.careerVal}>{filteredSessions.length}</Text>
-                      <Text style={styles.careerLabel}>Sessions</Text>
-                    </View>
-                    <View style={styles.careerStat}>
-                      <MaterialIcons name="timer" size={20} color={colors.info} />
-                      <Text style={styles.careerVal}>{sessions.reduce((a, s) => a + (s.duration_minutes || 0), 0)}</Text>
-                      <Text style={styles.careerLabel}>Total Mins</Text>
-                    </View>
-                    <View style={styles.careerStat}>
-                      <MaterialIcons name="sports-cricket" size={20} color={colors.technical} />
-                      <Text style={styles.careerVal}>{totalBallsFaced}</Text>
-                      <Text style={styles.careerLabel}>Balls Faced</Text>
-                    </View>
-                    {avgMiddlePct !== null && (
-                      <View style={styles.careerStat}>
-                        <MaterialIcons name="gps-fixed" size={20} color={colors.success} />
-                        <Text style={[styles.careerVal, { color: colors.success }]}>{avgMiddlePct}%</Text>
-                        <Text style={styles.careerLabel}>Avg Middle %</Text>
-                      </View>
-                    )}
-                    {totalBoundaries > 0 && (
-                      <View style={styles.careerStat}>
-                        <MaterialIcons name="star" size={20} color={colors.warning} />
-                        <Text style={styles.careerVal}>{totalBoundaries}</Text>
-                        <Text style={styles.careerLabel}>Boundaries</Text>
-                      </View>
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>All-Time Averages</Text>
-                  <Text style={styles.cardSubtitle}>Across {filteredSessions.length} sessions</Text>
-                  {[
-                    { label: 'Shot Execution', key: 'shotExecution' as const, color: colors.technical },
-                    { label: 'Footwork', key: 'footwork' as const, color: colors.technical },
-                    { label: 'Timing', key: 'timing' as const, color: colors.technical },
-                    { label: 'Focus', key: 'focus' as const, color: colors.mental },
-                    { label: 'Confidence', key: 'confidence' as const, color: colors.mental },
-                    { label: 'Pressure Handling', key: 'pressureHandling' as const, color: colors.mental },
-                    { label: 'Energy Level', key: 'energyLevel' as const, color: colors.physical },
-                    { label: 'Reaction Speed', key: 'reactionSpeed' as const, color: colors.physical },
-                    { label: 'Shot Selection', key: 'shotSelection' as const, color: colors.tactical },
-                    { label: 'Game Awareness', key: 'gameAwareness' as const, color: colors.tactical },
-                  ].map(m => (
-                    <MetricBar key={m.label} label={m.label} value={avgAcrossSessions(m.key)} color={m.color} />
-                  ))}
-                </View>
-
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Shot Execution Trend</Text>
-                  <BarChart color={colors.technical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.shotExecution || 0 }))} />
-                </View>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Footwork Trend</Text>
-                  <BarChart color={colors.technical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.footwork || 0 }))} />
-                </View>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Focus Trend</Text>
-                  <BarChart color={colors.mental} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.focus || 0 }))} />
-                </View>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Confidence Trend</Text>
-                  <BarChart color={colors.mental} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.confidence || 0 }))} />
-                </View>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Energy Level Trend</Text>
-                  <BarChart color={colors.physical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.energyLevel || 0 }))} />
-                </View>
-                <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Shot Selection Trend</Text>
-                  <BarChart color={colors.tactical} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.shotSelection || 0 }))} />
-                </View>
-                {sessions.some(s => (s.middlePercent || 0) > 0) && (
-                  <View style={styles.card}>
-                    <Text style={styles.cardTitle}>Middle % Trend</Text>
-                    <BarChart color={colors.success} maxVal={100} data={trendSessions.map(s => ({ label: formatDate(s.completed_at || s.scheduled_date), value: s.middlePercent || 0 }))} />
-                  </View>
-                )}
-              </>
-            )}
-          </>
-        )}
+        {/* ── Session History (collapsible) ── */}
+        <SessionHistoryCard personalSessions={personalSessions} />
       </ScrollView>
-
-      {/* Edit Modal */}
-      <EditSessionModal
-        session={editingSession}
-        visible={editingSession !== null}
-        onClose={() => setEditingSession(null)}
-        onSaved={handleSessionSaved}
-      />
     </SafeAreaView>
   );
 }
@@ -1415,139 +1094,26 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', gap: spacing.md },
   loadingText: { ...typography.body, color: colors.textSecondary },
-
   headerBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingVertical: spacing.md,
     backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
-  headerSub: { ...typography.caption, color: colors.textSecondary },
-
-  badge: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: spacing.sm, paddingVertical: 6, borderRadius: borderRadius.full },
-  badgeText: { ...typography.caption, fontWeight: '700' },
-
-  tabBar: {
-    flexDirection: 'row', backgroundColor: colors.surface,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
+  headerSub: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
+  headerBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.primary + '18', paddingHorizontal: spacing.sm,
+    paddingVertical: 6, borderRadius: borderRadius.full,
+    borderWidth: 1, borderColor: colors.primary + '30',
   },
-  tab: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    paddingVertical: spacing.md, borderBottomWidth: 2, borderBottomColor: 'transparent',
-  },
-  tabActive: { borderBottomColor: colors.primary },
-  tabText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
-  tabTextActive: { color: colors.primary },
-
-  tabInfoBanner: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.xs,
-    backgroundColor: colors.primary + '10', paddingHorizontal: spacing.md, paddingVertical: 10,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  tabInfoText: { fontSize: 11, color: colors.textSecondary, flex: 1, lineHeight: 15 },
-
+  headerBadgeText: { fontSize: 11, color: colors.primary, fontWeight: '700' },
   scroll: { flex: 1 },
-  scrollContent: { padding: spacing.md, paddingBottom: 48 },
-
-  card: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.lg,
-    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border,
+  scrollContent: { padding: spacing.md, paddingBottom: 80, gap: 0 },
+  emptyHero: {
+    alignItems: 'center', paddingVertical: 40, gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  cardTitle: { ...typography.h4, color: colors.text, fontWeight: '700', marginBottom: spacing.md },
-  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.md },
-  cardSubtitle: { ...typography.caption, color: colors.textSecondary, marginTop: -spacing.sm, marginBottom: spacing.md },
-
-  heroLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: 4 },
-  heroScore: { fontSize: 48, fontWeight: '800', color: colors.text, lineHeight: 56 },
-  heroMax: { fontSize: 20, color: colors.textSecondary },
-  statChip: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  statChipText: { ...typography.caption, color: colors.textSecondary },
-
-  badgeSmall: { paddingHorizontal: spacing.sm, paddingVertical: 3, borderRadius: borderRadius.full, alignSelf: 'flex-start' },
-  badgeSmallText: { ...typography.caption, fontWeight: '700' },
-
-  pillarGrid: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: 4 },
-  pillarCard: {
-    flex: 1, minWidth: '44%', backgroundColor: colors.background, borderRadius: borderRadius.md,
-    padding: spacing.md, alignItems: 'center', gap: 6, borderWidth: 1, borderColor: colors.border,
-    borderTopWidth: 3, overflow: 'visible',
-  },
-  pillarScore: { fontSize: 24, fontWeight: '800' },
-  pillarLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600' },
-
-  analysisBlock: { borderRadius: borderRadius.md, padding: spacing.md, borderLeftWidth: 3 },
-  analysisHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.sm },
-  analysisTitle: { ...typography.bodySmall, fontWeight: '700' },
-  analysisBullet: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 4 },
-  bullet: { width: 6, height: 6, borderRadius: 3 },
-  analysisText: { ...typography.bodySmall, color: colors.text, flex: 1 },
-
-  sectionLabel: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600', marginBottom: spacing.md },
-  historyCard: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
-    marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border,
-  },
-  historyCardExpanded: { borderColor: colors.primary + '50', borderWidth: 1.5 },
-  historyTop: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 0 },
-  historyLeft: { flex: 1 },
-  historyRight: { alignItems: 'flex-end', gap: 4 },
-  historyDate: { ...typography.body, color: colors.text, fontWeight: '700', marginBottom: 4 },
-  historyMeta: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
-  metaChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 3,
-    backgroundColor: colors.background, borderRadius: borderRadius.sm,
-    paddingHorizontal: 6, paddingVertical: 3, borderWidth: 1, borderColor: colors.border,
-  },
-  metaChipText: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
-  historyAvg: { fontSize: 22, color: colors.text, fontWeight: '800', lineHeight: 26 },
-  historyAvgMax: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
-  middlePctChip: { ...typography.caption, color: colors.success, fontWeight: '700' },
-  ballsFacedChip: { ...typography.caption, color: colors.textSecondary },
-  historyMetrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: spacing.sm },
-  historyMetricChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, paddingVertical: 3,
-    backgroundColor: colors.background, borderRadius: borderRadius.sm, borderWidth: 1, borderColor: colors.border,
-  },
-  historyMetricLabel: { fontSize: 10, fontWeight: '600' },
-  historyMetricVal: { fontSize: 11, fontWeight: '800' },
-
-  // Expanded session
-  expandedContent: { marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.md },
-  editBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    alignSelf: 'flex-end', marginBottom: spacing.md,
-    backgroundColor: colors.primary + '15', paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs + 2, borderRadius: borderRadius.full,
-    borderWidth: 1, borderColor: colors.primary + '40',
-  },
-  editBtnText: { ...typography.caption, color: colors.primary, fontWeight: '700' },
-  expandedPillarRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
-  expandedPillarCard: {
-    flex: 1, alignItems: 'center', backgroundColor: colors.background,
-    borderRadius: borderRadius.md, paddingVertical: spacing.sm, borderWidth: 1, borderColor: colors.border,
-  },
-  expandedPillarVal: { fontSize: 18, fontWeight: '800' },
-  expandedPillarLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
-  expandedGroup: { marginBottom: spacing.md },
-  expandedGroupTitle: { ...typography.bodySmall, fontWeight: '700', marginBottom: spacing.sm },
-  expandedMetricRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 8 },
-  expandedMetricLabel: { ...typography.caption, color: colors.text, fontWeight: '500', width: 110 },
-  expandedTrack: { flex: 1, height: 6, backgroundColor: colors.border, borderRadius: 3 },
-  expandedFill: { height: 6, borderRadius: 3, minWidth: 4 },
-  expandedMetricVal: { ...typography.caption, fontWeight: '800', width: 30, textAlign: 'right' },
-  expandedNotes: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.sm,
-    borderWidth: 1, borderColor: colors.border, marginTop: spacing.xs,
-  },
-  expandedNotesLabel: { ...typography.caption, color: colors.textSecondary, fontWeight: '600', marginBottom: 2 },
-  expandedNotesText: { ...typography.caption, color: colors.text, lineHeight: 16 },
-
-  careerGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
-  careerStat: { flex: 1, minWidth: '28%', alignItems: 'center', gap: 4 },
-  careerVal: { ...typography.h3, fontWeight: '800', color: colors.text },
-  careerLabel: { ...typography.caption, color: colors.textSecondary, textAlign: 'center' },
-
-  emptyState: { alignItems: 'center', paddingVertical: 60, gap: spacing.md },
   emptyTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
-  emptySubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', paddingHorizontal: spacing.xl },
+  emptySubtitle: { ...typography.body, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, paddingHorizontal: spacing.xl },
 });

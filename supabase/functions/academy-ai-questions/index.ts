@@ -6,8 +6,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { position, sessionType, stats, mode, sessionKind, objective, struggle, performanceContext } = await req.json();
-    // mode: 'questions' | 'analysis' | 'struggle_tip' | 'analytics_improvement'
+    const { position, sessionType, stats, mode, sessionKind, objective, struggle, performanceContext, context, weakestPillar, strongestPillar } = await req.json();
+    // mode: 'questions' | 'analysis' | 'struggle_tip' | 'analytics_improvement' | 'smart_insight'
 
     const apiKey = Deno.env.get('ONSPACE_AI_API_KEY');
     const baseUrl = Deno.env.get('ONSPACE_AI_BASE_URL');
@@ -20,6 +20,41 @@ Deno.serve(async (req) => {
     }
 
     let prompt = '';
+
+    if (mode === 'smart_insight') {
+      // Smart dashboard insight: reads player context and generates 2-sentence coaching insight
+      const insightPrompt = `You are an elite cricket performance coach. Based on the player's recent training data, write exactly 2 sentences of personalised coaching insight.
+
+Training context: ${context || 'Player has recent training data available.'}
+Weakest pillar: ${weakestPillar || 'Technical'}
+Strongest pillar: ${strongestPillar || 'Physical'}
+
+Rules:
+- Sentence 1: Acknowledge the strongest area with a specific positive observation
+- Sentence 2: Give one clear, actionable focus for the next session targeting the weakest area
+- Use cricket-specific language (crease, nets, line and length, etc.)
+- Sound like a real coach, not a robot
+- Do NOT use bullet points or headers — just 2 plain sentences
+- 60 words max total`;
+
+      const aiResp = await fetch(`${baseUrl}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model: 'google/gemini-3-flash-preview',
+          messages: [{ role: 'user', content: insightPrompt }],
+          max_tokens: 120,
+        }),
+      });
+
+      if (!aiResp.ok) {
+        return new Response(JSON.stringify({ error: 'AI service error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+
+      const aiData = await aiResp.json();
+      const insight = aiData.choices?.[0]?.message?.content?.trim() || '';
+      return new Response(JSON.stringify({ insight }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
 
     if (mode === 'analytics_improvement') {
       // Analytics tab: player describes a struggle → AI gives advice + 3 specific drill recommendations
