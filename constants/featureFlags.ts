@@ -12,7 +12,7 @@
  * 
  * Set to false when you're ready to test real purchases
  */
-export const MOCK_IAP = true;
+export const MOCK_IAP = false;
 
 /**
  * DEVELOPER_MODE - Skip authentication for development

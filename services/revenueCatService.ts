@@ -8,7 +8,11 @@ import {
   getIsPremium,
 } from './entitlementStore';
 
-const REVENUECAT_PUBLIC_KEY = 'test_cXozrJSAaYUoqrMuNJqXTmcoWvv';
+// Platform-specific RevenueCat API keys
+// Android key starts with 'goog_', iOS key starts with 'appl_'
+const REVENUECAT_ANDROID_KEY = 'goog_OqVRwtGaEFOIbXuemoBTKzBupSS';
+const REVENUECAT_IOS_KEY = 'appl_REPLACE_WITH_IOS_KEY'; // Replace with iOS key when available
+const REVENUECAT_PUBLIC_KEY = Platform.OS === 'ios' ? REVENUECAT_IOS_KEY : REVENUECAT_ANDROID_KEY;
 
 // Mock packages for testing
 const MOCK_PACKAGES = [
