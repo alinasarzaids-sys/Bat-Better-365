@@ -20,8 +20,8 @@ const MOCK_PACKAGES = [
     identifier: 'bat_better_monthly',
     product: {
       identifier: 'bat_better_monthly',
-      priceString: '$14.99',
-      price: 14.99,
+      priceString: '$4.99',
+      price: 4.99,
       currencyCode: 'USD',
       title: 'Monthly Subscription',
       description: 'Bat Better 365 Monthly',
@@ -31,8 +31,8 @@ const MOCK_PACKAGES = [
     identifier: 'bat_better_6month',
     product: {
       identifier: 'bat_better_6month',
-      priceString: '$89.99',
-      price: 89.99,
+      priceString: '$24.99',
+      price: 24.99,
       currencyCode: 'USD',
       title: '6-Month Subscription',
       description: 'Bat Better 365 6-Month',
@@ -42,8 +42,8 @@ const MOCK_PACKAGES = [
     identifier: 'bat_better_annual',
     product: {
       identifier: 'bat_better_annual',
-      priceString: '$169.99',
-      price: 169.99,
+      priceString: '$49.99',
+      price: 49.99,
       currencyCode: 'USD',
       title: 'Annual Subscription',
       description: 'Bat Better 365 Annual',

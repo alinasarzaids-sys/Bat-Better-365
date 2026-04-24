@@ -1,7 +1,7 @@
 /**
  * PAYWALL — only shown to Independent_Player role.
- * Pricing: Monthly $14.90 / 6-Month $59.90 / Annual $99.90
- * Discount code PROMO850 → $8.50 / $39.90 / $69.90
+ * Pricing: Monthly $4.99 / 6-Month $24.99 / Annual $49.99
+ * Regular (future) prices: Monthly $9.99 / 6-Month $49.99 / Annual $99.99
  */
 import React, { useState } from 'react';
 import {
@@ -21,29 +21,29 @@ const PLANS = [
   {
     id: 'monthly',
     label: 'Monthly',
-    price: 14.90,
-    discountPrice: 8.50,
+    price: 4.99,
+    discountPrice: 4.99,
     period: '/month',
-    badge: null,
+    badge: 'SALE',
     save: null,
   },
   {
     id: 'sixmonth',
     label: '6-Month',
-    price: 59.90,
-    discountPrice: 39.90,
+    price: 24.99,
+    discountPrice: 24.99,
     period: '/6 months',
     badge: 'POPULAR',
-    save: 'Save 33%',
+    save: 'Save 17%',
   },
   {
     id: 'annual',
     label: 'Annual',
-    price: 99.90,
-    discountPrice: 69.90,
+    price: 49.99,
+    discountPrice: 49.99,
     period: '/year',
     badge: 'BEST VALUE',
-    save: 'Save 42%',
+    save: 'Save 17%',
   },
 ];
 
