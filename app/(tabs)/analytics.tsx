@@ -923,21 +923,25 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
   const BigBlock = ({ icon, label, value, color, pct, sub }: {
     icon: string; label: string; value: string | number | null;
     color?: string; pct?: string | null; sub?: string;
-  }) => (
-    <View style={cstat.bigBlock}>
-      <Text style={cstat.bigBlockIcon}>{icon}</Text>
-      <Text style={[cstat.bigBlockVal, { color: color || colors.text }]}>
-        {value !== null && value !== undefined ? String(value) : '—'}
-      </Text>
-      {pct ? (
-        <View style={[cstat.pctBadge, { backgroundColor: (color || colors.primary) + '18' }]}>
-          <Text style={[cstat.pctText, { color: color || colors.primary }]}>{pct}</Text>
-        </View>
-      ) : null}
-      <Text style={cstat.bigBlockLabel}>{label}</Text>
-      {sub ? <Text style={cstat.bigBlockSub}>{sub}</Text> : null}
-    </View>
-  );
+  }) => {
+    const displayVal = value !== null && value !== undefined ? String(value) : '—';
+    const isLong = displayVal.length > 5;
+    return (
+      <View style={cstat.bigBlock}>
+        <Text style={cstat.bigBlockIcon}>{icon}</Text>
+        <Text style={[cstat.bigBlockVal, { color: color || colors.text, fontSize: isLong ? 20 : 26 }]}>
+          {displayVal}
+        </Text>
+        {pct ? (
+          <View style={[cstat.pctBadge, { backgroundColor: (color || colors.primary) + '18' }]}>
+            <Text style={[cstat.pctText, { color: color || colors.primary }]}>{pct}</Text>
+          </View>
+        ) : null}
+        <Text style={cstat.bigBlockLabel}>{label}</Text>
+        {sub ? <Text style={cstat.bigBlockSub}>{sub}</Text> : null}
+      </View>
+    );
+  };
 
   return (
     <View style={cstat.card}>
@@ -956,20 +960,18 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
           {/* Batting */}
           {totalBallsFaced > 0 && (
             <View style={cstat.section}>
-              <Text style={[cstat.sectionLabel, { color: colors.technical || '#2196F3' }]}>⬛ Batting</Text>
-              <View style={cstat.bigGrid}>
-                <BigBlock icon="🏏" label="Balls Faced" value={totalBallsFaced} color={colors.technical} />
-                {totalRunsScored > 0 && (
+              <Text style={[cstat.sectionLabel, { color: colors.technical || '#2196F3' }]}>🔵 BATTING</Text>
+              <View style={cstat.grid2col}>
+                <BigBlock icon="🏏" label="BALLS FACED" value={totalBallsFaced} color={colors.technical} />
+                {totalRunsScored > 0 ? (
                   <BigBlock
-                    icon="🎯" label="Runs Scored" value={totalRunsScored} color={colors.technical}
+                    icon="⚡" label="RUNS SCORED" value={totalRunsScored} color={colors.technical}
                     pct={strikeRate !== null ? `SR ${strikeRate}` : null}
-                    sub="strike rate"
                   />
-                )}
-                {middlePct !== null && (
-                  <BigBlock icon="📍" label="Middled Balls" value={middledBalls} color={colors.success}
-                    pct={`${middlePct}% contact`} />
-                )}
+                ) : middlePct !== null ? (
+                  <BigBlock icon="📍" label="MIDDLED" value={`${middlePct}%`} color={colors.success}
+                    sub="contact rate" />
+                ) : <View style={cstat.bigBlock} />}
               </View>
             </View>
           )}
@@ -977,49 +979,62 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
           {/* Bowling */}
           {totalBallsBowled > 0 && (
             <View style={cstat.section}>
-              <Text style={[cstat.sectionLabel, { color: colors.physical || '#4CAF50' }]}>🟢 Bowling</Text>
-              <View style={cstat.bigGrid}>
-                <BigBlock icon="🏐" label="Balls Bowled" value={totalBallsBowled} color={colors.physical}
+              <Text style={[cstat.sectionLabel, { color: colors.physical || '#4CAF50' }]}>🟢 BOWLING</Text>
+              <View style={cstat.grid2col}>
+                <BigBlock icon="⚾" label="BALLS BOWLED" value={totalBallsBowled} color={colors.physical}
                   sub={`${totalOvers}.${remainBalls} overs`} />
-                <BigBlock icon="🎯" label="Wickets" value={totalWickets} color={colors.physical}
-                  pct={economy !== null ? `Eco ${economy}` : null} sub="economy rate" />
-                {bowlingAvg !== null && (
-                  <BigBlock icon="📊" label="Bowling Avg" value={bowlingAvg} color={colors.physical}
-                    pct={wicketPct !== null ? `${wicketPct} wkts/over` : null} />
-                )}
+                <BigBlock icon="🎯" label="WICKETS" value={totalWickets} color={colors.physical}
+                  pct={economy !== null ? `Eco ${economy}` : null} />
               </View>
+              {bowlingAvg !== null && (
+                <View style={cstat.grid2col}>
+                  <BigBlock icon="📊" label="BOWLING AVG" value={bowlingAvg} color={colors.physical} />
+                  <BigBlock icon="📈" label="WKTS/OVER" value={wicketPct !== null ? String(wicketPct) : '—'} color={colors.physical} />
+                </View>
+              )}
             </View>
           )}
 
           {/* Fielding */}
           {totalFieldingActions > 0 && (
             <View style={cstat.section}>
-              <Text style={[cstat.sectionLabel, { color: colors.tactical || '#FF9800' }]}>🟠 Fielding</Text>
-              <View style={cstat.bigGrid}>
+              <Text style={[cstat.sectionLabel, { color: colors.tactical || '#FF9800' }]}>🟠 FIELDING</Text>
+              <View style={cstat.grid2col}>
                 {totalCatches > 0 && (
-                  <BigBlock icon="🧤" label="Catches" value={totalCatches} color={colors.tactical}
+                  <BigBlock icon="🧤" label="CATCHES" value={totalCatches} color={colors.tactical}
                     pct={totalFieldingActions > 0 ? `${Math.round((totalCatches / totalFieldingActions) * 100)}% of actions` : null} />
                 )}
-                {totalRunOuts > 0 && <BigBlock icon="🏃" label="Run Outs" value={totalRunOuts} color={colors.tactical} />}
-                {totalStumpings > 0 && <BigBlock icon="🥅" label="Stumpings" value={totalStumpings} color={colors.tactical} />}
+                {totalRunOuts > 0 ? (
+                  <BigBlock icon="🏃" label="RUN OUTS" value={totalRunOuts} color={colors.tactical} />
+                ) : totalStumpings > 0 ? (
+                  <BigBlock icon="🥅" label="STUMPINGS" value={totalStumpings} color={colors.tactical} />
+                ) : <View style={cstat.bigBlock} />}
               </View>
+              {totalStumpings > 0 && totalRunOuts > 0 && (
+                <View style={cstat.grid2col}>
+                  <BigBlock icon="🥅" label="STUMPINGS" value={totalStumpings} color={colors.tactical} />
+                  <View style={cstat.bigBlock} />
+                </View>
+              )}
             </View>
           )}
 
           {/* Volume / Fitness */}
           <View style={cstat.section}>
-            <Text style={[cstat.sectionLabel, { color: colors.mental || '#9C27B0' }]}>🟣 Training Volume</Text>
-            <View style={cstat.bigGrid}>
-              <BigBlock icon="🛡️" label="Academy" value={totalSessionsAcademy} color={colors.primary}
+            <Text style={[cstat.sectionLabel, { color: colors.mental || '#9C27B0' }]}>🟣 TRAINING VOLUME</Text>
+            <View style={cstat.grid2col}>
+              <BigBlock icon="🛡️" label="ACADEMY" value={totalSessionsAcademy} color={colors.primary}
                 sub={`${totalMinsAcademy}min total`} />
-              <BigBlock icon="👤" label="Personal" value={totalPersonal} color={colors.success}
+              <BigBlock icon="👤" label="PERSONAL" value={totalPersonal} color={colors.success}
                 sub={`${totalPersonalMins}min total`} />
+            </View>
+            <View style={cstat.grid2col}>
               {avgIntensity !== null && (
-                <BigBlock icon="🔥" label="Avg Intensity" value={`${avgIntensity}/10`}
+                <BigBlock icon="🔥" label="AVG INTENSITY" value={`${avgIntensity}/10`}
                   color={parseFloat(avgIntensity) >= 7 ? colors.error : colors.warning}
                   pct={parseFloat(avgIntensity) >= 7 ? 'High effort' : parseFloat(avgIntensity) >= 5 ? 'Medium effort' : 'Low effort'} />
               )}
-              <BigBlock icon="📅" label="Total Sessions" value={totalSessionsAcademy + totalPersonal} color={colors.text} />
+              <BigBlock icon="📅" label="TOTAL SESSIONS" value={totalSessionsAcademy + totalPersonal} color={colors.text} />
             </View>
           </View>
         </>
@@ -1038,10 +1053,12 @@ const cstat = StyleSheet.create({
   subtitle: { fontSize: 11, color: colors.textSecondary, marginLeft: 4 },
   section: { gap: spacing.xs },
   sectionLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  grid2col: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm },
   bigGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   bigBlock: {
-    flex: 1, minWidth: '28%', backgroundColor: colors.background, borderRadius: borderRadius.xl,
+    flex: 1, backgroundColor: colors.background, borderRadius: borderRadius.xl,
     padding: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: colors.border, gap: 3,
+    minHeight: 110,
   },
   bigBlockIcon: { fontSize: 22, marginBottom: 2 },
   bigBlockVal: { fontSize: 26, fontWeight: '900', color: colors.text, letterSpacing: -0.5 },
