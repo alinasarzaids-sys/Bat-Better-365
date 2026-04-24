@@ -1009,16 +1009,16 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
               </Text>
               <Text style={cstat.cellSublabel}>Success Rate</Text>
               <Text style={cstat.cellLabel}>Batting</Text>
-              <Text style={cstat.cellNote}>{totalBallsMiddled} middled / {totalBallsFaced} faced</Text>
+              <Text style={cstat.cellNote}>{totalBallsFaced} faced / {totalBallsMiddled} successful</Text>
             </View>
             <View style={cstat.cell}>
               <Text style={cstat.cellEmoji}>⚾</Text>
-              <Text style={[cstat.cellValue, { color: hasBowling ? srColor(bowlingSR) : colors.textSecondary }]}>
-                {hasBowling ? `${bowlingSR}%` : '0%'}
+              <Text style={[cstat.cellValue, { color: srColor(bowlingSR) }]}>
+                {`${bowlingSR}%`}
               </Text>
               <Text style={cstat.cellSublabel}>Success Rate</Text>
               <Text style={cstat.cellLabel}>Bowling</Text>
-              <Text style={cstat.cellNote}>{totalWickets} wkts / {Math.floor(totalBallsBowled / 6)}.{totalBallsBowled % 6} ov</Text>
+              <Text style={cstat.cellNote}>{totalBallsBowled} bowled / {totalWickets} successful</Text>
             </View>
           </View>
 
@@ -1031,9 +1031,7 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
               </Text>
               <Text style={cstat.cellSublabel}>Success Rate</Text>
               <Text style={cstat.cellLabel}>Fielding</Text>
-              <Text style={cstat.cellNote}>
-                {`${totalCatches} catches / ${totalRunOuts} run outs / ${totalStumpings} stumpings`}
-              </Text>
+              <Text style={cstat.cellNote}>{expectedFieldingAttempts} chances / {totalFieldingSuccess} catches</Text>
             </View>
           </View>
         </>
