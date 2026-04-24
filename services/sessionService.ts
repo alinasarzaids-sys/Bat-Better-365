@@ -242,6 +242,34 @@ export const sessionService = {
         });
       }
 
+      // Query academy training logs from this month (add to total training time)
+      const { data: academyLogs } = await supabase
+        .from('academy_training_logs')
+        .select('session_type, duration_minutes')
+        .eq('user_id', userId)
+        .gte('log_date', startOfMonth.toISOString().split('T')[0])
+        .lte('log_date', endOfMonth.toISOString().split('T')[0]);
+
+      if (academyLogs) {
+        academyLogs.forEach((log: any) => {
+          const type = (log.session_type || '').toLowerCase();
+          const mins = log.duration_minutes || 0;
+          if (type.includes('batting')) {
+            pillarMinutes['Technical'] += mins;
+          } else if (type.includes('bowling')) {
+            pillarMinutes['Technical'] += mins;
+          } else if (type.includes('fielding')) {
+            pillarMinutes['Tactical'] += mins;
+          } else if (type.includes('fitness')) {
+            pillarMinutes['Physical'] += mins;
+          } else {
+            // Generic academy session — split evenly
+            pillarMinutes['Technical'] += Math.floor(mins / 2);
+            pillarMinutes['Physical'] += Math.floor(mins / 2);
+          }
+        });
+      }
+
       // Query tactical drill logs from this month
       const { data: tacticalLogs } = await supabase
         .from('tactical_drill_logs')

@@ -890,22 +890,25 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
   const totalBallsFaced = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
   const totalRunsScored = academyLogs.reduce((a, l) => a + ((l as any).runs_scored || 0), 0);
   const battingLogs = academyLogs.filter(l => (l.balls_faced || 0) > 0);
-  const avgMiddlePct = battingLogs.length > 0
-    ? Math.round(battingLogs.reduce((a, l) => a + ((l as any).balls_middled || 0), 0) / battingLogs.reduce((a, l) => a + (l.balls_faced || 0), 0) * 100)
-    : null;
   const strikeRate = totalBallsFaced > 0 ? Math.round((totalRunsScored / totalBallsFaced) * 100) : null;
+  const middledBalls = battingLogs.reduce((a, l) => a + ((l as any).balls_middled || 0), 0);
+  const middlePct = totalBallsFaced > 0 && middledBalls > 0 ? Math.round((middledBalls / totalBallsFaced) * 100) : null;
 
   // Bowling
   const totalBallsBowled = academyLogs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
   const totalWickets = academyLogs.reduce((a, l) => a + (l.wickets || 0), 0);
   const totalRunsConceded = academyLogs.reduce((a, l) => a + ((l as any).runs_conceded || 0), 0);
-  const bowlingAvg = totalWickets > 0 ? Math.round(totalRunsConceded / totalWickets) : null;
+  const totalOvers = Math.floor(totalBallsBowled / 6);
+  const remainBalls = totalBallsBowled % 6;
   const economy = totalBallsBowled > 0 ? (totalRunsConceded / (totalBallsBowled / 6)).toFixed(1) : null;
+  const bowlingAvg = totalWickets > 0 ? (totalRunsConceded / totalWickets).toFixed(1) : null;
+  const wicketPct = totalBallsBowled > 0 ? Math.round((totalWickets / (totalBallsBowled / 6)) * 10) / 10 : null; // wickets per over
 
   // Fielding
   const totalCatches = academyLogs.reduce((a, l) => a + (l.catches || 0), 0);
   const totalRunOuts = academyLogs.reduce((a, l) => a + ((l as any).run_outs || 0), 0);
   const totalStumpings = academyLogs.reduce((a, l) => a + ((l as any).stumpings || 0), 0);
+  const totalFieldingActions = totalCatches + totalRunOuts + totalStumpings;
 
   // Training volume
   const totalSessionsAcademy = academyLogs.length;
@@ -916,12 +919,23 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
   const totalPersonal = personalSessions.length;
   const totalPersonalMins = personalSessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
 
-  const StatBlock = ({ icon, label, value, color, sub }: { icon: string; label: string; value: string | number | null; color?: string; sub?: string }) => (
-    <View style={cstat.block}>
-      <Text style={cstat.blockIcon}>{icon}</Text>
-      <Text style={[cstat.blockVal, { color: color || colors.text }]}>{value !== null && value !== undefined ? String(value) : '—'}</Text>
-      <Text style={cstat.blockLabel}>{label}</Text>
-      {sub ? <Text style={cstat.blockSub}>{sub}</Text> : null}
+  // Big stat block with number + percentage/sub-line
+  const BigBlock = ({ icon, label, value, color, pct, sub }: {
+    icon: string; label: string; value: string | number | null;
+    color?: string; pct?: string | null; sub?: string;
+  }) => (
+    <View style={cstat.bigBlock}>
+      <Text style={cstat.bigBlockIcon}>{icon}</Text>
+      <Text style={[cstat.bigBlockVal, { color: color || colors.text }]}>
+        {value !== null && value !== undefined ? String(value) : '—'}
+      </Text>
+      {pct ? (
+        <View style={[cstat.pctBadge, { backgroundColor: (color || colors.primary) + '18' }]}>
+          <Text style={[cstat.pctText, { color: color || colors.primary }]}>{pct}</Text>
+        </View>
+      ) : null}
+      <Text style={cstat.bigBlockLabel}>{label}</Text>
+      {sub ? <Text style={cstat.bigBlockSub}>{sub}</Text> : null}
     </View>
   );
 
@@ -942,12 +956,20 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
           {/* Batting */}
           {totalBallsFaced > 0 && (
             <View style={cstat.section}>
-              <Text style={[cstat.sectionLabel, { color: colors.technical || '#2196F3' }]}>Batting</Text>
-              <View style={cstat.statsGrid}>
-                <StatBlock icon="🏏" label="Balls Faced" value={totalBallsFaced} color={colors.technical} />
-                {totalRunsScored > 0 && <StatBlock icon="🎯" label="Runs" value={totalRunsScored} color={colors.technical} />}
-                {strikeRate !== null && <StatBlock icon="⚡" label="Strike Rate" value={`${strikeRate}`} color={colors.technical} sub="per 100" />}
-                {avgMiddlePct !== null && avgMiddlePct > 0 && <StatBlock icon="📍" label="Middle %" value={`${avgMiddlePct}%`} color={colors.success} sub="avg contact" />}
+              <Text style={[cstat.sectionLabel, { color: colors.technical || '#2196F3' }]}>⬛ Batting</Text>
+              <View style={cstat.bigGrid}>
+                <BigBlock icon="🏏" label="Balls Faced" value={totalBallsFaced} color={colors.technical} />
+                {totalRunsScored > 0 && (
+                  <BigBlock
+                    icon="🎯" label="Runs Scored" value={totalRunsScored} color={colors.technical}
+                    pct={strikeRate !== null ? `SR ${strikeRate}` : null}
+                    sub="strike rate"
+                  />
+                )}
+                {middlePct !== null && (
+                  <BigBlock icon="📍" label="Middled Balls" value={middledBalls} color={colors.success}
+                    pct={`${middlePct}% contact`} />
+                )}
               </View>
             </View>
           )}
@@ -955,36 +977,49 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
           {/* Bowling */}
           {totalBallsBowled > 0 && (
             <View style={cstat.section}>
-              <Text style={[cstat.sectionLabel, { color: colors.physical || '#4CAF50' }]}>Bowling</Text>
-              <View style={cstat.statsGrid}>
-                <StatBlock icon="🎳" label="Balls Bowled" value={totalBallsBowled} color={colors.physical} sub={`${Math.floor(totalBallsBowled / 6)}.${totalBallsBowled % 6} overs`} />
-                <StatBlock icon="🎯" label="Wickets" value={totalWickets} color={colors.physical} />
-                {economy !== null && <StatBlock icon="📊" label="Economy" value={economy} color={colors.physical} sub="runs/over" />}
-                {bowlingAvg !== null && <StatBlock icon="📉" label="Avg" value={bowlingAvg} color={colors.physical} sub="runs/wkt" />}
+              <Text style={[cstat.sectionLabel, { color: colors.physical || '#4CAF50' }]}>🟢 Bowling</Text>
+              <View style={cstat.bigGrid}>
+                <BigBlock icon="🏐" label="Balls Bowled" value={totalBallsBowled} color={colors.physical}
+                  sub={`${totalOvers}.${remainBalls} overs`} />
+                <BigBlock icon="🎯" label="Wickets" value={totalWickets} color={colors.physical}
+                  pct={economy !== null ? `Eco ${economy}` : null} sub="economy rate" />
+                {bowlingAvg !== null && (
+                  <BigBlock icon="📊" label="Bowling Avg" value={bowlingAvg} color={colors.physical}
+                    pct={wicketPct !== null ? `${wicketPct} wkts/over` : null} />
+                )}
               </View>
             </View>
           )}
 
           {/* Fielding */}
-          {(totalCatches > 0 || totalRunOuts > 0 || totalStumpings > 0) && (
+          {totalFieldingActions > 0 && (
             <View style={cstat.section}>
-              <Text style={[cstat.sectionLabel, { color: colors.tactical || '#FF9800' }]}>Fielding</Text>
-              <View style={cstat.statsGrid}>
-                {totalCatches > 0 && <StatBlock icon="🧤" label="Catches" value={totalCatches} color={colors.tactical} />}
-                {totalRunOuts > 0 && <StatBlock icon="🏃" label="Run Outs" value={totalRunOuts} color={colors.tactical} />}
-                {totalStumpings > 0 && <StatBlock icon="🥅" label="Stumpings" value={totalStumpings} color={colors.tactical} />}
+              <Text style={[cstat.sectionLabel, { color: colors.tactical || '#FF9800' }]}>🟠 Fielding</Text>
+              <View style={cstat.bigGrid}>
+                {totalCatches > 0 && (
+                  <BigBlock icon="🧤" label="Catches" value={totalCatches} color={colors.tactical}
+                    pct={totalFieldingActions > 0 ? `${Math.round((totalCatches / totalFieldingActions) * 100)}% of actions` : null} />
+                )}
+                {totalRunOuts > 0 && <BigBlock icon="🏃" label="Run Outs" value={totalRunOuts} color={colors.tactical} />}
+                {totalStumpings > 0 && <BigBlock icon="🥅" label="Stumpings" value={totalStumpings} color={colors.tactical} />}
               </View>
             </View>
           )}
 
           {/* Volume / Fitness */}
           <View style={cstat.section}>
-            <Text style={[cstat.sectionLabel, { color: colors.mental || '#9C27B0' }]}>Training Volume</Text>
-            <View style={cstat.statsGrid}>
-              <StatBlock icon="🛡️" label="Academy" value={totalSessionsAcademy} color={colors.primary} sub={`${totalMinsAcademy}min`} />
-              <StatBlock icon="👤" label="Personal" value={totalPersonal} color={colors.success} sub={`${totalPersonalMins}min`} />
-              {avgIntensity !== null && <StatBlock icon="🔥" label="Avg Intensity" value={`${avgIntensity}/10`} color={parseFloat(avgIntensity) >= 7 ? colors.error : colors.warning} />}
-              <StatBlock icon="📅" label="Total Sessions" value={totalSessionsAcademy + totalPersonal} color={colors.text} />
+            <Text style={[cstat.sectionLabel, { color: colors.mental || '#9C27B0' }]}>🟣 Training Volume</Text>
+            <View style={cstat.bigGrid}>
+              <BigBlock icon="🛡️" label="Academy" value={totalSessionsAcademy} color={colors.primary}
+                sub={`${totalMinsAcademy}min total`} />
+              <BigBlock icon="👤" label="Personal" value={totalPersonal} color={colors.success}
+                sub={`${totalPersonalMins}min total`} />
+              {avgIntensity !== null && (
+                <BigBlock icon="🔥" label="Avg Intensity" value={`${avgIntensity}/10`}
+                  color={parseFloat(avgIntensity) >= 7 ? colors.error : colors.warning}
+                  pct={parseFloat(avgIntensity) >= 7 ? 'High effort' : parseFloat(avgIntensity) >= 5 ? 'Medium effort' : 'Low effort'} />
+              )}
+              <BigBlock icon="📅" label="Total Sessions" value={totalSessionsAcademy + totalPersonal} color={colors.text} />
             </View>
           </View>
         </>
@@ -1003,15 +1038,17 @@ const cstat = StyleSheet.create({
   subtitle: { fontSize: 11, color: colors.textSecondary, marginLeft: 4 },
   section: { gap: spacing.xs },
   sectionLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
-  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  block: {
-    flex: 1, minWidth: '22%', backgroundColor: colors.background, borderRadius: borderRadius.lg,
-    padding: spacing.sm, alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+  bigGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  bigBlock: {
+    flex: 1, minWidth: '28%', backgroundColor: colors.background, borderRadius: borderRadius.xl,
+    padding: spacing.md, alignItems: 'center', borderWidth: 1, borderColor: colors.border, gap: 3,
   },
-  blockIcon: { fontSize: 18, marginBottom: 2 },
-  blockVal: { fontSize: 18, fontWeight: '900', color: colors.text },
-  blockLabel: { fontSize: 9, color: colors.textSecondary, fontWeight: '700', textAlign: 'center', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
-  blockSub: { fontSize: 9, color: colors.textSecondary, marginTop: 1, textAlign: 'center' },
+  bigBlockIcon: { fontSize: 22, marginBottom: 2 },
+  bigBlockVal: { fontSize: 26, fontWeight: '900', color: colors.text, letterSpacing: -0.5 },
+  bigBlockLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '700', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.3 },
+  bigBlockSub: { fontSize: 9, color: colors.textSecondary, marginTop: 1, textAlign: 'center' },
+  pctBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: borderRadius.sm, marginTop: 1 },
+  pctText: { fontSize: 10, fontWeight: '800', textAlign: 'center' },
 });
 
 // ─── Session History (collapsible) ────────────────────────────────────────────

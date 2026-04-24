@@ -13,19 +13,17 @@ interface StatsRowProps {
 }
 
 // Total balls hit: sum runs_scored (balls hit) and balls_faced from academy_training_logs
-async function fetchTotalBalls(userId: string): Promise<{ faced: number; hit: number }> {
+async function fetchTotalBalls(userId: string): Promise<{ faced: number }> {
   const supabase = getSupabaseClient();
   const { data } = await supabase
     .from('academy_training_logs')
-    .select('balls_faced, runs_scored')
+    .select('balls_faced')
     .eq('user_id', userId);
   let faced = 0;
-  let hit = 0;
   (data || []).forEach((l: any) => {
     faced += l.balls_faced || 0;
-    hit += l.runs_scored || 0;
   });
-  return { faced, hit };
+  return { faced };
 }
 
 const WEEKLY_GOAL = 300;
@@ -70,7 +68,7 @@ const LEVELS = [
 
 export function StatsRow({ progress }: StatsRowProps) {
   const { user } = useAuth();
-  const [totalBalls, setTotalBalls] = useState<{ faced: number; hit: number }>({ faced: 0, hit: 0 });
+  const [totalBalls, setTotalBalls] = useState<{ faced: number }>({ faced: 0 });
   const [ballsLoading, setBallsLoading] = useState(false);
   const [showPointsModal, setShowPointsModal] = useState(false);
 
@@ -95,8 +93,6 @@ export function StatsRow({ progress }: StatsRowProps) {
     ? Math.min(100, Math.round(((totalXP - prevThreshold) / (nextThreshold - prevThreshold)) * 100))
     : 100;
 
-  const ballsPct = totalBalls.faced > 0 ? Math.min(100, Math.round((totalBalls.hit / totalBalls.faced) * 100)) : 0;
-
   return (
     <>
       <View style={styles.container}>
@@ -111,7 +107,7 @@ export function StatsRow({ progress }: StatsRowProps) {
           </View>
         </Card>
 
-        {/* Total Balls Hit */}
+        {/* Total Balls Faced */}
         <Card style={styles.statCard}>
           <View style={styles.iconContainer}>
             <MaterialIcons name="sports-cricket" size={24} color={colors.technical || '#2196F3'} />
@@ -121,15 +117,12 @@ export function StatsRow({ progress }: StatsRowProps) {
               <Text style={[styles.statValue, { fontSize: 16 }]}>...</Text>
             ) : (
               <Text style={[styles.statValue, { color: colors.technical || '#2196F3' }]}>
-                {totalBalls.hit}<Text style={styles.statValueSuffix}> hit</Text>
+                {totalBalls.faced}
               </Text>
             )}
-            <Text style={styles.statLabel}>Total Balls Hit</Text>
-            <View style={styles.miniBarTrack}>
-              <View style={[styles.miniBarFill, { width: `${ballsPct}%`, backgroundColor: ballsPct >= 70 ? colors.success : ballsPct >= 40 ? colors.warning : colors.error }]} />
-            </View>
+            <Text style={styles.statLabel}>Balls Faced</Text>
             <Text style={styles.statSubtext}>
-              {totalBalls.faced > 0 ? `${ballsPct}% of ${totalBalls.faced} faced` : 'No balls logged yet'}
+              {totalBalls.faced > 0 ? 'Career total' : 'No balls logged yet'}
             </Text>
           </View>
         </Card>

@@ -34,39 +34,58 @@ export const leaderboardService = {
             technical_points,
             physical_points,
             mental_points,
-            tactical_points
+            tactical_points,
+            total_sessions
           )
         `);
 
       if (error) throw error;
 
+      // Also get academy training log counts to boost players who log academy sessions
+      const { data: academyLogCounts } = await supabase
+        .from('academy_training_logs')
+        .select('user_id')
+        .then(res => res);
+
+      // Count academy logs per user
+      const academyCountMap: Record<string, number> = {};
+      (academyLogCounts || []).forEach((l: any) => {
+        academyCountMap[l.user_id] = (academyCountMap[l.user_id] || 0) + 1;
+      });
+
       if (!data) {
         return { data: [], error: null };
       }
 
-      // Transform and calculate rankings
+      // Include any user who has either XP progress OR academy logs
       const entries: LeaderboardEntry[] = data
-        .filter((user) => user.user_progress && user.user_progress.length > 0)
+        .filter((user) => {
+          const hasProgress = user.user_progress && user.user_progress.length > 0;
+          const hasAcademyLogs = (academyCountMap[user.id] || 0) > 0;
+          return hasProgress || hasAcademyLogs;
+        })
         .map((user) => {
-          const progress = user.user_progress[0];
-          const totalXP =
-            progress.technical_points +
-            progress.physical_points +
-            progress.mental_points +
-            progress.tactical_points;
+          const progress = (user.user_progress && user.user_progress[0]) || null;
+          const techPts = progress?.technical_points || 0;
+          const physPts = progress?.physical_points || 0;
+          const mentalPts = progress?.mental_points || 0;
+          const tacPts = progress?.tactical_points || 0;
+          // Academy logs contribute 10 XP each to overall ranking
+          const academyBonus = (academyCountMap[user.id] || 0) * 10;
+          const totalXP = techPts + physPts + mentalPts + tacPts + academyBonus;
 
           return {
             id: user.id,
-            username: user.username || user.full_name || 'Unknown Player',
+            username: user.username || user.full_name || 'Player',
             full_name: user.full_name,
-            skill_level: progress.skill_level,
+            skill_level: progress?.skill_level || 'Beginner',
             total_xp: totalXP,
-            current_streak: progress.current_streak,
-            technical_points: progress.technical_points,
-            physical_points: progress.physical_points,
-            mental_points: progress.mental_points,
-            tactical_points: progress.tactical_points,
-            rank: 0, // Will be set below
+            current_streak: progress?.current_streak || 0,
+            technical_points: techPts,
+            physical_points: physPts,
+            mental_points: mentalPts,
+            tactical_points: tacPts,
+            rank: 0,
           };
         });
 
@@ -99,7 +118,7 @@ export const leaderboardService = {
       sortedEntries.forEach((entry, index) => {
         entry.rank = index + 1;
       });
-      
+
       // Apply limit if specified
       const finalEntries = limit ? sortedEntries.slice(0, limit) : sortedEntries;
 
