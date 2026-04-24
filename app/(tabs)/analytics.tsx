@@ -1002,20 +1002,24 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
 
           {/* Row 2: Batting SR | Bowling SR */}
           <View style={cstat.row}>
-            <MetricCell
-              emoji="🏏"
-              value={hasBatting ? `${battingSR}%` : '0%'}
-              label="Batting"
-              sublabel="Success Rate"
-              color={hasBatting ? srColor(battingSR) : colors.textSecondary}
-            />
-            <MetricCell
-              emoji="⚾"
-              value={hasBowling ? `${bowlingSR}%` : '0%'}
-              label="Bowling"
-              sublabel="Success Rate"
-              color={hasBowling ? srColor(bowlingSR) : colors.textSecondary}
-            />
+            <View style={cstat.cell}>
+              <Text style={cstat.cellEmoji}>🏏</Text>
+              <Text style={[cstat.cellValue, { color: hasBatting ? srColor(battingSR) : colors.textSecondary }]}>
+                {hasBatting ? `${battingSR}%` : '0%'}
+              </Text>
+              <Text style={cstat.cellSublabel}>Success Rate</Text>
+              <Text style={cstat.cellLabel}>Batting</Text>
+              <Text style={cstat.cellNote}>{totalBallsMiddled} middled / {totalBallsFaced} faced</Text>
+            </View>
+            <View style={cstat.cell}>
+              <Text style={cstat.cellEmoji}>⚾</Text>
+              <Text style={[cstat.cellValue, { color: hasBowling ? srColor(bowlingSR) : colors.textSecondary }]}>
+                {hasBowling ? `${bowlingSR}%` : '0%'}
+              </Text>
+              <Text style={cstat.cellSublabel}>Success Rate</Text>
+              <Text style={cstat.cellLabel}>Bowling</Text>
+              <Text style={cstat.cellNote}>{totalWickets} wkts / {Math.floor(totalBallsBowled / 6)}.{totalBallsBowled % 6} ov</Text>
+            </View>
           </View>
 
           {/* Row 3: Fielding SR (full width) */}
@@ -1027,35 +1031,11 @@ function CareerStatsCard({ personalSessions, academyLogs }: {
               </Text>
               <Text style={cstat.cellSublabel}>Success Rate</Text>
               <Text style={cstat.cellLabel}>Fielding</Text>
-              {hasFielding && totalFieldingSuccess > 0 && (
-                <Text style={cstat.cellNote}>
-                  {totalCatches > 0 ? `${totalCatches} catches` : ''}
-                  {totalRunOuts > 0 ? `  ${totalRunOuts} run outs` : ''}
-                  {totalStumpings > 0 ? `  ${totalStumpings} stumpings` : ''}
-                </Text>
-              )}
+              <Text style={cstat.cellNote}>
+                {`${totalCatches} catches / ${totalRunOuts} run outs / ${totalStumpings} stumpings`}
+              </Text>
             </View>
           </View>
-
-          {/* Sub-detail row: raw numbers */}
-          {(hasBatting || hasBowling) && (
-            <View style={cstat.detailRow}>
-              {hasBatting && (
-                <View style={cstat.detailChip}>
-                  <Text style={cstat.detailChipText}>
-                    🏏 {totalBallsMiddled} middled / {totalBallsFaced} faced
-                  </Text>
-                </View>
-              )}
-              {hasBowling && (
-                <View style={cstat.detailChip}>
-                  <Text style={cstat.detailChipText}>
-                    ⚾ {totalWickets} wkts · {Math.floor(totalBallsBowled / 6)}.{totalBallsBowled % 6} ov
-                  </Text>
-                </View>
-              )}
-            </View>
-          )}
         </>
       )}
     </View>
