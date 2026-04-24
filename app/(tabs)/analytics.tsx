@@ -83,6 +83,52 @@ function avg(vals: (number | undefined)[]): number {
   return Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10;
 }
 
+// ─── Markdown Renderer (strips ## and ** into styled text) ──────────────────
+function RichMarkdownText({ text }: { text: string }) {
+  if (!text) return null;
+  const lines = text.split('\n');
+  return (
+    <View style={{ gap: 4 }}>
+      {lines.map((line, i) => {
+        const trimmed = line.trim();
+        // ## heading
+        if (trimmed.startsWith('## ')) {
+          const content = trimmed.replace(/^##\s*/, '').replace(/\*\*/g, '');
+          return (
+            <View key={i} style={{ marginTop: i > 0 ? 12 : 0, marginBottom: 4, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <View style={{ width: 3, height: 16, backgroundColor: colors.primary, borderRadius: 2 }} />
+              <Text style={{ fontSize: 15, fontWeight: '800', color: colors.text }}>{content}</Text>
+            </View>
+          );
+        }
+        // bullet line starting with * or -
+        if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
+          const content = trimmed.slice(2).replace(/\*\*([^*]+)\*\*/g, '$1');
+          // Check if there's a bold prefix (e.g. "Title: rest")
+          const boldMatch = content.match(/^([^:]+):(.*)/s);
+          return (
+            <View key={i} style={{ flexDirection: 'row', gap: 8, paddingLeft: 4 }}>
+              <Text style={{ fontSize: 13, color: colors.primary, marginTop: 3, fontWeight: '900' }}>•</Text>
+              <Text style={{ flex: 1, fontSize: 13, color: colors.text, lineHeight: 20 }}>
+                {boldMatch
+                  ? <><Text style={{ fontWeight: '800' }}>{boldMatch[1]}:</Text>{boldMatch[2]}</>
+                  : content}
+              </Text>
+            </View>
+          );
+        }
+        // empty line
+        if (!trimmed) return <View key={i} style={{ height: 4 }} />;
+        // regular text — strip any remaining **
+        const clean = trimmed.replace(/\*\*([^*]+)\*\*/g, '$1');
+        return (
+          <Text key={i} style={{ fontSize: 13, color: colors.text, lineHeight: 20 }}>{clean}</Text>
+        );
+      })}
+    </View>
+  );
+}
+
 // ─── 1. AI Coach Header Card ───────────────────────────────────────────────────
 function AICoachCard({ personalSessions, academyLogs, pillarData, loading }: {
   personalSessions: PersonalSession[];
@@ -233,7 +279,7 @@ function AICoachCard({ personalSessions, academyLogs, pillarData, loading }: {
               </Pressable>
             </View>
             <ScrollView contentContainerStyle={{ padding: spacing.md, paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
-              <Text style={{ fontSize: 14, color: colors.text, lineHeight: 24 }}>{plan}</Text>
+              <RichMarkdownText text={plan} />
             </ScrollView>
           </View>
         </View>
@@ -280,8 +326,8 @@ function ObjectiveStrikeRate({ personalSessions, academyLogs }: {
   personalSessions: PersonalSession[];
   academyLogs: AcademyLog[];
 }) {
-  const SIZE = 140;
-  const STROKE = 18;
+  const SIZE = 160;
+  const STROKE = 16;
   const R = (SIZE - STROKE) / 2;
   const CIRCUM = 2 * Math.PI * R;
 
@@ -317,8 +363,9 @@ function ObjectiveStrikeRate({ personalSessions, academyLogs }: {
         </View>
       ) : (
         <View style={donut.content}>
-          <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-            <Svg width={SIZE} height={SIZE}>
+          {/* Donut with centered text overlay using absolute positioning */}
+          <View style={{ width: SIZE, height: SIZE, justifyContent: 'center', alignItems: 'center' }}>
+            <Svg width={SIZE} height={SIZE} style={{ position: 'absolute', top: 0, left: 0 }}>
               <Circle
                 cx={SIZE / 2} cy={SIZE / 2} r={R}
                 stroke={colors.border} strokeWidth={STROKE} fill="none"
@@ -332,17 +379,12 @@ function ObjectiveStrikeRate({ personalSessions, academyLogs }: {
                 rotation="-90"
                 originX={SIZE / 2} originY={SIZE / 2}
               />
-              <SvgText
-                x={SIZE / 2} y={SIZE / 2 - 8}
-                textAnchor="middle" fontSize="28" fontWeight="900"
-                fill={color}
-              >{rate}%</SvgText>
-              <SvgText
-                x={SIZE / 2} y={SIZE / 2 + 14}
-                textAnchor="middle" fontSize="10" fontWeight="600"
-                fill={colors.textSecondary}
-              >of sessions</SvgText>
             </Svg>
+            {/* Centered text as React Native View (no SVG text overlap) */}
+            <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 30, fontWeight: '900', color, lineHeight: 34 }}>{rate}%</Text>
+              <Text style={{ fontSize: 10, color: colors.textSecondary, fontWeight: '600', marginTop: 2 }}>of sessions</Text>
+            </View>
           </View>
           <View style={donut.statsCol}>
             <View style={[donut.labelBadge, { backgroundColor: color + '18', borderColor: color + '40' }]}>
@@ -359,7 +401,7 @@ function ObjectiveStrikeRate({ personalSessions, academyLogs }: {
             <View style={donut.statRow}>
               <MaterialIcons name="info-outline" size={13} color={colors.textSecondary} />
               <Text style={[donut.statText, { fontSize: 10, lineHeight: 14, color: colors.textSecondary }]}>
-                Target: avg rating ≥3.5/5 or academy intensity ≥6/10
+                Target: avg rating ≥3.5/5 or intensity ≥6/10
               </Text>
             </View>
           </View>
@@ -747,7 +789,10 @@ function ConsistencyHeatmap({ sessionDates }: { sessionDates: Set<string> }) {
   const padded: (typeof cells[0] | null)[] = [...Array(firstDow).fill(null), ...cells];
 
   const logged = cells.filter(c => c.count > 0).length;
-  const pct = daysInMonth > 0 ? Math.round((logged / Math.min(daysInMonth, today.getDate())) * 100) : 0;
+  const totalDaysSoFar = Math.min(daysInMonth, today.getDate());
+  const pct = totalDaysSoFar > 0 ? Math.round((logged / totalDaysSoFar) * 100) : 0;
+  const consistency = pct >= 70 ? 'Strong' : pct >= 40 ? 'Building' : 'Low';
+  const consistencyColor = pct >= 70 ? colors.success : pct >= 40 ? colors.warning : colors.error;
 
   const DAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
 
@@ -757,10 +802,16 @@ function ConsistencyHeatmap({ sessionDates }: { sessionDates: Set<string> }) {
         <MaterialIcons name="grid-on" size={18} color={colors.primary} />
         <Text style={heat.title}>Consistency Heatmap</Text>
       </View>
+      {/* Explanation banner */}
+      <View style={{ backgroundColor: colors.background, borderRadius: borderRadius.md, padding: spacing.sm, borderWidth: 1, borderColor: colors.border, gap: 3 }}>
+        <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 16 }}>
+          Each square = 1 day this month. Green = session logged. The darker the green, the more sessions that day. Grey = no training. Use this to spot gaps in your routine.
+        </Text>
+      </View>
       <View style={heat.metaRow}>
         <Text style={heat.monthLabel}>{monthName}</Text>
-        <View style={[heat.statBadge, { backgroundColor: pct >= 70 ? colors.success + '18' : colors.warning + '18', borderColor: pct >= 70 ? colors.success + '40' : colors.warning + '40' }]}>
-          <Text style={[heat.statBadgeText, { color: pct >= 70 ? colors.success : colors.warning }]}>{logged} days trained · {pct}%</Text>
+        <View style={[heat.statBadge, { backgroundColor: consistencyColor + '18', borderColor: consistencyColor + '40' }]}>
+          <Text style={[heat.statBadgeText, { color: consistencyColor }]}>{consistency} · {logged}/{totalDaysSoFar} days · {pct}%</Text>
         </View>
       </View>
 
@@ -828,6 +879,139 @@ const heat = StyleSheet.create({
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendCell: { width: 12, height: 12 },
   legendLabel: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+});
+
+// ─── Career Stats Card ───────────────────────────────────────────────────────
+function CareerStatsCard({ personalSessions, academyLogs }: {
+  personalSessions: PersonalSession[];
+  academyLogs: AcademyLog[];
+}) {
+  // Batting
+  const totalBallsFaced = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+  const totalRunsScored = academyLogs.reduce((a, l) => a + ((l as any).runs_scored || 0), 0);
+  const battingLogs = academyLogs.filter(l => (l.balls_faced || 0) > 0);
+  const avgMiddlePct = battingLogs.length > 0
+    ? Math.round(battingLogs.reduce((a, l) => a + ((l as any).balls_middled || 0), 0) / battingLogs.reduce((a, l) => a + (l.balls_faced || 0), 0) * 100)
+    : null;
+  const strikeRate = totalBallsFaced > 0 ? Math.round((totalRunsScored / totalBallsFaced) * 100) : null;
+
+  // Bowling
+  const totalBallsBowled = academyLogs.reduce((a, l) => a + (l.balls_bowled || 0), 0);
+  const totalWickets = academyLogs.reduce((a, l) => a + (l.wickets || 0), 0);
+  const totalRunsConceded = academyLogs.reduce((a, l) => a + ((l as any).runs_conceded || 0), 0);
+  const bowlingAvg = totalWickets > 0 ? Math.round(totalRunsConceded / totalWickets) : null;
+  const economy = totalBallsBowled > 0 ? (totalRunsConceded / (totalBallsBowled / 6)).toFixed(1) : null;
+
+  // Fielding
+  const totalCatches = academyLogs.reduce((a, l) => a + (l.catches || 0), 0);
+  const totalRunOuts = academyLogs.reduce((a, l) => a + ((l as any).run_outs || 0), 0);
+  const totalStumpings = academyLogs.reduce((a, l) => a + ((l as any).stumpings || 0), 0);
+
+  // Training volume
+  const totalSessionsAcademy = academyLogs.length;
+  const totalMinsAcademy = academyLogs.reduce((a, l) => a + (l.duration_minutes || 0), 0);
+  const avgIntensity = academyLogs.length > 0
+    ? (academyLogs.reduce((a, l) => a + (l.intensity || 5), 0) / academyLogs.length).toFixed(1)
+    : null;
+  const totalPersonal = personalSessions.length;
+  const totalPersonalMins = personalSessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+
+  const StatBlock = ({ icon, label, value, color, sub }: { icon: string; label: string; value: string | number | null; color?: string; sub?: string }) => (
+    <View style={cstat.block}>
+      <Text style={cstat.blockIcon}>{icon}</Text>
+      <Text style={[cstat.blockVal, { color: color || colors.text }]}>{value !== null && value !== undefined ? String(value) : '—'}</Text>
+      <Text style={cstat.blockLabel}>{label}</Text>
+      {sub ? <Text style={cstat.blockSub}>{sub}</Text> : null}
+    </View>
+  );
+
+  return (
+    <View style={cstat.card}>
+      <View style={cstat.headerRow}>
+        <MaterialIcons name="emoji-events" size={18} color={colors.warning} />
+        <Text style={cstat.title}>Career Stats</Text>
+        <Text style={cstat.subtitle}>All-time from academy logs</Text>
+      </View>
+
+      {academyLogs.length === 0 && personalSessions.length === 0 ? (
+        <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+          <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>No sessions logged yet. Start training to build your career stats.</Text>
+        </View>
+      ) : (
+        <>
+          {/* Batting */}
+          {totalBallsFaced > 0 && (
+            <View style={cstat.section}>
+              <Text style={[cstat.sectionLabel, { color: colors.technical || '#2196F3' }]}>Batting</Text>
+              <View style={cstat.statsGrid}>
+                <StatBlock icon="🏏" label="Balls Faced" value={totalBallsFaced} color={colors.technical} />
+                {totalRunsScored > 0 && <StatBlock icon="🎯" label="Runs" value={totalRunsScored} color={colors.technical} />}
+                {strikeRate !== null && <StatBlock icon="⚡" label="Strike Rate" value={`${strikeRate}`} color={colors.technical} sub="per 100" />}
+                {avgMiddlePct !== null && avgMiddlePct > 0 && <StatBlock icon="📍" label="Middle %" value={`${avgMiddlePct}%`} color={colors.success} sub="avg contact" />}
+              </View>
+            </View>
+          )}
+
+          {/* Bowling */}
+          {totalBallsBowled > 0 && (
+            <View style={cstat.section}>
+              <Text style={[cstat.sectionLabel, { color: colors.physical || '#4CAF50' }]}>Bowling</Text>
+              <View style={cstat.statsGrid}>
+                <StatBlock icon="🎳" label="Balls Bowled" value={totalBallsBowled} color={colors.physical} sub={`${Math.floor(totalBallsBowled / 6)}.${totalBallsBowled % 6} overs`} />
+                <StatBlock icon="🎯" label="Wickets" value={totalWickets} color={colors.physical} />
+                {economy !== null && <StatBlock icon="📊" label="Economy" value={economy} color={colors.physical} sub="runs/over" />}
+                {bowlingAvg !== null && <StatBlock icon="📉" label="Avg" value={bowlingAvg} color={colors.physical} sub="runs/wkt" />}
+              </View>
+            </View>
+          )}
+
+          {/* Fielding */}
+          {(totalCatches > 0 || totalRunOuts > 0 || totalStumpings > 0) && (
+            <View style={cstat.section}>
+              <Text style={[cstat.sectionLabel, { color: colors.tactical || '#FF9800' }]}>Fielding</Text>
+              <View style={cstat.statsGrid}>
+                {totalCatches > 0 && <StatBlock icon="🧤" label="Catches" value={totalCatches} color={colors.tactical} />}
+                {totalRunOuts > 0 && <StatBlock icon="🏃" label="Run Outs" value={totalRunOuts} color={colors.tactical} />}
+                {totalStumpings > 0 && <StatBlock icon="🥅" label="Stumpings" value={totalStumpings} color={colors.tactical} />}
+              </View>
+            </View>
+          )}
+
+          {/* Volume / Fitness */}
+          <View style={cstat.section}>
+            <Text style={[cstat.sectionLabel, { color: colors.mental || '#9C27B0' }]}>Training Volume</Text>
+            <View style={cstat.statsGrid}>
+              <StatBlock icon="🛡️" label="Academy" value={totalSessionsAcademy} color={colors.primary} sub={`${totalMinsAcademy}min`} />
+              <StatBlock icon="👤" label="Personal" value={totalPersonal} color={colors.success} sub={`${totalPersonalMins}min`} />
+              {avgIntensity !== null && <StatBlock icon="🔥" label="Avg Intensity" value={`${avgIntensity}/10`} color={parseFloat(avgIntensity) >= 7 ? colors.error : colors.warning} />}
+              <StatBlock icon="📅" label="Total Sessions" value={totalSessionsAcademy + totalPersonal} color={colors.text} />
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+const cstat = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 11, color: colors.textSecondary, marginLeft: 4 },
+  section: { gap: spacing.xs },
+  sectionLabel: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 },
+  statsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  block: {
+    flex: 1, minWidth: '22%', backgroundColor: colors.background, borderRadius: borderRadius.lg,
+    padding: spacing.sm, alignItems: 'center', borderWidth: 1, borderColor: colors.border,
+  },
+  blockIcon: { fontSize: 18, marginBottom: 2 },
+  blockVal: { fontSize: 18, fontWeight: '900', color: colors.text },
+  blockLabel: { fontSize: 9, color: colors.textSecondary, fontWeight: '700', textAlign: 'center', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.3 },
+  blockSub: { fontSize: 9, color: colors.textSecondary, marginTop: 1, textAlign: 'center' },
 });
 
 // ─── Session History (collapsible) ────────────────────────────────────────────
@@ -1079,6 +1263,9 @@ export default function AnalyticsScreen() {
 
         {/* ── Section 4: Discipline Breakdown ── */}
         <DisciplineBreakdown academyLogs={academyLogs} />
+
+        {/* ── Section 4b: Career Stats ── */}
+        <CareerStatsCard personalSessions={personalSessions} academyLogs={academyLogs} />
 
         {/* ── Section 5: Consistency Heatmap ── */}
         <ConsistencyHeatmap sessionDates={sessionDates} />
