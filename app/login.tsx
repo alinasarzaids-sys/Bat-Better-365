@@ -327,12 +327,13 @@ export default function LoginScreen() {
                     style={[styles.demoBtn, { flex: 1 }, demoLoading === 'player' && styles.btnDisabled]}
                     onPress={async () => {
                       setDemoLoading('player');
-                      await logout();
-                      await new Promise(r => setTimeout(r, 200));
-                      const { error } = await signInWithPassword('demo.batbetter@gmail.com', 'Demo1234');
+                      try { await logout(); } catch (_) {}
+                      await new Promise(r => setTimeout(r, 300));
+                      const supabase = getSupabaseClient();
+                      const { error } = await supabase.auth.signInWithPassword({ email: 'demo.batbetter@gmail.com', password: 'Demo1234' });
                       setDemoLoading(null);
-                      if (!error) { router.replace('/(tabs)/academy' as any); return; }
-                      showAlert('Demo Unavailable', 'Could not load player demo.');
+                      if (!error) { router.replace('/(tabs)' as any); return; }
+                      showAlert('Demo Unavailable', error.message || 'Could not load player demo.');
                     }}
                     disabled={!!demoLoading || busy}
                   >
@@ -350,12 +351,13 @@ export default function LoginScreen() {
                     style={[styles.demoBtn, { flex: 1, borderColor: colors.warning, backgroundColor: colors.warning + '10' }, demoLoading === 'coach' && styles.btnDisabled]}
                     onPress={async () => {
                       setDemoLoading('coach');
-                      await logout();
-                      await new Promise(r => setTimeout(r, 200));
-                      const { error } = await signInWithPassword('coach.batbetter@gmail.com', 'Demo1234');
+                      try { await logout(); } catch (_) {}
+                      await new Promise(r => setTimeout(r, 300));
+                      const supabase = getSupabaseClient();
+                      const { error } = await supabase.auth.signInWithPassword({ email: 'coach.batbetter@gmail.com', password: 'Demo1234' });
                       setDemoLoading(null);
                       if (!error) { router.replace('/(tabs)/academy' as any); return; }
-                      showAlert('Demo Unavailable', 'Could not load coach demo.');
+                      showAlert('Demo Unavailable', error.message || 'Could not load coach demo.');
                     }}
                     disabled={!!demoLoading || busy}
                   >
