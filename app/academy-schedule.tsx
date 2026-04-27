@@ -1238,6 +1238,7 @@ export default function AcademyScheduleScreen() {
   const academyId = params.academyId as string;
   const isCoach = params.isCoach === 'true';
   const memberPosition = (params.memberPosition as string) || 'Batsman';
+  const openCreate = params.openCreate === 'true';
 
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [squads, setSquads] = useState<AcademySquad[]>([]);
@@ -1325,7 +1326,14 @@ export default function AcademyScheduleScreen() {
     setLoading(false);
   }, [user, academyId, isCoach]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => {
+    load();
+    // Auto-open the create modal if navigated with openCreate flag
+    if (openCreate && isCoach) {
+      resetCoachForm();
+      setShowCreateCoach(true);
+    }
+  }, [load]));
 
   const onRefresh = async () => { setRefreshing(true); await load(); setRefreshing(false); };
 

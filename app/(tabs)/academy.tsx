@@ -660,7 +660,29 @@ export default function AcademyScreen() {
       )}
 
       {/* ── Coach Squad Filter ── */}
-      {isCoach && squads.length > 0 && (
+      {isCoach && (
+            <View style={styles.quickPlanStrip}>
+              <Pressable
+                style={styles.quickPlanBtn}
+                onPress={() => router.push({
+                  pathname: '/academy-schedule',
+                  params: { academyId: currentMembership!.academy.id, isCoach: 'true', openCreate: 'true', ...(selectedSquadFilter ? { defaultSquad: selectedSquadFilter } : {}) }
+                } as any)}
+              >
+                <MaterialIcons name="add-circle" size={20} color={colors.textLight} />
+                <Text style={styles.quickPlanBtnText}>Plan Session</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.quickPlanBtn, { backgroundColor: colors.mental, flex: 0.85 }]}
+                onPress={() => router.push({ pathname: '/academy-schedule', params: { academyId: currentMembership!.academy.id, isCoach: 'true' } } as any)}
+              >
+                <MaterialIcons name="event-note" size={20} color={colors.textLight} />
+                <Text style={styles.quickPlanBtnText}>View Schedule</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {isCoach && squads.length > 0 && (
         <View style={styles.squadFilterWrapper}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.squadFilterContent}>
             <Pressable style={[styles.squadPill, !selectedSquadFilter && styles.squadPillAll]} onPress={() => setSelectedSquadFilter(null)}>
@@ -1240,6 +1262,30 @@ const styles = StyleSheet.create({
   switcherChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   switcherText: { ...typography.bodySmall, color: colors.textSecondary, fontWeight: '600' },
   switcherTextActive: { color: colors.textLight },
+  quickPlanStrip: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  quickPlanBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: colors.primary,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm + 3,
+  },
+  quickPlanBtnText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: colors.textLight,
+  },
   squadFilterWrapper: { backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border },
   squadFilterContent: { flexDirection: 'row', paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2, gap: spacing.sm, alignItems: 'center' },
   squadPill: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: spacing.sm + 2, paddingVertical: 6, borderRadius: borderRadius.full, backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border },
