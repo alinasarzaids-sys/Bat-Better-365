@@ -314,24 +314,44 @@ export default function LoginScreen() {
                 </Text>
               </View>
 
-              <Pressable
-                style={[styles.demoBtn, busy && styles.btnDisabled]}
-                onPress={async () => {
-                  setLoading(true);
-                  const { error } = await signInWithPassword('demo.batbetter@gmail.com', 'Demo1234');
-                  setLoading(false);
-                  if (!error) { router.replace('/'); return; }
-                  showAlert('Demo Unavailable', 'Could not sign in: ' + (error || 'Unknown error'));
-                }}
-                disabled={busy}
-              >
-                {busy ? <ActivityIndicator color={colors.primary} /> : (
-                  <>
-                    <MaterialIcons name="play-circle-filled" size={20} color={colors.primary} />
-                    <Text style={styles.demoBtnText}>Try Demo (No Login Needed)</Text>
-                  </>
-                )}
-              </Pressable>
+              <View style={styles.demoRow}>
+                <Pressable
+                  style={[styles.demoBtn, { flex: 1 }, busy && styles.btnDisabled]}
+                  onPress={async () => {
+                    setLoading(true);
+                    const { error } = await signInWithPassword('demo.batbetter@gmail.com', 'Demo1234');
+                    setLoading(false);
+                    if (!error) { router.replace('/'); return; }
+                    showAlert('Demo Unavailable', 'Could not sign in: ' + (error || 'Unknown error'));
+                  }}
+                  disabled={busy}
+                >
+                  {busy ? <ActivityIndicator color={colors.primary} size="small" /> : (
+                    <>
+                      <MaterialIcons name="sports-cricket" size={18} color={colors.primary} />
+                      <Text style={styles.demoBtnText}>Player Demo</Text>
+                    </>
+                  )}
+                </Pressable>
+                <Pressable
+                  style={[styles.demoBtn, { flex: 1, borderColor: colors.warning }, busy && styles.btnDisabled]}
+                  onPress={async () => {
+                    setLoading(true);
+                    const { error } = await signInWithPassword('coach.batbetter@gmail.com', 'Demo1234');
+                    setLoading(false);
+                    if (!error) { router.replace('/'); return; }
+                    showAlert('Demo Unavailable', 'Could not sign in: ' + (error || 'Unknown error'));
+                  }}
+                  disabled={busy}
+                >
+                  {busy ? <ActivityIndicator color={colors.warning} size="small" /> : (
+                    <>
+                      <MaterialIcons name="school" size={18} color={colors.warning} />
+                      <Text style={[styles.demoBtnText, { color: colors.warning }]}>Coach Demo</Text>
+                    </>
+                  )}
+                </Pressable>
+              </View>
 
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
@@ -573,11 +593,11 @@ const styles = StyleSheet.create({
   },
   registerAcademyTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
   registerAcademySub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  demoRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.lg },
   demoBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     borderWidth: 2, borderColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.md + 2, marginTop: spacing.lg,
-    backgroundColor: colors.primary + '10',
+    paddingVertical: spacing.md, backgroundColor: colors.primary + '10',
   },
-  demoBtnText: { color: colors.primary, fontSize: 15, fontWeight: '800' },
+  demoBtnText: { color: colors.primary, fontSize: 14, fontWeight: '800' },
 });
