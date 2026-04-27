@@ -314,6 +314,29 @@ export default function LoginScreen() {
                 </Text>
               </View>
 
+              <Pressable
+                style={[styles.demoBtn, busy && styles.btnDisabled]}
+                onPress={async () => {
+                  setLoading(true);
+                  const { error } = await signInWithPassword('demo.player@cricket.test', 'Player123');
+                  setLoading(false);
+                  if (!error) { router.replace('/'); return; }
+                  // fallback: try coach
+                  setLoading(true);
+                  const { error: e2 } = await signInWithPassword('khalid.anwar.coach@cricket.test', 'Coach123');
+                  setLoading(false);
+                  if (!e2) router.replace('/');
+                }}
+                disabled={busy}
+              >
+                {busy ? <ActivityIndicator color={colors.primary} /> : (
+                  <>
+                    <MaterialIcons name="play-circle-filled" size={20} color={colors.primary} />
+                    <Text style={styles.demoBtnText}>Try Demo (No Login Needed)</Text>
+                  </>
+                )}
+              </Pressable>
+
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
                 <Text style={styles.dividerText}>OR</Text>
@@ -554,4 +577,11 @@ const styles = StyleSheet.create({
   },
   registerAcademyTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
   registerAcademySub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  demoBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    borderWidth: 2, borderColor: colors.primary, borderRadius: borderRadius.md,
+    paddingVertical: spacing.md + 2, marginTop: spacing.lg,
+    backgroundColor: colors.primary + '10',
+  },
+  demoBtnText: { color: colors.primary, fontSize: 15, fontWeight: '800' },
 });
