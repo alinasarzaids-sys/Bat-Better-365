@@ -318,14 +318,10 @@ export default function LoginScreen() {
                 style={[styles.demoBtn, busy && styles.btnDisabled]}
                 onPress={async () => {
                   setLoading(true);
-                  const { error } = await signInWithPassword('demo.player@cricket.test', 'Player123');
+                  const { error } = await signInWithPassword('demo.batbetter@gmail.com', 'Demo1234');
                   setLoading(false);
                   if (!error) { router.replace('/'); return; }
-                  // fallback: try coach
-                  setLoading(true);
-                  const { error: e2 } = await signInWithPassword('khalid.anwar.coach@cricket.test', 'Coach123');
-                  setLoading(false);
-                  if (!e2) router.replace('/');
+                  showAlert('Demo Unavailable', 'Could not sign in: ' + (error || 'Unknown error'));
                 }}
                 disabled={busy}
               >
