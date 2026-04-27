@@ -20,7 +20,7 @@ type Step = 'main' | 'otp' | 'need-email' | 'forgot';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, operationLoading } = useAuth();
+  const { signInWithPassword, signUpWithPassword, sendOTP, verifyOTPAndLogin, logout, operationLoading } = useAuth();
   const { showAlert } = useAlert();
 
   const [step, setStep] = useState<Step>('main');
@@ -319,6 +319,8 @@ export default function LoginScreen() {
                   style={[styles.demoBtn, { flex: 1 }, busy && styles.btnDisabled]}
                   onPress={async () => {
                     setLoading(true);
+                    await logout();
+                    await new Promise(r => setTimeout(r, 300));
                     const { error } = await signInWithPassword('demo.batbetter@gmail.com', 'Demo1234');
                     setLoading(false);
                     if (!error) { router.replace('/(tabs)/academy' as any); return; }
@@ -337,6 +339,8 @@ export default function LoginScreen() {
                   style={[styles.demoBtn, { flex: 1, borderColor: colors.warning }, busy && styles.btnDisabled]}
                   onPress={async () => {
                     setLoading(true);
+                    await logout();
+                    await new Promise(r => setTimeout(r, 300));
                     const { error } = await signInWithPassword('coach.batbetter@gmail.com', 'Demo1234');
                     setLoading(false);
                     if (!error) { router.replace('/(tabs)/academy' as any); return; }
