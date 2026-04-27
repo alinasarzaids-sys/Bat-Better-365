@@ -144,7 +144,9 @@ export default function LoginScreen() {
     const isWrongPwd =
       loginErr.toLowerCase().includes('invalid') ||
       loginErr.toLowerCase().includes('credentials') ||
-      loginErr.toLowerCase().includes('password');
+      loginErr.toLowerCase().includes('password') ||
+      loginErr.toLowerCase().includes('email not confirmed') ||
+      loginErr.toLowerCase().includes('not confirmed');
 
     if (isWrongPwd) {
       setLoading(false);
