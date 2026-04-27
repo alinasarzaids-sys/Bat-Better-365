@@ -321,7 +321,7 @@ export default function LoginScreen() {
                     setLoading(true);
                     const { error } = await signInWithPassword('demo.batbetter@gmail.com', 'Demo1234');
                     setLoading(false);
-                    if (!error) { router.replace('/'); return; }
+                    if (!error) { router.replace('/(tabs)/academy' as any); return; }
                     showAlert('Demo Unavailable', 'Could not sign in: ' + (error || 'Unknown error'));
                   }}
                   disabled={busy}
@@ -339,7 +339,7 @@ export default function LoginScreen() {
                     setLoading(true);
                     const { error } = await signInWithPassword('coach.batbetter@gmail.com', 'Demo1234');
                     setLoading(false);
-                    if (!error) { router.replace('/'); return; }
+                    if (!error) { router.replace('/(tabs)/academy' as any); return; }
                     showAlert('Demo Unavailable', 'Could not sign in: ' + (error || 'Unknown error'));
                   }}
                   disabled={busy}
