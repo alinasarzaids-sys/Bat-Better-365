@@ -1,9 +1,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
-const DEMO_ACCOUNTS = [
+const ALL_ACCOUNTS = [
   { id: '209385c1-64bd-4e86-80b4-b7f8c42552d2', email: 'demo.batbetter@gmail.com', password: 'Demo1234' },
   { id: '54838bb4-de49-4937-98a9-d1207b5b61a3', email: 'coach.batbetter@gmail.com', password: 'Demo1234' },
+  { id: 'a94b5410-6497-4c4c-930f-123a8e0560f3', email: 'alinasarzaids@gmail.com', password: 'Yahussain5' },
 ];
 
 Deno.serve(async (req) => {
@@ -17,10 +18,20 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     );
 
+    // Accept optional target email from request body
+    let targetEmail: string | null = null;
+    try {
+      const body = await req.json();
+      targetEmail = body?.email ?? null;
+    } catch { /* no body */ }
+
+    const accounts = targetEmail
+      ? ALL_ACCOUNTS.filter(a => a.email === targetEmail)
+      : ALL_ACCOUNTS;
+
     const results = [];
 
-    for (const account of DEMO_ACCOUNTS) {
-      // Use updateUserById directly with known IDs — avoids listUsers IP restriction
+    for (const account of accounts) {
       const { data: updated, error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(account.id, {
         password: account.password,
         email_confirm: true,
@@ -35,30 +46,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Now sign in to verify it worked and return a session for each
-    const supabaseAnon = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-    );
-
-    const sessions: Record<string, any> = {};
-    for (const account of DEMO_ACCOUNTS) {
-      const { data: signInData, error: signInErr } = await supabaseAnon.auth.signInWithPassword({
-        email: account.email,
-        password: account.password,
-      });
-      if (!signInErr && signInData?.session) {
-        sessions[account.email] = {
-          access_token: signInData.session.access_token,
-          refresh_token: signInData.session.refresh_token,
-        };
-        console.log(`Sign-in verified for ${account.email}`);
-      } else {
-        console.error(`Sign-in failed for ${account.email}:`, signInErr?.message);
-      }
-    }
-
-    return new Response(JSON.stringify({ ok: true, results, sessions }), {
+    return new Response(JSON.stringify({ ok: true, results }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 200,
     });

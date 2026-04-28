@@ -133,6 +133,8 @@ export default function LoginScreen() {
     // ── EMAIL FLOW ───────────────────────────────────────────────────────────
     const email = val;
 
+    const supabase = getSupabaseClient();
+
     // Try sign in first
     const { error: loginErr } = await signInWithPassword(email, password);
     if (!loginErr) {
@@ -141,24 +143,30 @@ export default function LoginScreen() {
       return;
     }
 
-    // Sign in failed — use confirm-and-register to create/confirm account and sign in
-    const supabase = getSupabaseClient();
-    const resp = await supabase.functions.invoke('confirm-and-register', {
-      body: { email, password },
-    });
-    if (!resp.error && resp.data?.session?.access_token) {
-      await supabase.auth.setSession({
-        access_token: resp.data.session.access_token,
-        refresh_token: resp.data.session.refresh_token,
+    // Check if it's a new user (not found) vs wrong password (exists)
+    const isNewUser = loginErr.message?.toLowerCase().includes('invalid') || 
+                      loginErr.message?.toLowerCase().includes('not found') ||
+                      loginErr.message?.toLowerCase().includes('no user');
+
+    if (isNewUser) {
+      // New account — use confirm-and-register to create and confirm without OTP
+      const resp = await supabase.functions.invoke('confirm-and-register', {
+        body: { email, password },
       });
-      setLoading(false);
-      router.replace('/');
-      return;
+      if (!resp.error && resp.data?.session?.access_token) {
+        await supabase.auth.setSession({
+          access_token: resp.data.session.access_token,
+          refresh_token: resp.data.session.refresh_token,
+        });
+        setLoading(false);
+        router.replace('/');
+        return;
+      }
     }
 
-    // Both failed — wrong password for existing account
+    // Wrong password for existing account
     setLoading(false);
-    showAlert('Login Failed', 'Incorrect email or password. Try again or use Forgot Password.');
+    showAlert('Login Failed', 'Incorrect email or password. Use "Forgot Password" to reset it.');
   };
 
   // ─── NEED-EMAIL (code login, no session) ────────────────────────────────────
