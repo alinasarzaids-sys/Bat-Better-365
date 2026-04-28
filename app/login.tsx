@@ -28,7 +28,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [demoLoading, setDemoLoading] = useState<'player' | 'coach' | null>(null);
 
   // OTP step
   const [otp, setOtp] = useState('');
@@ -134,7 +133,7 @@ export default function LoginScreen() {
     // ── EMAIL FLOW ───────────────────────────────────────────────────────────
     const email = val;
 
-    // Try sign in
+    // Try sign in first
     const { error: loginErr } = await signInWithPassword(email, password);
     if (!loginErr) {
       setLoading(false);
@@ -142,58 +141,24 @@ export default function LoginScreen() {
       return;
     }
 
-    const isInvalidCreds =
-      loginErr.toLowerCase().includes('invalid') ||
-      loginErr.toLowerCase().includes('credentials');
-
-    const isNotConfirmed =
-      loginErr.toLowerCase().includes('email not confirmed') ||
-      loginErr.toLowerCase().includes('not confirmed');
-
-    // Try confirm-and-register which uses service role to fix confirmed state
-    if (isInvalidCreds || isNotConfirmed) {
-      // Only attempt for existing users — use confirm-and-register to fix email confirmation
-      const supabase = getSupabaseClient();
-      const resp = await supabase.functions.invoke('confirm-and-register', {
-        body: { email, password },
+    // Sign in failed — use confirm-and-register to create/confirm account and sign in
+    const supabase = getSupabaseClient();
+    const resp = await supabase.functions.invoke('confirm-and-register', {
+      body: { email, password },
+    });
+    if (!resp.error && resp.data?.session?.access_token) {
+      await supabase.auth.setSession({
+        access_token: resp.data.session.access_token,
+        refresh_token: resp.data.session.refresh_token,
       });
-      if (!resp.error && resp.data?.session?.access_token) {
-        await supabase.auth.setSession({
-          access_token: resp.data.session.access_token,
-          refresh_token: resp.data.session.refresh_token,
-        });
-        setLoading(false);
-        router.replace('/');
-        return;
-      }
-      // Edge function confirmed user is new or password truly wrong
-      if (resp.data?.error?.toLowerCase().includes('invalid') || resp.data?.error?.toLowerCase().includes('credentials')) {
-        setLoading(false);
-        showAlert('Wrong Password', 'The password you entered is incorrect. Try again or use Forgot Password.');
-        return;
-      }
-    }
-
-    if (loginErr.toLowerCase().includes('password')) {
       setLoading(false);
-      showAlert('Wrong Password', 'The password you entered is incorrect. Try again or use Forgot Password.');
+      router.replace('/');
       return;
     }
 
-    // New account — send OTP
-    const { error: otpErr } = await sendOTP(email);
-    if (otpErr) {
-      setLoading(false);
-      showAlert('Error', otpErr.includes('already') ? 'An account exists with this email. Check your password.' : otpErr);
-      return;
-    }
-
-    setOtpEmail(email);
-    setOtpPassword(password);
-    setPendingCode('');
-    setOtp('');
+    // Both failed — wrong password for existing account
     setLoading(false);
-    setStep('otp');
+    showAlert('Login Failed', 'Incorrect email or password. Try again or use Forgot Password.');
   };
 
   // ─── NEED-EMAIL (code login, no session) ────────────────────────────────────
@@ -341,100 +306,6 @@ export default function LoginScreen() {
               </View>
 
               {/* ── DEMO BUTTONS ── */}
-              <View style={styles.demoSection}>
-                <View style={styles.demoLabelRow}>
-                  <View style={styles.demoLine} />
-                  <Text style={styles.demoLabelText}>Try a Demo</Text>
-                  <View style={styles.demoLine} />
-                </View>
-                <View style={styles.demoRow}>
-                  <Pressable
-                    style={[styles.demoBtn, { flex: 1 }, demoLoading === 'player' && styles.btnDisabled]}
-                    onPress={async () => {
-                      setDemoLoading('player');
-                      try { await logout(); } catch (_) {}
-                      await new Promise(r => setTimeout(r, 200));
-                      try {
-                        const supabase = getSupabaseClient();
-                        // Reset passwords AND get sessions directly from the function
-                        const { data: resetData, error: resetErr } = await supabase.functions.invoke('reset-demo-passwords', { body: {} });
-                        const session = resetData?.sessions?.['demo.batbetter@gmail.com'];
-                        if (session?.access_token) {
-                          await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
-                          setDemoLoading(null);
-                          router.replace('/(tabs)' as any);
-                          return;
-                        }
-                        // Fallback: try sign in directly
-                        const { data, error } = await supabase.auth.signInWithPassword({
-                          email: 'demo.batbetter@gmail.com',
-                          password: 'Demo1234',
-                        });
-                        setDemoLoading(null);
-                        if (!error && data?.session) { router.replace('/(tabs)' as any); return; }
-                        showAlert('Demo Unavailable', error?.message || 'Could not load player demo. Please try again.');
-                      } catch (e: any) {
-                        setDemoLoading(null);
-                        showAlert('Demo Unavailable', e.message || 'Could not load player demo.');
-                      }
-                    }}
-                    disabled={!!demoLoading || busy}
-                  >
-                    {demoLoading === 'player' ? <ActivityIndicator color={colors.primary} size="small" /> : (
-                      <>
-                        <MaterialIcons name="sports-cricket" size={20} color={colors.primary} />
-                        <View>
-                          <Text style={styles.demoBtnTitle}>Player Demo</Text>
-                          <Text style={styles.demoBtnSub}>See player portal</Text>
-                        </View>
-                      </>
-                    )}
-                  </Pressable>
-                  <Pressable
-                    style={[styles.demoBtn, { flex: 1, borderColor: colors.warning, backgroundColor: colors.warning + '10' }, demoLoading === 'coach' && styles.btnDisabled]}
-                    onPress={async () => {
-                      setDemoLoading('coach');
-                      try { await logout(); } catch (_) {}
-                      await new Promise(r => setTimeout(r, 200));
-                      try {
-                        const supabase = getSupabaseClient();
-                        // Reset passwords AND get sessions directly from the function
-                        const { data: resetData, error: resetErr } = await supabase.functions.invoke('reset-demo-passwords', { body: {} });
-                        const session = resetData?.sessions?.['coach.batbetter@gmail.com'];
-                        if (session?.access_token) {
-                          await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
-                          setDemoLoading(null);
-                          router.replace('/(tabs)/academy' as any);
-                          return;
-                        }
-                        // Fallback: try sign in directly
-                        const { data, error } = await supabase.auth.signInWithPassword({
-                          email: 'coach.batbetter@gmail.com',
-                          password: 'Demo1234',
-                        });
-                        setDemoLoading(null);
-                        if (!error && data?.session) { router.replace('/(tabs)/academy' as any); return; }
-                        showAlert('Demo Unavailable', error?.message || 'Could not load coach demo. Please try again.');
-                      } catch (e: any) {
-                        setDemoLoading(null);
-                        showAlert('Demo Unavailable', e.message || 'Could not load coach demo.');
-                      }
-                    }}
-                    disabled={!!demoLoading || busy}
-                  >
-                    {demoLoading === 'coach' ? <ActivityIndicator color={colors.warning} size="small" /> : (
-                      <>
-                        <MaterialIcons name="school" size={20} color={colors.warning} />
-                        <View>
-                          <Text style={[styles.demoBtnTitle, { color: colors.warning }]}>Coach Demo</Text>
-                          <Text style={[styles.demoBtnSub, { color: colors.warning + 'AA' }]}>See coach portal</Text>
-                        </View>
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-              </View>
-
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
                 <Text style={styles.dividerText}>OR</Text>
@@ -675,17 +546,5 @@ const styles = StyleSheet.create({
   },
   registerAcademyTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
   registerAcademySub: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
-  demoSection: { marginTop: spacing.lg },
-  demoLabelRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
-  demoLine: { flex: 1, height: 1, backgroundColor: colors.border },
-  demoLabelText: { fontSize: 11, color: colors.textSecondary, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.5 },
-  demoRow: { flexDirection: 'row', gap: spacing.sm },
-  demoBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
-    borderWidth: 2, borderColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.md, backgroundColor: colors.primary + '10',
-    minHeight: 60,
-  },
-  demoBtnTitle: { color: colors.primary, fontSize: 13, fontWeight: '800' },
-  demoBtnSub: { color: colors.primary + '99', fontSize: 10, fontWeight: '500', marginTop: 1 },
+
 });
