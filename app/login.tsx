@@ -353,13 +353,19 @@ export default function LoginScreen() {
                     onPress={async () => {
                       setDemoLoading('player');
                       try { await logout(); } catch (_) {}
-                      await new Promise(r => setTimeout(r, 300));
+                      await new Promise(r => setTimeout(r, 200));
                       try {
                         const supabase = getSupabaseClient();
-                        // Step 1: Reset password via Admin API (fixes any corrupted hash)
-                        await supabase.functions.invoke('reset-demo-passwords', {});
-                        await new Promise(r => setTimeout(r, 500));
-                        // Step 2: Sign in directly
+                        // Reset passwords AND get sessions directly from the function
+                        const { data: resetData, error: resetErr } = await supabase.functions.invoke('reset-demo-passwords', { body: {} });
+                        const session = resetData?.sessions?.['demo.batbetter@gmail.com'];
+                        if (session?.access_token) {
+                          await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
+                          setDemoLoading(null);
+                          router.replace('/(tabs)' as any);
+                          return;
+                        }
+                        // Fallback: try sign in directly
                         const { data, error } = await supabase.auth.signInWithPassword({
                           email: 'demo.batbetter@gmail.com',
                           password: 'Demo1234',
@@ -389,13 +395,19 @@ export default function LoginScreen() {
                     onPress={async () => {
                       setDemoLoading('coach');
                       try { await logout(); } catch (_) {}
-                      await new Promise(r => setTimeout(r, 300));
+                      await new Promise(r => setTimeout(r, 200));
                       try {
                         const supabase = getSupabaseClient();
-                        // Step 1: Reset password via Admin API (fixes any corrupted hash)
-                        await supabase.functions.invoke('reset-demo-passwords', {});
-                        await new Promise(r => setTimeout(r, 500));
-                        // Step 2: Sign in directly
+                        // Reset passwords AND get sessions directly from the function
+                        const { data: resetData, error: resetErr } = await supabase.functions.invoke('reset-demo-passwords', { body: {} });
+                        const session = resetData?.sessions?.['coach.batbetter@gmail.com'];
+                        if (session?.access_token) {
+                          await supabase.auth.setSession({ access_token: session.access_token, refresh_token: session.refresh_token });
+                          setDemoLoading(null);
+                          router.replace('/(tabs)/academy' as any);
+                          return;
+                        }
+                        // Fallback: try sign in directly
                         const { data, error } = await supabase.auth.signInWithPassword({
                           email: 'coach.batbetter@gmail.com',
                           password: 'Demo1234',
