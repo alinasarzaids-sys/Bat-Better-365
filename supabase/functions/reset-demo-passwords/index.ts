@@ -19,17 +19,20 @@ Deno.serve(async (req) => {
 
     const results = [];
 
-    for (const account of DEMO_ACCOUNTS) {
-      // List users to find by email
-      const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
-      if (listErr) {
-        results.push({ email: account.email, error: listErr.message });
-        continue;
-      }
+    // List all users once
+    const { data: listData, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 });
+    if (listErr) {
+      return new Response(JSON.stringify({ error: listErr.message }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 500,
+      });
+    }
 
+    for (const account of DEMO_ACCOUNTS) {
       const user = listData.users.find((u: any) => u.email === account.email);
+
       if (!user) {
-        // Create the user
+        // Create the user via Admin API — password is correctly hashed by Go server
         const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
           email: account.email,
           password: account.password,
@@ -43,7 +46,7 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Update password using admin API (Go server handles hashing correctly)
+      // Update password via Admin API — Go server handles bcrypt hashing correctly
       const { data: updated, error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
         password: account.password,
         email_confirm: true,

@@ -353,27 +353,20 @@ export default function LoginScreen() {
                     onPress={async () => {
                       setDemoLoading('player');
                       try { await logout(); } catch (_) {}
-                      await new Promise(r => setTimeout(r, 400));
+                      await new Promise(r => setTimeout(r, 300));
                       try {
                         const supabase = getSupabaseClient();
-                        // Use confirm-and-register edge function which uses service role
-                        // to properly set password and return a valid session
-                        const resp = await supabase.functions.invoke('confirm-and-register', {
-                          body: { email: 'demo.batbetter@gmail.com', password: 'Demo1234' },
+                        // Step 1: Reset password via Admin API (fixes any corrupted hash)
+                        await supabase.functions.invoke('reset-demo-passwords', {});
+                        await new Promise(r => setTimeout(r, 500));
+                        // Step 2: Sign in directly
+                        const { data, error } = await supabase.auth.signInWithPassword({
+                          email: 'demo.batbetter@gmail.com',
+                          password: 'Demo1234',
                         });
-                        if (!resp.error && resp.data?.session?.access_token) {
-                          const { error: sessErr } = await supabase.auth.setSession({
-                            access_token: resp.data.session.access_token,
-                            refresh_token: resp.data.session.refresh_token,
-                          });
-                          setDemoLoading(null);
-                          if (!sessErr) { router.replace('/(tabs)' as any); return; }
-                        }
-                        // Fallback: direct sign in after edge function fixed the password
-                        const { error } = await supabase.auth.signInWithPassword({ email: 'demo.batbetter@gmail.com', password: 'Demo1234' });
                         setDemoLoading(null);
-                        if (!error) { router.replace('/(tabs)' as any); return; }
-                        showAlert('Demo Unavailable', 'Could not load player demo. Please try again.');
+                        if (!error && data?.session) { router.replace('/(tabs)' as any); return; }
+                        showAlert('Demo Unavailable', error?.message || 'Could not load player demo. Please try again.');
                       } catch (e: any) {
                         setDemoLoading(null);
                         showAlert('Demo Unavailable', e.message || 'Could not load player demo.');
@@ -396,24 +389,20 @@ export default function LoginScreen() {
                     onPress={async () => {
                       setDemoLoading('coach');
                       try { await logout(); } catch (_) {}
-                      await new Promise(r => setTimeout(r, 400));
+                      await new Promise(r => setTimeout(r, 300));
                       try {
                         const supabase = getSupabaseClient();
-                        const resp = await supabase.functions.invoke('confirm-and-register', {
-                          body: { email: 'coach.batbetter@gmail.com', password: 'Demo1234' },
+                        // Step 1: Reset password via Admin API (fixes any corrupted hash)
+                        await supabase.functions.invoke('reset-demo-passwords', {});
+                        await new Promise(r => setTimeout(r, 500));
+                        // Step 2: Sign in directly
+                        const { data, error } = await supabase.auth.signInWithPassword({
+                          email: 'coach.batbetter@gmail.com',
+                          password: 'Demo1234',
                         });
-                        if (!resp.error && resp.data?.session?.access_token) {
-                          const { error: sessErr } = await supabase.auth.setSession({
-                            access_token: resp.data.session.access_token,
-                            refresh_token: resp.data.session.refresh_token,
-                          });
-                          setDemoLoading(null);
-                          if (!sessErr) { router.replace('/(tabs)/academy' as any); return; }
-                        }
-                        const { error } = await supabase.auth.signInWithPassword({ email: 'coach.batbetter@gmail.com', password: 'Demo1234' });
                         setDemoLoading(null);
-                        if (!error) { router.replace('/(tabs)/academy' as any); return; }
-                        showAlert('Demo Unavailable', 'Could not load coach demo. Please try again.');
+                        if (!error && data?.session) { router.replace('/(tabs)/academy' as any); return; }
+                        showAlert('Demo Unavailable', error?.message || 'Could not load coach demo. Please try again.');
                       } catch (e: any) {
                         setDemoLoading(null);
                         showAlert('Demo Unavailable', e.message || 'Could not load coach demo.');
