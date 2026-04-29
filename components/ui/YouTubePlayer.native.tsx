@@ -24,7 +24,7 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
     return (
       <Pressable
         style={[styles.container, { height }]}
-        onPress={openInYouTube}
+        onPress={() => setShowPlayer(true)}
       >
         <Image
           source={{ uri: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` }}
@@ -36,10 +36,10 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
           <View style={styles.playButton}>
             <MaterialIcons name="play-arrow" size={48} color="#FFFFFF" />
           </View>
-          <View style={styles.ytBadge}>
+          <Pressable style={styles.ytBadge} onPress={(e) => { e.stopPropagation(); openInYouTube(); }} hitSlop={6}>
             <MaterialIcons name="open-in-new" size={12} color="rgba(255,255,255,0.9)" />
             <Text style={styles.ytBadgeText}>Watch on YouTube</Text>
-          </View>
+          </Pressable>
         </View>
       </Pressable>
     );
