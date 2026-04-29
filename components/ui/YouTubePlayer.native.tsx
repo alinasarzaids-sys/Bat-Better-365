@@ -20,6 +20,17 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
       .catch(() => Linking.openURL(webUrl));
   };
 
+  const handleWebViewMessage = (event: any) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'ytError') {
+        // Error 101/150/153 = embedding disabled by owner
+        setShowPlayer(false);
+        openInYouTube();
+      }
+    } catch { /* ignore */ }
+  };
+
   if (!showPlayer) {
     return (
       <Pressable
@@ -45,7 +56,7 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
     );
   }
 
-  // Use a plain WebView iframe embed — no expo-video / SimpleCache involved
+  // Use YouTube IFrame API so we can detect embed-blocked errors (101/150/153)
   const embedHtml = `
 <!DOCTYPE html>
 <html>
@@ -53,15 +64,32 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; background: #000; }
-      iframe { width: 100%; height: 100vh; border: none; display: block; }
+      html, body { width: 100%; height: 100%; }
+      #player { width: 100%; height: 100vh; }
     </style>
   </head>
   <body>
-    <iframe
-      src="https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0&modestbranding=1&playsinline=1&origin=https://batbetter365.app"
-      allow="autoplay; encrypted-media; fullscreen"
-      allowfullscreen
-    ></iframe>
+    <div id="player"></div>
+    <script>
+      var tag = document.createElement('script');
+      tag.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(tag);
+
+      function onYouTubeIframeAPIReady() {
+        new YT.Player('player', {
+          videoId: '${videoId}',
+          playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
+          events: {
+            onError: function(e) {
+              // 101 / 150 / 153 = embedding not allowed
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
+                JSON.stringify({ type: 'ytError', code: e.data })
+              );
+            }
+          }
+        });
+      }
+    <\/script>
   </body>
 </html>
 `;
@@ -77,6 +105,7 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
         domStorageEnabled
         allowsInlineMediaPlayback
         startInLoadingState
+        onMessage={handleWebViewMessage}
         onError={() => openInYouTube()}
         renderError={() => (
           <Pressable style={styles.errorFallback} onPress={openInYouTube}>
