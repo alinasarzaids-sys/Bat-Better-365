@@ -45,7 +45,8 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "./plugins/exclude-expo-video"
     ]
   }
 }
