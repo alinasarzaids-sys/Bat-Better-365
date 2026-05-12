@@ -12,6 +12,10 @@ export default function RootLayout() {
         <SafeAreaProvider>
           <StatusBar style="auto" />
           <Stack screenOptions={{ headerShown: false, animation: 'slide_from_right' }}>
+            <Stack.Screen 
+              name="(tabs)/live-lab" 
+              options={{ headerShown: false }} 
+            />
             <Stack.Screen name="index" options={{ headerShown: false }} />
             <Stack.Screen name="waiting-room" options={{ headerShown: false, animation: 'fade' }} />
             <Stack.Screen name="academy-locked" options={{ headerShown: false, animation: 'fade' }} />
