@@ -6,6 +6,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { CameraView, CameraType, useCameraPermissions } from 'expo-camera';
+import { Linking } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuth, useAlert } from '@/template';
 import { getSupabaseClient } from '@/template';
@@ -417,7 +418,23 @@ export default function LiveLabScreen() {
     );
   }
 
-  if (!permission.granted) {
+  const handleRequestPermission = async () => {
+    try {
+      const result = await requestPermission();
+      if (!result.granted && !result.canAskAgain) {
+        // Permission permanently denied — open system settings
+        await Linking.openSettings();
+      }
+    } catch (_) {
+      // Fallback: open settings directly
+      await Linking.openSettings();
+    }
+  };
+
+  // Show recorded mode even without camera permission
+  const showRecordedWithoutCamera = !permission?.granted && mode === 'recorded';
+
+  if (!permission?.granted && mode === 'live') {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.permBlock}>
@@ -429,12 +446,16 @@ export default function LiveLabScreen() {
             Live Lab uses your camera as a biomechanical sensor to measure head position,
             footwork and bat angle in real time. No footage is shared without your consent.
           </Text>
-          <Pressable style={styles.permBtn} onPress={requestPermission}>
+          <Pressable style={styles.permBtn} onPress={handleRequestPermission} hitSlop={12}>
             <MaterialIcons name="videocam" size={20} color="#fff" />
             <Text style={styles.permBtnText}>Enable Camera</Text>
           </Pressable>
           <Text style={styles.permNote}>You can also upload recorded footage without camera access.</Text>
-          <Pressable style={styles.permGalleryBtn} onPress={() => setMode('recorded')}>
+          <Pressable
+            style={styles.permGalleryBtn}
+            onPress={() => setMode('recorded')}
+            hitSlop={16}
+          >
             <MaterialIcons name="video-library" size={18} color={colors.primary} />
             <Text style={styles.permGalleryText}>Upload Recorded Video Instead</Text>
           </Pressable>
@@ -601,7 +622,7 @@ export default function LiveLabScreen() {
       </View>
 
       {/* ── LIVE MODE ──────────────────────────────────────────────────── */}
-      {mode === 'live' && (
+      {mode === 'live' && permission?.granted && (
         <View style={{ flex: 1 }}>
           {/* Viewfinder */}
           <View style={styles.viewfinderWrap}>
@@ -714,7 +735,7 @@ export default function LiveLabScreen() {
       )}
 
       {/* ── RECORDED MODE ──────────────────────────────────────────────── */}
-      {mode === 'recorded' && (
+      {(mode === 'recorded' || showRecordedWithoutCamera) && (
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={[styles.recordedContent, { paddingBottom: insets.bottom + 80 }]}
