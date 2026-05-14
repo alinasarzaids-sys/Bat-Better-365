@@ -25,7 +25,7 @@
         "backgroundColor": "#1B5E20"
       },
       "package": "com.batbetter365.app",
-      "versionCode": 1777061000,
+      "versionCode": 1778800000,
       "targetSdkVersion": 34,
       "permissions": [
         "android.permission.INTERNET",
