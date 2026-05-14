@@ -17,6 +17,7 @@ function isCode(val: string) {
 }
 
 type Step = 'main' | 'otp' | 'need-email' | 'forgot';
+type AuthMode = 'signin' | 'signup';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -24,8 +25,11 @@ export default function LoginScreen() {
   const { showAlert } = useAlert();
 
   const [step, setStep] = useState<Step>('main');
+  const [authMode, setAuthMode] = useState<AuthMode>('signin');
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -130,43 +134,45 @@ export default function LoginScreen() {
       return;
     }
 
-    // ── EMAIL FLOW ───────────────────────────────────────────────────────────
     const email = val;
-
     const supabase = getSupabaseClient();
 
-    // Try sign in first
-    const { error: loginErr } = await signInWithPassword(email, password);
-    if (!loginErr) {
+    // ── SIGN IN MODE ─────────────────────────────────────────────────────────
+    if (authMode === 'signin') {
+      const { error: loginErr } = await signInWithPassword(email, password);
       setLoading(false);
-      router.replace('/');
-      return;
-    }
-
-    // Check if it's a new user (not found) vs wrong password (exists)
-    const isNewUser = loginErr.message?.toLowerCase().includes('invalid') || 
-                      loginErr.message?.toLowerCase().includes('not found') ||
-                      loginErr.message?.toLowerCase().includes('no user');
-
-    if (isNewUser) {
-      // New account — use confirm-and-register to create and confirm without OTP
-      const resp = await supabase.functions.invoke('confirm-and-register', {
-        body: { email, password },
-      });
-      if (!resp.error && resp.data?.session?.access_token) {
-        await supabase.auth.setSession({
-          access_token: resp.data.session.access_token,
-          refresh_token: resp.data.session.refresh_token,
-        });
-        setLoading(false);
+      if (!loginErr) {
         router.replace('/');
         return;
       }
+      showAlert('Login Failed', 'Incorrect email or password. Use "Forgot Password" to reset it.');
+      return;
     }
 
-    // Wrong password for existing account
+    // ── SIGN UP MODE ─────────────────────────────────────────────────────────
+    if (confirmPassword && password !== confirmPassword) {
+      setLoading(false);
+      showAlert('Password Mismatch', 'Passwords do not match. Please try again.');
+      return;
+    }
+
+    const resp = await supabase.functions.invoke('confirm-and-register', {
+      body: { email, password },
+    });
+
+    if (resp.error || !resp.data?.session?.access_token) {
+      setLoading(false);
+      const errMsg = resp.data?.error || resp.error?.message || 'Registration failed. Please try again.';
+      showAlert('Sign Up Failed', errMsg);
+      return;
+    }
+
+    await supabase.auth.setSession({
+      access_token: resp.data.session.access_token,
+      refresh_token: resp.data.session.refresh_token,
+    });
     setLoading(false);
-    showAlert('Login Failed', 'Incorrect email or password. Use "Forgot Password" to reset it.');
+    router.replace('/');
   };
 
   // ─── NEED-EMAIL (code login, no session) ────────────────────────────────────
@@ -257,8 +263,25 @@ export default function LoginScreen() {
           {/* ── MAIN ─────────────────────────────────────────────────────── */}
           {step === 'main' && (
             <View style={styles.card}>
-              <Text style={styles.cardTitle}>Welcome Back</Text>
-              <Text style={styles.cardSub}>Sign in or create a new account</Text>
+              {/* Mode Toggle */}
+              <View style={styles.modeToggle}>
+                <Pressable
+                  style={[styles.modeBtn, authMode === 'signin' && styles.modeBtnActive]}
+                  onPress={() => { setAuthMode('signin'); setConfirmPassword(''); }}
+                >
+                  <Text style={[styles.modeBtnText, authMode === 'signin' && styles.modeBtnTextActive]}>Sign In</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.modeBtn, authMode === 'signup' && styles.modeBtnActive]}
+                  onPress={() => setAuthMode('signup')}
+                >
+                  <Text style={[styles.modeBtnText, authMode === 'signup' && styles.modeBtnTextActive]}>Create Account</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.cardSub}>
+                {authMode === 'signin' ? 'Welcome back! Sign in to continue.' : 'Create your free account to get started.'}
+              </Text>
 
               <Text style={styles.label}>Email or Academy Code</Text>
               <TextInput
@@ -278,7 +301,7 @@ export default function LoginScreen() {
                   style={[styles.input, { flex: 1, marginBottom: 0 }]}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder="Enter password"
+                  placeholder={authMode === 'signup' ? 'Create a password (min 4 chars)' : 'Enter password'}
                   placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
@@ -288,28 +311,51 @@ export default function LoginScreen() {
                 </Pressable>
               </View>
 
+              {authMode === 'signup' && (
+                <>
+                  <Text style={styles.label}>Confirm Password</Text>
+                  <View style={styles.pwdRow}>
+                    <TextInput
+                      style={[styles.input, { flex: 1, marginBottom: 0 }]}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder="Confirm your password"
+                      placeholderTextColor={colors.textSecondary}
+                      secureTextEntry={!showConfirmPassword}
+                      autoCapitalize="none"
+                    />
+                    <Pressable onPress={() => setShowConfirmPassword(!showConfirmPassword)} style={styles.eyeBtn} hitSlop={8}>
+                      <MaterialIcons name={showConfirmPassword ? 'visibility-off' : 'visibility'} size={20} color={colors.textSecondary} />
+                    </Pressable>
+                  </View>
+                </>
+              )}
+
               <Pressable
-                style={[styles.btn, busy && styles.btnDisabled]}
+                style={[styles.btn, authMode === 'signup' && styles.btnSignup, busy && styles.btnDisabled]}
                 onPress={handleContinue}
                 disabled={busy}
               >
                 {busy ? <ActivityIndicator color="#fff" /> : (
                   <>
-                    <Text style={styles.btnText}>Continue</Text>
-                    <MaterialIcons name="arrow-forward" size={20} color="#fff" />
+                    <Text style={styles.btnText}>{authMode === 'signin' ? 'Sign In' : 'Create Account'}</Text>
+                    <MaterialIcons name={authMode === 'signin' ? 'login' : 'person-add'} size={20} color="#fff" />
                   </>
                 )}
               </Pressable>
 
-              <Pressable onPress={() => { setForgotEmail(''); setForgotOtp(''); setForgotPwd(''); setForgotStep('email'); setStep('forgot'); }} style={styles.linkRow}>
-                <Text style={styles.link}>Forgot password?</Text>
-              </Pressable>
+              {authMode === 'signin' && (
+                <Pressable onPress={() => { setForgotEmail(''); setForgotOtp(''); setForgotPwd(''); setForgotStep('email'); setStep('forgot'); }} style={styles.linkRow}>
+                  <Text style={styles.link}>Forgot password?</Text>
+                </Pressable>
+              )}
 
               <View style={styles.hint}>
                 <MaterialIcons name="info-outline" size={14} color={colors.primary} />
                 <Text style={styles.hintText}>
-                  New user? Enter your email + a new password to create an account.{"\n"}
-                  Academy member? Enter your 6-digit code instead of email.
+                  {authMode === 'signin'
+                    ? 'Academy member? Enter your 6-digit academy code instead of email.'
+                    : 'Already have an account? Switch to "Sign In" above.'}
                 </Text>
               </View>
 
@@ -546,6 +592,19 @@ const styles = StyleSheet.create({
   divider: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginTop: spacing.lg },
   dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
   dividerText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  modeToggle: {
+    flexDirection: 'row', backgroundColor: colors.background,
+    borderRadius: borderRadius.md, padding: 4, marginBottom: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  modeBtn: {
+    flex: 1, paddingVertical: spacing.sm + 2, borderRadius: borderRadius.sm,
+    alignItems: 'center',
+  },
+  modeBtnActive: { backgroundColor: colors.primary, shadowColor: colors.primary, shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3 },
+  modeBtnText: { fontSize: 14, fontWeight: '700', color: colors.textSecondary },
+  modeBtnTextActive: { color: '#fff' },
+  btnSignup: { backgroundColor: colors.success || '#2E7D32' },
   registerAcademyBtn: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     marginTop: spacing.md, backgroundColor: colors.primary + '0C',
