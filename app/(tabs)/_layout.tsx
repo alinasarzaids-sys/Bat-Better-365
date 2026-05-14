@@ -249,13 +249,7 @@ export default function TabLayout() {
         />
         <Tabs.Screen
           name="live-lab"
-          options={{
-            title: 'Live Lab',
-            tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="videocam" size={size} color={color} />
-            ),
-            tabBarActiveTintColor: '#00B4FF',
-          }}
+          options={{ href: null }}
         />
         <Tabs.Screen
           name="academy"
