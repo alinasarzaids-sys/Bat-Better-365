@@ -67,8 +67,17 @@ serve(async (req) => {
 
     if (signInErr || !signInData?.session) {
       console.error('signIn error:', signInErr?.message);
+      // Provide more specific error messages
+      let errorMsg = signInErr?.message || 'Login failed after registration. Please try again.';
+      if (errorMsg.toLowerCase().includes('invalid') || errorMsg.toLowerCase().includes('credentials')) {
+        errorMsg = 'Account created but sign-in failed. Please use Sign In with your new password.';
+      } else if (errorMsg.toLowerCase().includes('email not confirmed')) {
+        errorMsg = 'Email confirmation failed. Please try again.';
+      } else if (errorMsg.toLowerCase().includes('password')) {
+        errorMsg = 'Password does not meet requirements (minimum 6 characters, cannot be too common).';
+      }
       return new Response(JSON.stringify({
-        error: signInErr?.message || 'Login failed after registration. Please try again.',
+        error: errorMsg,
       }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });

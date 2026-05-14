@@ -9,6 +9,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
 import { getSupabaseClient } from '@/template';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 // 6 chars, no '@' = academy code
@@ -94,7 +95,7 @@ export default function LoginScreen() {
     const raw = identifier.trim();
     if (!raw) { showAlert('Required', 'Enter your email or academy code.'); return; }
     if (!password) { showAlert('Required', 'Enter your password.'); return; }
-    if (password.length < 4) { showAlert('Too Short', 'Password must be at least 4 characters.'); return; }
+    if (password.length < 6) { showAlert('Too Short', 'Password must be at least 6 characters.'); return; }
 
     setLoading(true);
 
@@ -162,7 +163,24 @@ export default function LoginScreen() {
 
     if (resp.error || !resp.data?.session?.access_token) {
       setLoading(false);
-      const errMsg = resp.data?.error || resp.error?.message || 'Registration failed. Please try again.';
+      let errMsg = 'Registration failed. Please try again.';
+      if (resp.error instanceof FunctionsHttpError) {
+        try {
+          const text = await resp.error.context?.text();
+          try {
+            const parsed = JSON.parse(text || '');
+            errMsg = parsed.error || parsed.message || text || errMsg;
+          } catch {
+            errMsg = text || errMsg;
+          }
+        } catch {
+          errMsg = resp.error.message || errMsg;
+        }
+      } else if (resp.data?.error) {
+        errMsg = resp.data.error;
+      } else if (resp.error?.message) {
+        errMsg = resp.error.message;
+      }
       showAlert('Sign Up Failed', errMsg);
       return;
     }
@@ -237,7 +255,7 @@ export default function LoginScreen() {
 
   const handleForgotReset = async () => {
     if (!forgotOtp || !forgotPwd) { showAlert('Required', 'Fill in all fields.'); return; }
-    if (forgotPwd.length < 4) { showAlert('Error', 'Password must be at least 4 characters.'); return; }
+    if (forgotPwd.length < 6) { showAlert('Error', 'Password must be at least 6 characters.'); return; }
     setLoading(true);
     const { error } = await verifyOTPAndLogin(forgotEmail.trim().toLowerCase(), forgotOtp, { password: forgotPwd });
     setLoading(false);
@@ -301,7 +319,7 @@ export default function LoginScreen() {
                   style={[styles.input, { flex: 1, marginBottom: 0 }]}
                   value={password}
                   onChangeText={setPassword}
-                  placeholder={authMode === 'signup' ? 'Create a password (min 4 chars)' : 'Enter password'}
+                  placeholder={authMode === 'signup' ? 'Create a password (min 6 chars)' : 'Enter password'}
                   placeholderTextColor={colors.textSecondary}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
