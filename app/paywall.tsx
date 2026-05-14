@@ -235,7 +235,7 @@ export default function PaywallScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Back button */}
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Pressable style={styles.backBtn} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace('/'); } }}>
           <MaterialIcons name="arrow-back" size={20} color={colors.textSecondary} />
           <Text style={styles.backBtnText}>Back</Text>
         </Pressable>
