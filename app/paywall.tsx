@@ -235,8 +235,23 @@ export default function PaywallScreen() {
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
 
         {/* Back button */}
-        <Pressable style={styles.backBtn} onPress={() => { if (router.canGoBack()) { router.back(); } else { router.replace('/'); } }}>
-          <MaterialIcons name="arrow-back" size={20} color={colors.textSecondary} />
+        <Pressable
+          style={styles.backBtn}
+          onPress={() => {
+            try {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)' as any);
+              }
+            } catch {
+              router.replace('/(tabs)' as any);
+            }
+          }}
+          hitSlop={{ top: 16, bottom: 16, left: 16, right: 32 }}
+          android_ripple={{ color: colors.border, borderless: false, radius: 40 }}
+        >
+          <MaterialIcons name="arrow-back" size={24} color={colors.text} />
           <Text style={styles.backBtnText}>Back</Text>
         </Pressable>
 
@@ -504,8 +519,8 @@ const styles = StyleSheet.create({
   restoreText: { color: colors.primary, fontSize: 14, fontWeight: '600' },
   legal: { fontSize: 10, color: colors.textSecondary, textAlign: 'center', lineHeight: 15 },
 
-  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: spacing.md },
-  backBtnText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  backBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: spacing.md, paddingVertical: 8, paddingHorizontal: 4, minHeight: 44 },
+  backBtnText: { fontSize: 16, color: colors.text, fontWeight: '600' },
 
   alreadySubCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.xl,
