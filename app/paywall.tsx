@@ -242,10 +242,10 @@ export default function PaywallScreen() {
               if (router.canGoBack()) {
                 router.back();
               } else {
-                router.replace('/(tabs)' as any);
+                router.replace('/login' as any);
               }
             } catch {
-              router.replace('/(tabs)' as any);
+              router.replace('/login' as any);
             }
           }}
           hitSlop={{ top: 16, bottom: 16, left: 16, right: 32 }}
