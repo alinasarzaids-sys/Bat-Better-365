@@ -6,7 +6,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView,
-  TextInput, ActivityIndicator, Alert,
+  TextInput, ActivityIndicator, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
@@ -14,6 +14,7 @@ import { useRouter } from 'expo-router';
 import { useAuth, useAlert } from '@/template';
 import { getSupabaseClient } from '@/template';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
+import { revenueCatService } from '@/services/revenueCatService';
 
 const DISCOUNT_CODE = 'PROMO850';
 
@@ -69,10 +70,47 @@ export default function PaywallScreen() {
   const [loading, setLoading] = useState(false);
   const [existingSub, setExistingSub] = useState<{ product_id: string; expires_at: string } | null>(null);
   const [checkingExisting, setCheckingExisting] = useState(true);
+  const [rcPackages, setRcPackages] = useState<any[]>([]);
+  const [offeringsLoading, setOfferingsLoading] = useState(true);
 
   React.useEffect(() => {
     checkExistingSubscription();
+    initRevenueCat();
   }, [user?.id]);
+
+  const initRevenueCat = async () => {
+    if (!user?.id) { setOfferingsLoading(false); return; }
+    try {
+      await revenueCatService.initialize(user.id);
+      const offering = await revenueCatService.getOfferings();
+      if (offering?.availablePackages?.length) {
+        setRcPackages(offering.availablePackages);
+      }
+    } catch (e) {
+      console.error('RC init error:', e);
+    }
+    setOfferingsLoading(false);
+  };
+
+  const findRCPackage = (planId: string) => {
+    if (!rcPackages.length) return null;
+    // Match by packageType first
+    const typeMap: Record<string, string> = {
+      monthly: 'MONTHLY',
+      sixmonth: 'SIX_MONTH',
+      annual: 'ANNUAL',
+    };
+    const targetType = typeMap[planId];
+    let pkg = rcPackages.find((p: any) => p.packageType === targetType);
+    // Fallback: match by identifier string
+    if (!pkg) {
+      pkg = rcPackages.find((p: any) =>
+        (p.identifier || '').toLowerCase().includes(planId) ||
+        (p.product?.identifier || '').toLowerCase().includes(planId)
+      );
+    }
+    return pkg || null;
+  };
 
   const checkExistingSubscription = async () => {
     if (!user?.id) { setCheckingExisting(false); return; }
@@ -171,32 +209,49 @@ export default function PaywallScreen() {
     const plan = PLANS.find(p => p.id === selectedPlan);
     if (!plan || !user) return;
 
+    // Find the matching RevenueCat package
+    const rcPackage = findRCPackage(selectedPlan);
+    if (!rcPackage) {
+      showAlert(
+        'Plans Unavailable',
+        'Could not load subscription plans. Please check your internet connection and try again.'
+      );
+      return;
+    }
+
     setLoading(true);
-
     try {
-      // Mock subscription: record in user_subscriptions
-      const supabase = getSupabaseClient();
+      const result = await revenueCatService.purchasePackage(rcPackage);
 
-      // Calculate expiry based on plan
+      if (!result.success) {
+        setLoading(false);
+        // Silent dismiss on user cancellation
+        if (result.error && result.error.toLowerCase().includes('cancel')) return;
+        showAlert('Purchase Failed', result.error || 'Something went wrong. Please try again.');
+        return;
+      }
+
+      // Purchase succeeded — sync to Supabase for our own tracking
+      const supabase = getSupabaseClient();
       const expiry = new Date();
       if (plan.id === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
       else if (plan.id === 'sixmonth') expiry.setMonth(expiry.getMonth() + 6);
       else expiry.setFullYear(expiry.getFullYear() + 1);
 
-      // Remove any existing subscription first
       await supabase.from('user_subscriptions').delete().eq('user_id', user.id);
-
-      // Insert new subscription
-      const { error } = await supabase.from('user_subscriptions').insert({
+      const { error: subErr } = await supabase.from('user_subscriptions').insert({
         user_id: user.id,
-        product_id: `bat_better_${plan.id}`,
-        platform: 'ios',
+        product_id: rcPackage.product?.identifier || `bat_better_${plan.id}`,
+        platform: Platform.OS,
         status: 'active',
-        transaction_id: `mock_${Date.now()}`,
+        transaction_id: `rc_${Date.now()}`,
         expires_at: expiry.toISOString(),
       });
 
-      if (error) throw error;
+      if (subErr) {
+        // Log but don't block — RC purchase is confirmed, Supabase sync is secondary
+        console.error('Supabase sync error after purchase:', subErr);
+      }
 
       setLoading(false);
       router.replace('/');
@@ -209,21 +264,39 @@ export default function PaywallScreen() {
   const handleRestore = async () => {
     setLoading(true);
     try {
-      const supabase = getSupabaseClient();
-      const { data: sub } = await supabase
-        .from('user_subscriptions')
-        .select('id, status, expires_at')
-        .eq('user_id', user!.id)
-        .eq('status', 'active')
-        .maybeSingle();
+      const result = await revenueCatService.restorePurchases();
 
-      if (sub && new Date(sub.expires_at) > new Date()) {
+      if (result.success) {
+        // Get customer info to determine expiry for Supabase sync
+        const customerInfo = await revenueCatService.getCustomerInfo();
+        const activeEntitlements = customerInfo?.entitlements?.active || {};
+        const entitlementKeys = Object.keys(activeEntitlements);
+
+        if (entitlementKeys.length > 0) {
+          const entitlement = activeEntitlements[entitlementKeys[0]];
+          const expiryDate = entitlement.expirationDate
+            ? new Date(entitlement.expirationDate)
+            : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year fallback
+
+          const supabase = getSupabaseClient();
+          await supabase.from('user_subscriptions').delete().eq('user_id', user!.id);
+          await supabase.from('user_subscriptions').insert({
+            user_id: user!.id,
+            product_id: entitlement.productIdentifier || 'restored',
+            platform: Platform.OS,
+            status: 'active',
+            transaction_id: `rc_restore_${Date.now()}`,
+            expires_at: expiryDate.toISOString(),
+          });
+        }
+
         setLoading(false);
         router.replace('/');
         return;
       }
+
       setLoading(false);
-      showAlert('No Active Subscription', 'We could not find an active subscription for this account.');
+      showAlert('No Active Subscription', 'We could not find an active subscription for this account. If you believe this is an error, please contact support.');
     } catch {
       setLoading(false);
       showAlert('Error', 'Failed to restore purchases. Please try again.');
@@ -371,12 +444,17 @@ export default function PaywallScreen() {
 
         {/* Subscribe button */}
         <Pressable
-          style={[styles.subscribeBtn, loading && { opacity: 0.7 }]}
+          style={[styles.subscribeBtn, (loading || offeringsLoading) && { opacity: 0.7 }]}
           onPress={handleSubscribe}
-          disabled={loading}
+          disabled={loading || offeringsLoading}
         >
           {loading ? (
             <ActivityIndicator color="#fff" />
+          ) : offeringsLoading ? (
+            <>
+              <ActivityIndicator color="#fff" size="small" />
+              <Text style={styles.subscribeBtnText}>Loading Plans...</Text>
+            </>
           ) : (
             <>
               <MaterialIcons name="lock-open" size={20} color="#fff" />
