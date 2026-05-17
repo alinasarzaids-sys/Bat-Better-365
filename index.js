@@ -5,20 +5,15 @@
 // open the same SimpleCache folder the host already holds, throwing:
 //   "Another SimpleCache instance uses the folder: .../ExpoVideoCache/..."
 //
-// This exception is thrown SYNCHRONOUSLY during metroRequire() at the JNI/Java layer
-// when the NativeUnimoduleProxy HostObject getter fires — before our JS try-catch can
-// wrap it. The only reliable fix is to:
-//   1. Intercept nativeModuleProxy at the JS Object level via defineProperty
-//   2. Return a safe stub for NativeUnimoduleProxy without ever calling into Java
-//   3. Wrap require('expo-router/entry') in a try-catch as final safety net
-//   4. Install an ErrorUtils global handler to swallow any async re-throws
+// This exception is thrown SYNCHRONOUSLY at the JNI/Java layer when the
+// NativeUnimoduleProxy HostObject getter fires — reading `target[prop]` inside
+// a JS Proxy handler is already too late. The only fix is to NEVER read the
+// real HostObject for NativeUnimoduleProxy at all — return the stub immediately.
 
-// ─── LAYER 1: Intercept nativeModuleProxy HostObject BEFORE any require ──────
-// The crash fires when JS first reads `global.nativeModuleProxy.NativeUnimoduleProxy`
-// (in expo-modules-core). We shadow the global with a JS Proxy that intercepts that
-// specific property and returns a safe stub instead of delegating to the Java layer.
+// ─── LAYER 1: Intercept nativeModuleProxy BEFORE any require ─────────────────
 (function installNativeModulesProxy() {
   try {
+    // Safe stub that satisfies expo-modules-core without touching Java
     var safeUnimoduleProxy = {
       modulesConstants: {},
       exportedMethods: {},
@@ -31,61 +26,53 @@
       removeListeners: function () {},
     };
 
-    var VIDEO_CRASH_KEYS = [
-      'NativeUnimoduleProxy',
-    ];
+    // Keys that must NEVER delegate to the real HostObject (triggers Java crash)
+    var BLOCKED_KEYS = ['NativeUnimoduleProxy'];
 
-    // Only intercept if the native module proxy actually exists
     if (global.nativeModuleProxy) {
       try {
         var original = global.nativeModuleProxy;
         var handler = {
           get: function (target, prop) {
-            if (VIDEO_CRASH_KEYS.indexOf(String(prop)) !== -1) {
-              // Try fetching from real proxy; if it crashes, return stub
-              try {
-                var val = target[prop];
-                // Also try calling getConstants to surface crash now, in our scope
-                if (val && typeof val.getConstants === 'function') {
-                  try { val.getConstants(); } catch (_innerCrash) {
-                    console.warn('[shim] NativeUnimoduleProxy.getConstants crashed — using stub');
-                    return safeUnimoduleProxy;
-                  }
-                }
-                return val;
-              } catch (e) {
-                console.warn('[shim] nativeModuleProxy["' + String(prop) + '"] crashed — using stub:', String(e).slice(0, 100));
-                return safeUnimoduleProxy;
-              }
+            // *** CRITICAL: return stub immediately — do NOT read target[prop] ***
+            // Reading target[prop] for NativeUnimoduleProxy fires the JNI call that
+            // throws "Another SimpleCache instance" before any try-catch can fire.
+            if (BLOCKED_KEYS.indexOf(String(prop)) !== -1) {
+              return safeUnimoduleProxy;
             }
-            try { return target[prop]; } catch (e2) { return undefined; }
+            // All other native modules are safe to read normally
+            try { return target[prop]; } catch (e) { return undefined; }
           },
           set: function (target, prop, value) {
             try { target[prop] = value; } catch (_) {}
             return true;
           },
+          has: function (target, prop) {
+            try { return prop in target; } catch (_) { return false; }
+          },
         };
 
         try {
-          // Replace the HostObject reference with a JS Proxy
           global.nativeModuleProxy = new Proxy(original, handler);
         } catch (proxyErr) {
-          // Proxy not available (very old JSC) — fall back to direct stub insertion
-          console.warn('[shim] Proxy unavailable, trying direct stub:', String(proxyErr).slice(0, 60));
+          // Hermes always supports Proxy, but if not — directly stub the key
+          console.warn('[shim] Proxy unavailable, stubbing directly');
           try { original['NativeUnimoduleProxy'] = safeUnimoduleProxy; } catch (_) {}
         }
       } catch (outerErr) {
-        console.warn('[shim] Could not wrap nativeModuleProxy:', String(outerErr).slice(0, 60));
+        console.warn('[shim] Could not wrap nativeModuleProxy:', String(outerErr).slice(0, 80));
       }
     }
 
-    // Also patch react-native's NativeModules after it loads
+    // Patch react-native NativeModules as a belt-and-suspenders fallback
+    // (some paths go through require('react-native').NativeModules instead)
     try {
       var RN = require('react-native');
-      if (RN && RN.NativeModules && !RN.NativeModules.NativeUnimoduleProxy) {
+      if (RN && RN.NativeModules) {
         Object.defineProperty(RN.NativeModules, 'NativeUnimoduleProxy', {
           get: function () { return safeUnimoduleProxy; },
           configurable: true,
+          enumerable: true,
         });
       }
     } catch (_) {}
@@ -95,7 +82,7 @@
   }
 })();
 
-// ─── LAYER 2: ErrorUtils global handler ─────────────────────────────────────
+// ─── LAYER 2: Global ErrorUtils handler — swallow video cache fatals ──────────
 (function installErrorHandler() {
   try {
     var ErrorUtils = global.ErrorUtils;
@@ -114,7 +101,7 @@
 
         if (isVideoCacheError) {
           console.warn('[shim] Swallowed video cache error:', msg.slice(0, 120));
-          return; // do NOT crash the app
+          return; // prevent crash
         }
         if (_originalHandler) {
           _originalHandler(error, isFatal);
@@ -145,7 +132,7 @@
   } catch (_) {}
 })();
 
-// ─── LAYER 4: Load app with top-level crash guard ───────────────────────────
+// ─── LAYER 4: Load app with crash guard ──────────────────────────────────────
 try {
   require('expo-router/entry');
 } catch (appLoadErr) {
@@ -157,8 +144,8 @@ try {
     msg.indexOf('Exception in HostObject') !== -1;
 
   if (isKnownCrash) {
-    console.warn('[shim] Caught expo-router/entry crash (video cache) — retrying bare entry');
-    // Install a hard stub on react-native's NativeModules and retry
+    console.warn('[shim] Caught expo-router/entry crash (video cache) — retrying');
+    // Hard-stub on NativeModules and retry
     try {
       var RN2 = require('react-native');
       if (RN2 && RN2.NativeModules) {
@@ -179,7 +166,6 @@ try {
       console.error('[shim] Retry also failed:', String(retryErr).slice(0, 200));
     }
   } else {
-    // Real app error — re-throw so it surfaces properly
     throw appLoadErr;
   }
 }
