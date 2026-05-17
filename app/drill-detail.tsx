@@ -347,7 +347,7 @@ export default function DrillDetailScreen() {
               {hasVideoUrl && drill.video_url && (
                 <YouTubePlayer 
                   videoId={getYouTubeVideoId(drill.video_url) || ''} 
-                  height={width * 0.95}
+                  height={Math.round(width * 9 / 16)}
                 />
               )}
             </View>
