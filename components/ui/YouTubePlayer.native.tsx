@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { View, StyleSheet, Pressable, Text, Linking, ActivityIndicator } from 'react-native';
-import { Image } from 'expo-image';
+import WebView from 'react-native-webview';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 
 interface YouTubePlayerProps {
@@ -8,8 +8,62 @@ interface YouTubePlayerProps {
   height?: number;
 }
 
+const buildHTML = (videoId: string) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+    #player { width: 100%; height: 100%; }
+    iframe { width: 100%; height: 100%; border: none; }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <script>
+    var tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+
+    var player;
+    function onYouTubeIframeAPIReady() {
+      player = new YT.Player('player', {
+        videoId: '${videoId}',
+        playerVars: {
+          playsinline: 1,
+          modestbranding: 1,
+          rel: 0,
+          controls: 1,
+          fs: 1,
+          iv_load_policy: 3,
+          enablejsapi: 1,
+          origin: 'https://youtube.com'
+        },
+        events: {
+          onReady: function(e) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'ready' }));
+          },
+          onError: function(e) {
+            // Errors 100/101/150/153 = video unavailable / embedding disabled
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', code: e.data }));
+          },
+          onStateChange: function(e) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'state', state: e.data }));
+          }
+        }
+      });
+    }
+  </script>
+</body>
+</html>
+`;
+
 export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
-  const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [blocked, setBlocked] = useState(false);
+  const webViewRef = useRef<any>(null);
 
   const openInYouTube = () => {
     const appUrl = `vnd.youtube:${videoId}`;
@@ -19,46 +73,75 @@ export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
       .catch(() => Linking.openURL(webUrl));
   };
 
+  const handleMessage = (event: any) => {
+    try {
+      const msg = JSON.parse(event.nativeEvent.data);
+      if (msg.type === 'ready') {
+        setLoading(false);
+      } else if (msg.type === 'error') {
+        // Embedding blocked codes: 101, 150, 100, 5
+        if ([100, 101, 150, 5].includes(msg.code)) {
+          setBlocked(true);
+          setLoading(false);
+        }
+      }
+    } catch {}
+  };
+
+  const handleLoadEnd = () => {
+    // Fallback: hide spinner after page loads even if API doesn't fire
+    setTimeout(() => setLoading(false), 2000);
+  };
+
+  // Embedding blocked — show fallback
+  if (blocked) {
+    return (
+      <Pressable
+        style={[styles.blockedContainer, { height }]}
+        onPress={openInYouTube}
+        android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
+      >
+        <View style={styles.blockedIcon}>
+          <MaterialIcons name="play-circle-filled" size={56} color="#FF0000" />
+        </View>
+        <Text style={styles.blockedTitle}>Video cannot play in-app</Text>
+        <Text style={styles.blockedSub}>This video has embedding restrictions.</Text>
+        <View style={styles.blockedBtn}>
+          <MaterialIcons name="open-in-new" size={16} color="#fff" />
+          <Text style={styles.blockedBtnText}>Open in YouTube</Text>
+        </View>
+      </Pressable>
+    );
+  }
+
   return (
-    <Pressable
-      style={[styles.container, { height }]}
-      onPress={openInYouTube}
-      android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
-    >
-      {/* Thumbnail */}
-      <Image
-        source={{ uri: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` }}
-        style={styles.thumbnail}
-        contentFit="cover"
-        transition={300}
-        onLoad={() => setThumbnailLoaded(true)}
+    <View style={[styles.container, { height }]}>
+      <WebView
+        ref={webViewRef}
+        source={{ html: buildHTML(videoId) }}
+        style={styles.webView}
+        allowsInlineMediaPlayback
+        mediaPlaybackRequiresUserAction={false}
+        allowsFullscreenVideo
+        javaScriptEnabled
+        domStorageEnabled
+        originWhitelist={['*']}
+        onMessage={handleMessage}
+        onLoadEnd={handleLoadEnd}
+        scrollEnabled={false}
+        bounces={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        onError={() => setBlocked(true)}
+        onHttpError={() => setBlocked(true)}
       />
-
-      {/* Dark overlay */}
-      <View style={styles.overlay} />
-
-      {/* Loading spinner while thumbnail loads */}
-      {!thumbnailLoaded && (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator color="#fff" size="large" />
+      {loading && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator color="#FF0000" size="large" />
+          <Text style={styles.loadingText}>Loading video...</Text>
         </View>
       )}
-
-      {/* Play button */}
-      <View style={styles.playButtonWrapper}>
-        <View style={styles.playButton}>
-          <MaterialIcons name="play-arrow" size={52} color="#FFFFFF" />
-        </View>
-        <Text style={styles.watchLabel}>Tap to Watch</Text>
-      </View>
-
-      {/* YouTube badge bottom-right */}
-      <View style={styles.ytBadge}>
-        <MaterialIcons name="smart-display" size={16} color="#FF0000" />
-        <Text style={styles.ytBadgeText}>YouTube</Text>
-        <MaterialIcons name="open-in-new" size={13} color="rgba(255,255,255,0.85)" />
-      </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -69,61 +152,58 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
   },
-  thumbnail: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.38)',
-  },
-  loadingContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  playButtonWrapper: {
+  webView: {
     flex: 1,
+    backgroundColor: '#000',
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
   },
-  playButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 0, 0, 0.92)',
+  loadingText: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  blockedContainer: {
+    width: '100%',
+    backgroundColor: '#111',
+    borderRadius: 12,
+    overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 12,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
   },
-  watchLabel: {
+  blockedIcon: {
+    marginBottom: 4,
+  },
+  blockedTitle: {
     color: '#fff',
     fontSize: 15,
     fontWeight: '700',
-    letterSpacing: 0.3,
-    textShadowColor: 'rgba(0,0,0,0.8)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
   },
-  ytBadge: {
-    position: 'absolute',
-    bottom: 12,
-    right: 12,
+  blockedSub: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+  },
+  blockedBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(0,0,0,0.72)',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 8,
+    gap: 6,
+    backgroundColor: '#FF0000',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    marginTop: 8,
   },
-  ytBadgeText: {
+  blockedBtnText: {
     color: '#fff',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
   },
 });
