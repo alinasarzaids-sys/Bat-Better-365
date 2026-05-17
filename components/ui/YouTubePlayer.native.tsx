@@ -10,46 +10,116 @@ interface YouTubePlayerProps {
 export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
   const [loading, setLoading] = useState(true);
 
-  // Use embed URL with parameters that strip ALL YouTube UI:
-  // showinfo=0 = no title bar, rel=0 = no related videos,
-  // modestbranding=1 = no logo, iv_load_policy=3 = no annotations
-  // playsinline=1 = inline playback on iOS
-  const embedHtml = `<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
-iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
-</style>
-</head>
-<body>
-<iframe
-  src="https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1&showinfo=0&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&color=white&disablekb=1"
-  allow="autoplay; fullscreen; encrypted-media"
-  allowfullscreen
-></iframe>
-</body>
-</html>`;
+  // Load the full YouTube mobile site to avoid Error 153 (embedding disabled).
+  // Then inject CSS/JS to hide all UI — leaving only the video player.
+  const youtubeUrl = `https://m.youtube.com/watch?v=${videoId}&autoplay=1`;
+
+  const injectedJS = `
+(function hideYouTubeUI() {
+  var css = document.createElement('style');
+  css.textContent = [
+    /* ── Mobile YouTube UI elements to hide ── */
+    'ytm-mobile-topbar-renderer',
+    '.mobile-topbar-header',
+    'ytm-slim-video-header-renderer',
+    'ytm-slim-video-information-renderer',
+    'ytm-slim-video-action-bar-renderer',
+    'ytm-comment-section-renderer',
+    'ytm-section-list-renderer',
+    'ytm-continuation-item-renderer',
+    '.related-chips-bar-renderer',
+    'ytm-playlist-panel-renderer',
+    'ytm-item-section-renderer',
+    'ytm-button-renderer',
+    '.slim-video-metadata-section',
+    '.slim-video-action-bar',
+    '.ytm-watch__meta-collapsed',
+    '.ytm-watch__meta-body',
+    '#watch-header',
+    '#comments-section',
+    '#related',
+    /* ── Desktop YouTube fallback ── */
+    '#masthead-container',
+    'ytd-masthead',
+    '#below',
+    '#info-contents',
+    'ytd-video-primary-info-renderer',
+    'ytd-video-secondary-info-renderer',
+    '#secondary',
+    'ytd-comments',
+    '#header',
+    '.ytp-chrome-top',
+    '.ytp-show-cards-title'
+  ].join(',') + '{ display:none !important; }';
+  document.head.appendChild(css);
+
+  function applyStyles() {
+    /* Force body/html to black, no scroll */
+    document.documentElement.style.cssText = 'background:#000!important;overflow:hidden!important;';
+    document.body.style.cssText = 'background:#000!important;overflow:hidden!important;margin:0!important;padding:0!important;';
+
+    /* Make the video element fill container */
+    var video = document.querySelector('video');
+    if (video) {
+      video.style.cssText = 'width:100%!important;height:100%!important;position:fixed!important;top:0!important;left:0!important;object-fit:contain!important;background:#000!important;z-index:9999!important;';
+    }
+
+    /* Hide elements by selector list */
+    var hide = [
+      'ytm-mobile-topbar-renderer','ytm-slim-video-header-renderer',
+      'ytm-slim-video-information-renderer','ytm-slim-video-action-bar-renderer',
+      'ytm-comment-section-renderer','ytm-section-list-renderer',
+      'ytm-continuation-item-renderer','.slim-video-metadata-section',
+      '.slim-video-action-bar','.ytm-watch__meta-collapsed','.ytm-watch__meta-body',
+      '#watch-header','#comments-section','ytm-item-section-renderer',
+      '#masthead-container','ytd-masthead','#below','#info-contents',
+      'ytd-video-primary-info-renderer','ytd-video-secondary-info-renderer',
+      '#secondary','ytd-comments','.ytp-chrome-top','.mobile-topbar-header'
+    ];
+    hide.forEach(function(sel) {
+      try {
+        document.querySelectorAll(sel).forEach(function(el) {
+          el.style.setProperty('display','none','important');
+        });
+      } catch(e) {}
+    });
+  }
+
+  applyStyles();
+  /* Re-run frequently because YouTube's JS re-renders the DOM */
+  [300, 800, 1500, 2500, 4000].forEach(function(t) {
+    setTimeout(applyStyles, t);
+  });
+
+  /* MutationObserver as ongoing guard */
+  try {
+    var obs = new MutationObserver(applyStyles);
+    obs.observe(document.body || document.documentElement, { childList:true, subtree:true });
+  } catch(e) {}
+})();
+true;
+`;
 
   return (
     <View style={[styles.container, { height }]}>
       <WebView
-        source={{ html: embedHtml }}
+        source={{ uri: youtubeUrl }}
         style={styles.webView}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
         allowsFullscreenVideo
         javaScriptEnabled
         domStorageEnabled
-        originWhitelist={['*']}
+        injectedJavaScript={injectedJS}
+        injectedJavaScriptBeforeContentLoaded={injectedJS}
+        originWhitelist={['*', 'https://*.youtube.com', 'https://m.youtube.com']}
         onLoadEnd={() => setLoading(false)}
         onError={() => setLoading(false)}
         scrollEnabled={false}
         bounces={false}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
+        userAgent="Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36"
       />
       {loading && (
         <View style={styles.loadingOverlay}>
