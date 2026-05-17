@@ -10,80 +10,46 @@ interface YouTubePlayerProps {
 export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
   const [loading, setLoading] = useState(true);
 
-  // Load the full YouTube website — bypasses ALL embedding restrictions
-  // (Error 153/150/101 only affect iframe embeds, not the full site)
-  const watchUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  // Use embed URL with parameters that strip ALL YouTube UI:
+  // showinfo=0 = no title bar, rel=0 = no related videos,
+  // modestbranding=1 = no logo, iv_load_policy=3 = no annotations
+  // playsinline=1 = inline playback on iOS
+  const embedHtml = `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
+iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+</style>
+</head>
+<body>
+<iframe
+  src="https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1&showinfo=0&rel=0&modestbranding=1&iv_load_policy=3&playsinline=1&color=white&disablekb=1"
+  allow="autoplay; fullscreen; encrypted-media"
+  allowfullscreen
+></iframe>
+</body>
+</html>`;
 
   return (
     <View style={[styles.container, { height }]}>
       <WebView
-        source={{ uri: watchUrl }}
+        source={{ html: embedHtml }}
         style={styles.webView}
         allowsInlineMediaPlayback
         mediaPlaybackRequiresUserAction={false}
         allowsFullscreenVideo
         javaScriptEnabled
         domStorageEnabled
-        originWhitelist={['*', 'https://*.youtube.com', 'https://youtube.com']}
+        originWhitelist={['*']}
         onLoadEnd={() => setLoading(false)}
         onError={() => setLoading(false)}
-        scrollEnabled
+        scrollEnabled={false}
         bounces={false}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
-        // Inject CSS + JS to make video fill the full player container
-        injectedJavaScript={`
-          (function setup() {
-            function applyStyles() {
-              var existing = document.getElementById('__bb365_style');
-              if (!existing) {
-                var style = document.createElement('style');
-                style.id = '__bb365_style';
-                style.innerHTML = [
-                  'html, body { margin:0!important; padding:0!important; background:#000!important; overflow:hidden!important; width:100vw!important; height:100vh!important; }',
-                  /* Hide every YouTube UI element except the video */
-                  '#masthead-container, ytd-masthead, #header, tp-yt-app-header, #guide-button { display:none!important; height:0!important; }',
-                  'ytd-mini-guide-renderer, tp-yt-app-drawer, #nav-drawer { display:none!important; }',
-                  '#secondary, ytd-watch-next-secondary-results-renderer { display:none!important; }',
-                  'ytd-comments, #comments, #below, #info-contents, #info { display:none!important; }',
-                  'ytd-video-primary-info-renderer, ytd-video-secondary-info-renderer { display:none!important; }',
-                  '#description, ytd-expander, ytd-item-section-renderer { display:none!important; }',
-                  '.ytp-chrome-top, .ytp-title, .ytp-share-button { display:none!important; }',
-                  /* Force the player container to fill the viewport */
-                  '#page-manager, ytd-app, ytd-watch-flexy, #player-theater-container, ytd-watch-flexy[theater] { margin:0!important; padding:0!important; background:#000!important; }',
-                  '#player-container-id, #player-container, #ytd-player, ytd-player { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; z-index:9999!important; background:#000!important; }',
-                  '.html5-video-player { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; z-index:9999!important; background:#000!important; }',
-                  'video { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; object-fit:contain!important; z-index:9999!important; background:#000!important; }',
-                ].join(' ');
-                (document.head || document.documentElement).appendChild(style);
-              }
-
-              /* Scroll to top so video is in view */
-              window.scrollTo(0, 0);
-
-              /* Force-click the video to unmute/play if muted */
-              var v = document.querySelector('video');
-              if (v) {
-                v.style.cssText = 'position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;object-fit:contain!important;z-index:9999!important;background:#000!important;';
-                if (v.paused) { v.play().catch(function(){}); }
-              }
-            }
-
-            /* Run immediately */
-            applyStyles();
-
-            /* Re-run after page settles (YouTube loads content dynamically) */
-            setTimeout(applyStyles, 500);
-            setTimeout(applyStyles, 1500);
-            setTimeout(applyStyles, 3000);
-
-            /* Watch for DOM mutations and re-apply */
-            var observer = new MutationObserver(function() { applyStyles(); });
-            var target = document.body || document.documentElement;
-            if (target) { observer.observe(target, { childList: true, subtree: true }); }
-          })();
-          true;
-        `}
       />
       {loading && (
         <View style={styles.loadingOverlay}>
