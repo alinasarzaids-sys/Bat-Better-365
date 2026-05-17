@@ -33,23 +33,41 @@ export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
         showsVerticalScrollIndicator={false}
         // Hide YouTube header/footer UI via CSS injection so only the video is shown
         injectedJavaScript={`
-          (function() {
+          (function injectStyles() {
             var style = document.createElement('style');
             style.innerHTML = [
-              'ytd-masthead { display: none !important; }',
-              '#masthead-container { display: none !important; }',
-              'ytd-mini-guide-renderer { display: none !important; }',
-              '#guide-button { display: none !important; }',
-              'ytd-watch-next-secondary-results-renderer { display: none !important; }',
-              '#secondary { display: none !important; }',
-              'ytd-comments { display: none !important; }',
+              /* Hide all YouTube chrome except the video player */
+              '#masthead-container, ytd-masthead, #header, #guide-button { display: none !important; }',
+              'ytd-mini-guide-renderer, tp-yt-app-drawer { display: none !important; }',
+              '#secondary, ytd-watch-next-secondary-results-renderer { display: none !important; }',
+              'ytd-comments, #comments { display: none !important; }',
+              '#below, ytd-item-section-renderer { display: none !important; }',
+              '#info-contents, #info, ytd-video-primary-info-renderer { display: none !important; }',
+              'ytd-video-secondary-info-renderer { display: none !important; }',
+              '#description, ytd-expander { display: none !important; }',
+              /* Remove all padding/margin around the player */
+              'html, body { margin: 0 !important; padding: 0 !important; background: #000 !important; overflow: hidden !important; }',
+              '#page-manager, ytd-watch-flexy { background: #000 !important; }',
+              '#player-container, #player, #ytd-player, ytd-player { width: 100vw !important; }',
+              /* Make the video element fill the full screen */
+              '.html5-video-player, .html5-main-video { width: 100vw !important; height: 100vh !important; position: fixed !important; top: 0 !important; left: 0 !important; z-index: 9999 !important; }',
+              'video { width: 100vw !important; height: 100vh !important; object-fit: contain !important; position: fixed !important; top: 0 !important; left: 0 !important; z-index: 9999 !important; background: #000 !important; }',
+              /* Hide player top chrome (title bar overlay) */
+              '.ytp-chrome-top, .ytp-title { display: none !important; }',
             ].join(' ');
             document.head.appendChild(style);
-            // Auto-click play if video is paused
+
+            // Re-apply after dynamic content loads
+            var observer = new MutationObserver(function() {
+              document.head.appendChild(style.cloneNode(true));
+            });
+            observer.observe(document.body || document.documentElement, { childList: true, subtree: false });
+
+            // Auto-play
             setTimeout(function() {
-              var playBtn = document.querySelector('.ytp-play-button');
-              if (playBtn) playBtn.click();
-            }, 1500);
+              var v = document.querySelector('video');
+              if (v && v.paused) { v.play().catch(function(){}); }
+            }, 2000);
           })();
           true;
         `}
