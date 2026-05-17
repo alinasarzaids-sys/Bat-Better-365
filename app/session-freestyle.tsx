@@ -60,13 +60,24 @@ export default function FreestyleSessionScreen() {
 
   // Pre-fill date from calendar params if provided (only on first mount when not active)
   const prefilledDateStr = params.date as string | undefined;
+  const modeParam = params.mode as string | undefined;
+  const [isLogMode, setIsLogMode] = React.useState(false);
+  const [logDate, setLogDate] = React.useState(new Date());
+  const [showLogDatePicker, setShowLogDatePicker] = React.useState(false);
+  const [logDuration, setLogDuration] = React.useState('60');
+
   useEffect(() => {
     if (prefilledDateStr && !session.isActive) {
       const [y, m, d] = prefilledDateStr.split('-').map(Number);
       session.setScheduledDate(new Date(y, m - 1, d));
       session.setSessionMode('later');
     }
-  }, [prefilledDateStr]);
+    if (modeParam === 'log' && !session.isActive) {
+      setIsLogMode(true);
+      // Jump to step 3 (rating) directly for past sessions
+      session.setCurrentStep(3);
+    }
+  }, [prefilledDateStr, modeParam]);
 
   // Tip rotation only while step 2 is active and visible
   useEffect(() => {
@@ -164,7 +175,12 @@ export default function FreestyleSessionScreen() {
       return;
     }
     session.setSaving(true);
-    const actualDuration = Math.floor(session.elapsedSeconds / 60);
+    const actualDuration = isLogMode
+      ? parseInt(logDuration) || 60
+      : Math.floor(session.elapsedSeconds / 60);
+    const sessionDate = isLogMode
+      ? logDate.toISOString()
+      : (session.sessionStartTime?.toISOString() || new Date().toISOString());
     const trainingTypesText = Array.from(session.selectedTrainingTypes)
       .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(', ');
     const middlePct = session.ballsFaced && session.ballsMiddled && parseInt(session.ballsFaced) > 0
@@ -189,8 +205,8 @@ export default function FreestyleSessionScreen() {
     if (session.sessionNotes) notes += `\n\nNotes: ${session.sessionNotes}`;
 
     const { error } = await sessionService.createSession({
-      user_id: user.id, title: 'Freestyle Session',
-      scheduled_date: session.sessionStartTime?.toISOString() || new Date().toISOString(),
+      user_id: user.id, title: isLogMode ? 'Freestyle Session (Logged)' : 'Freestyle Session',
+      scheduled_date: sessionDate,
       duration_minutes: actualDuration, session_type: 'Freestyle', status: 'completed', notes,
     });
     if (error) { session.setSaving(false); showAlert('Error', error); return; }
@@ -396,6 +412,56 @@ export default function FreestyleSessionScreen() {
 
   const renderStep3 = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      {/* Log Mode: date & duration inputs */}
+      {isLogMode && (
+        <View style={styles.logModeCard}>
+          <View style={styles.logModeHeader}>
+            <MaterialIcons name="history" size={20} color={colors.success} />
+            <Text style={styles.logModeTitle}>Log Past Session</Text>
+          </View>
+          <Text style={styles.logModeDesc}>When did this session take place?</Text>
+
+          <Pressable
+            style={styles.logDateButton}
+            onPress={() => setShowLogDatePicker(true)}
+          >
+            <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
+            <Text style={styles.logDateText}>
+              {logDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+            </Text>
+            <MaterialIcons name="edit" size={16} color={colors.textSecondary} />
+          </Pressable>
+
+          {showLogDatePicker && (
+            <DateTimePicker
+              value={logDate}
+              mode="date"
+              maximumDate={new Date()}
+              display="default"
+              onChange={(e: any, d?: Date) => {
+                setShowLogDatePicker(false);
+                if (d) setLogDate(d);
+              }}
+            />
+          )}
+
+          <Text style={[styles.label, { marginTop: spacing.md }]}>Duration (minutes)</Text>
+          <View style={styles.durationOptions}>
+            {['15', '30', '45', '60', '90', '120'].map(mins => (
+              <Pressable
+                key={mins}
+                style={[styles.durationOption, logDuration === mins && styles.durationOptionSelected]}
+                onPress={() => setLogDuration(mins)}
+              >
+                <Text style={[styles.durationOptionText, logDuration === mins && styles.durationOptionTextSelected]}>
+                  {mins} min
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
+
       <Text style={styles.stepTitle}>Session Breakdown</Text>
       <Text style={styles.stepSubtitle}>Rate each area of your performance</Text>
 
@@ -556,6 +622,7 @@ export default function FreestyleSessionScreen() {
   };
 
   const getStepTitle = () => {
+    if (isLogMode) return 'Log Past Session';
     switch (session.currentStep) {
       case 1: return 'Setup Session';
       case 2: return 'Active Session';
@@ -620,7 +687,12 @@ export default function FreestyleSessionScreen() {
   };
 
   const handleBack = () => {
-    if (session.currentStep === 1) {
+    if (isLogMode && session.currentStep === 3) {
+      // Exit log mode entirely
+      session.resetSession();
+      setIsLogMode(false);
+      router.back();
+    } else if (session.currentStep === 1) {
       session.resetSession();
       router.back();
     } else if (session.currentStep === 2) {
@@ -638,7 +710,7 @@ export default function FreestyleSessionScreen() {
         </Pressable>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>{getStepTitle()}</Text>
-          <Text style={styles.headerSubtitle}>Step {session.currentStep} of 4</Text>
+          <Text style={styles.headerSubtitle}>{isLogMode ? 'Rate your performance' : `Step ${session.currentStep} of 4`}</Text>
         </View>
         {session.currentStep === 2 ? (
           <Pressable onPress={handleMinimize} style={[styles.headerButton, styles.headerMinimizeBtn]}>
@@ -899,4 +971,45 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: colors.primary,
   },
   analyticsButtonText: { ...typography.body, color: colors.primary, fontWeight: '600' },
+  logModeCard: {
+    backgroundColor: colors.success + '10',
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.success + '40',
+  },
+  logModeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  logModeTitle: {
+    ...typography.h4,
+    color: colors.success,
+    fontWeight: '700',
+  },
+  logModeDesc: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  logDateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  logDateText: {
+    ...typography.body,
+    color: colors.text,
+    fontWeight: '600',
+    flex: 1,
+  },
 });
