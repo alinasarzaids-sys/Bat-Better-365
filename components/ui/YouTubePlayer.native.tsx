@@ -31,43 +31,56 @@ export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
         bounces={false}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
-        // Hide YouTube header/footer UI via CSS injection so only the video is shown
+        // Inject CSS + JS to make video fill the full player container
         injectedJavaScript={`
-          (function injectStyles() {
-            var style = document.createElement('style');
-            style.innerHTML = [
-              /* Hide all YouTube chrome except the video player */
-              '#masthead-container, ytd-masthead, #header, #guide-button { display: none !important; }',
-              'ytd-mini-guide-renderer, tp-yt-app-drawer { display: none !important; }',
-              '#secondary, ytd-watch-next-secondary-results-renderer { display: none !important; }',
-              'ytd-comments, #comments { display: none !important; }',
-              '#below, ytd-item-section-renderer { display: none !important; }',
-              '#info-contents, #info, ytd-video-primary-info-renderer { display: none !important; }',
-              'ytd-video-secondary-info-renderer { display: none !important; }',
-              '#description, ytd-expander { display: none !important; }',
-              /* Remove all padding/margin around the player */
-              'html, body { margin: 0 !important; padding: 0 !important; background: #000 !important; overflow: hidden !important; }',
-              '#page-manager, ytd-watch-flexy { background: #000 !important; }',
-              '#player-container, #player, #ytd-player, ytd-player { width: 100vw !important; }',
-              /* Make the video element fill the full screen */
-              '.html5-video-player, .html5-main-video { width: 100vw !important; height: 100vh !important; position: fixed !important; top: 0 !important; left: 0 !important; z-index: 9999 !important; }',
-              'video { width: 100vw !important; height: 100vh !important; object-fit: contain !important; position: fixed !important; top: 0 !important; left: 0 !important; z-index: 9999 !important; background: #000 !important; }',
-              /* Hide player top chrome (title bar overlay) */
-              '.ytp-chrome-top, .ytp-title { display: none !important; }',
-            ].join(' ');
-            document.head.appendChild(style);
+          (function setup() {
+            function applyStyles() {
+              var existing = document.getElementById('__bb365_style');
+              if (!existing) {
+                var style = document.createElement('style');
+                style.id = '__bb365_style';
+                style.innerHTML = [
+                  'html, body { margin:0!important; padding:0!important; background:#000!important; overflow:hidden!important; width:100vw!important; height:100vh!important; }',
+                  /* Hide every YouTube UI element except the video */
+                  '#masthead-container, ytd-masthead, #header, tp-yt-app-header, #guide-button { display:none!important; height:0!important; }',
+                  'ytd-mini-guide-renderer, tp-yt-app-drawer, #nav-drawer { display:none!important; }',
+                  '#secondary, ytd-watch-next-secondary-results-renderer { display:none!important; }',
+                  'ytd-comments, #comments, #below, #info-contents, #info { display:none!important; }',
+                  'ytd-video-primary-info-renderer, ytd-video-secondary-info-renderer { display:none!important; }',
+                  '#description, ytd-expander, ytd-item-section-renderer { display:none!important; }',
+                  '.ytp-chrome-top, .ytp-title, .ytp-share-button { display:none!important; }',
+                  /* Force the player container to fill the viewport */
+                  '#page-manager, ytd-app, ytd-watch-flexy, #player-theater-container, ytd-watch-flexy[theater] { margin:0!important; padding:0!important; background:#000!important; }',
+                  '#player-container-id, #player-container, #ytd-player, ytd-player { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; z-index:9999!important; background:#000!important; }',
+                  '.html5-video-player { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; z-index:9999!important; background:#000!important; }',
+                  'video { position:fixed!important; top:0!important; left:0!important; width:100vw!important; height:100vh!important; object-fit:contain!important; z-index:9999!important; background:#000!important; }',
+                ].join(' ');
+                (document.head || document.documentElement).appendChild(style);
+              }
 
-            // Re-apply after dynamic content loads
-            var observer = new MutationObserver(function() {
-              document.head.appendChild(style.cloneNode(true));
-            });
-            observer.observe(document.body || document.documentElement, { childList: true, subtree: false });
+              /* Scroll to top so video is in view */
+              window.scrollTo(0, 0);
 
-            // Auto-play
-            setTimeout(function() {
+              /* Force-click the video to unmute/play if muted */
               var v = document.querySelector('video');
-              if (v && v.paused) { v.play().catch(function(){}); }
-            }, 2000);
+              if (v) {
+                v.style.cssText = 'position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;object-fit:contain!important;z-index:9999!important;background:#000!important;';
+                if (v.paused) { v.play().catch(function(){}); }
+              }
+            }
+
+            /* Run immediately */
+            applyStyles();
+
+            /* Re-run after page settles (YouTube loads content dynamically) */
+            setTimeout(applyStyles, 500);
+            setTimeout(applyStyles, 1500);
+            setTimeout(applyStyles, 3000);
+
+            /* Watch for DOM mutations and re-apply */
+            var observer = new MutationObserver(function() { applyStyles(); });
+            var target = document.body || document.documentElement;
+            if (target) { observer.observe(target, { childList: true, subtree: true }); }
           })();
           true;
         `}
