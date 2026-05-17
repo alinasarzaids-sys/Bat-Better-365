@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, Pressable, Text, Linking } from 'react-native';
+import { View, StyleSheet, Pressable, Text, Linking, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
-import WebView from 'react-native-webview';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 
 interface YouTubePlayerProps {
@@ -9,8 +8,8 @@ interface YouTubePlayerProps {
   height?: number;
 }
 
-export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
-  const [showPlayer, setShowPlayer] = useState(false);
+export function YouTubePlayer({ videoId, height = 220 }: YouTubePlayerProps) {
+  const [thumbnailLoaded, setThumbnailLoaded] = useState(false);
 
   const openInYouTube = () => {
     const appUrl = `vnd.youtube:${videoId}`;
@@ -20,102 +19,46 @@ export function YouTubePlayer({ videoId, height = 200 }: YouTubePlayerProps) {
       .catch(() => Linking.openURL(webUrl));
   };
 
-  const handleWebViewMessage = (event: any) => {
-    try {
-      const msg = JSON.parse(event.nativeEvent.data);
-      if (msg.type === 'ytError') {
-        // Error 101/150/153 = embedding disabled by owner
-        setShowPlayer(false);
-        openInYouTube();
-      }
-    } catch { /* ignore */ }
-  };
-
-  if (!showPlayer) {
-    return (
-      <Pressable
-        style={[styles.container, { height }]}
-        onPress={() => setShowPlayer(true)}
-      >
-        <Image
-          source={{ uri: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` }}
-          style={styles.thumbnail}
-          contentFit="cover"
-          transition={200}
-        />
-        <View style={styles.playButtonOverlay}>
-          <View style={styles.playButton}>
-            <MaterialIcons name="play-arrow" size={48} color="#FFFFFF" />
-          </View>
-          <Pressable style={styles.ytBadge} onPress={(e) => { e.stopPropagation(); openInYouTube(); }} hitSlop={6}>
-            <MaterialIcons name="open-in-new" size={12} color="rgba(255,255,255,0.9)" />
-            <Text style={styles.ytBadgeText}>Watch on YouTube</Text>
-          </Pressable>
-        </View>
-      </Pressable>
-    );
-  }
-
-  // Use YouTube IFrame API so we can detect embed-blocked errors (101/150/153)
-  const embedHtml = `
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-    <style>
-      * { margin: 0; padding: 0; box-sizing: border-box; background: #000; }
-      html, body { width: 100%; height: 100%; }
-      #player { width: 100%; height: 100vh; }
-    </style>
-  </head>
-  <body>
-    <div id="player"></div>
-    <script>
-      var tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      document.head.appendChild(tag);
-
-      function onYouTubeIframeAPIReady() {
-        new YT.Player('player', {
-          videoId: '${videoId}',
-          playerVars: { autoplay: 1, rel: 0, modestbranding: 1, playsinline: 1 },
-          events: {
-            onError: function(e) {
-              // 101 / 150 / 153 = embedding not allowed
-              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
-                JSON.stringify({ type: 'ytError', code: e.data })
-              );
-            }
-          }
-        });
-      }
-    <\/script>
-  </body>
-</html>
-`;
-
   return (
-    <View style={[styles.playerContainer, { height }]}>
-      <WebView
-        source={{ html: embedHtml }}
-        style={styles.player}
-        allowsFullscreenVideo
-        mediaPlaybackRequiresUserAction={false}
-        javaScriptEnabled
-        domStorageEnabled
-        allowsInlineMediaPlayback
-        startInLoadingState
-        onMessage={handleWebViewMessage}
-        onError={() => openInYouTube()}
-        renderError={() => (
-          <Pressable style={styles.errorFallback} onPress={openInYouTube}>
-            <MaterialIcons name="play-circle-filled" size={56} color="#FF0000" />
-            <Text style={styles.errorTitle}>Watch on YouTube</Text>
-            <Text style={styles.errorSub}>Tap to open in YouTube app</Text>
-          </Pressable>
-        )}
+    <Pressable
+      style={[styles.container, { height }]}
+      onPress={openInYouTube}
+      android_ripple={{ color: 'rgba(255,255,255,0.1)' }}
+    >
+      {/* Thumbnail */}
+      <Image
+        source={{ uri: `https://img.youtube.com/vi/${videoId}/hqdefault.jpg` }}
+        style={styles.thumbnail}
+        contentFit="cover"
+        transition={300}
+        onLoad={() => setThumbnailLoaded(true)}
       />
-    </View>
+
+      {/* Dark overlay */}
+      <View style={styles.overlay} />
+
+      {/* Loading spinner while thumbnail loads */}
+      {!thumbnailLoaded && (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color="#fff" size="large" />
+        </View>
+      )}
+
+      {/* Play button */}
+      <View style={styles.playButtonWrapper}>
+        <View style={styles.playButton}>
+          <MaterialIcons name="play-arrow" size={52} color="#FFFFFF" />
+        </View>
+        <Text style={styles.watchLabel}>Tap to Watch</Text>
+      </View>
+
+      {/* YouTube badge bottom-right */}
+      <View style={styles.ytBadge}>
+        <MaterialIcons name="smart-display" size={16} color="#FF0000" />
+        <Text style={styles.ytBadgeText}>YouTube</Text>
+        <MaterialIcons name="open-in-new" size={13} color="rgba(255,255,255,0.85)" />
+      </View>
+    </Pressable>
   );
 }
 
@@ -123,77 +66,64 @@ const styles = StyleSheet.create({
   container: {
     width: '100%',
     backgroundColor: '#000',
-    borderRadius: 8,
+    borderRadius: 12,
     overflow: 'hidden',
-  },
-  playerContainer: {
-    width: '100%',
-    borderRadius: 8,
-    overflow: 'hidden',
-    backgroundColor: '#000',
   },
   thumbnail: {
-    width: '100%',
-    height: '100%',
+    ...StyleSheet.absoluteFillObject,
   },
-  playButtonOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.38)',
+  },
+  loadingContainer: {
+    ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  playButtonWrapper: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
   },
   playButton: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 0, 0, 0.9)',
+    backgroundColor: 'rgba(255, 0, 0, 0.92)',
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 12,
+  },
+  watchLabel: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   ytBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    position: 'absolute',
-    bottom: 10,
-    right: 10,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 5,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
   },
   ytBadgeText: {
-    color: 'rgba(255,255,255,0.9)',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  player: {
-    flex: 1,
-    backgroundColor: '#000',
-  },
-  errorFallback: {
-    flex: 1,
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  errorTitle: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 12,
     fontWeight: '700',
-  },
-  errorSub: {
-    color: 'rgba(255,255,255,0.7)',
-    fontSize: 13,
   },
 });
