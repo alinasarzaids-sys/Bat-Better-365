@@ -7,6 +7,7 @@ import {
   Pressable,
   TextInput,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -65,6 +66,9 @@ export default function FreestyleSessionScreen() {
   const [logDate, setLogDate] = React.useState(new Date());
   const [showLogDatePicker, setShowLogDatePicker] = React.useState(false);
   const [logDuration, setLogDuration] = React.useState('60');
+  const [logStep, setLogStep] = React.useState(0); // 0=setup, 1=ratings
+  const [aiTip, setAiTip] = React.useState<string | null>(null);
+  const [aiTipLoading, setAiTipLoading] = React.useState(false);
 
   useEffect(() => {
     if (prefilledDateStr && !session.isActive) {
@@ -74,7 +78,7 @@ export default function FreestyleSessionScreen() {
     }
     if (modeParam === 'log' && !session.isActive) {
       setIsLogMode(true);
-      // Jump to step 3 (rating) directly for past sessions
+      setLogStep(0);
       session.setCurrentStep(3);
     }
   }, [prefilledDateStr, modeParam]);
@@ -168,6 +172,34 @@ export default function FreestyleSessionScreen() {
     return hasTechnical && hasMental && hasPhysical && hasTactical;
   };
 
+  const fetchAiTip = async (ratings: {
+    technicalRating: number; mentalRating: number; physicalRating: number; tacticalRating: number;
+    shotExecution: number; footwork: number; timing: number;
+    focus: number; confidence: number; pressureHandling: number;
+    energyLevel: number; reactionSpeed: number;
+    shotSelection: number; gameAwareness: number;
+  }) => {
+    setAiTipLoading(true);
+    try {
+      const { getSupabaseClient } = require('@/template');
+      const supabase = getSupabaseClient();
+      const { data, error } = await supabase.functions.invoke('freestyle-ai-tip', {
+        body: {
+          trainingTypes: Array.from(session.selectedTrainingTypes)
+            .map((t: any) => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(', '),
+          focusArea: session.focusArea,
+          sessionGoal: session.sessionGoal,
+          ballsFaced: session.ballsFaced,
+          ballsMiddled: session.ballsMiddled,
+          isLogMode,
+          ...ratings,
+        },
+      });
+      if (!error && data?.tip) setAiTip(data.tip);
+    } catch (_) {}
+    setAiTipLoading(false);
+  };
+
   const handleCompleteSession = async () => {
     if (!user) { showAlert('Error', 'You must be logged in'); return; }
     if (!isStep3Valid()) {
@@ -218,6 +250,13 @@ export default function FreestyleSessionScreen() {
     session.setSaving(false);
     session.setXpBreakdown(xpResult.xpBreakdown);
     session.setCurrentStep(4);
+    fetchAiTip({
+      technicalRating, mentalRating, physicalRating, tacticalRating,
+      shotExecution: session.shotExecution, footwork: session.footwork, timing: session.timing,
+      focus: session.focus, confidence: session.confidence, pressureHandling: session.pressureHandling,
+      energyLevel: session.energyLevel, reactionSpeed: session.reactionSpeed,
+      shotSelection: session.shotSelection, gameAwareness: session.gameAwareness,
+    });
   };
 
   const RatingStars = ({
@@ -410,55 +449,108 @@ export default function FreestyleSessionScreen() {
     </ScrollView>
   );
 
+  const renderLogSetup = () => (
+    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <View style={styles.logModeCard}>
+        <View style={styles.logModeHeader}>
+          <MaterialIcons name="history" size={20} color={colors.success} />
+          <Text style={styles.logModeTitle}>Log Past Session</Text>
+        </View>
+        <Text style={styles.logModeDesc}>When did this session take place?</Text>
+        <Pressable style={styles.logDateButton} onPress={() => setShowLogDatePicker(true)}>
+          <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
+          <Text style={styles.logDateText}>
+            {logDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+          </Text>
+          <MaterialIcons name="edit" size={16} color={colors.textSecondary} />
+        </Pressable>
+        {showLogDatePicker && (
+          <DateTimePicker
+            value={logDate}
+            mode="date"
+            maximumDate={new Date()}
+            display="default"
+            onChange={(e: any, d?: Date) => { setShowLogDatePicker(false); if (d) setLogDate(d); }}
+          />
+        )}
+        <Text style={[styles.label, { marginTop: spacing.md }]}>Duration (minutes)</Text>
+        <View style={styles.durationOptions}>
+          {['15', '30', '45', '60', '90', '120'].map(mins => (
+            <Pressable key={mins} style={[styles.durationOption, logDuration === mins && styles.durationOptionSelected]} onPress={() => setLogDuration(mins)}>
+              <Text style={[styles.durationOptionText, logDuration === mins && styles.durationOptionTextSelected]}>{mins} min</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+
+      <Text style={styles.stepTitle}>What did you train with?</Text>
+      <Text style={styles.stepSubtitle}>Select all that apply</Text>
+      <View style={styles.trainingTypesGrid}>
+        {TRAINING_TYPES.map(type => {
+          const isSelected = session.selectedTrainingTypes.has(type.id);
+          return (
+            <Pressable key={type.id} style={[styles.trainingTypeCard, isSelected && styles.trainingTypeCardSelected]} onPress={() => toggleTrainingType(type.id)}>
+              <View style={[styles.trainingTypeIcon, isSelected && styles.trainingTypeIconSelected]}>
+                <MaterialIcons name={type.icon as any} size={32} color={isSelected ? colors.textLight : colors.primary} />
+              </View>
+              <Text style={[styles.trainingTypeLabel, isSelected && styles.trainingTypeLabelSelected]}>{type.label}</Text>
+              {isSelected && <View style={styles.checkMark}><MaterialIcons name="check-circle" size={24} color={colors.success} /></View>}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <View style={styles.additionalFields}>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Focus Area (Optional)</Text>
+          <TextInput style={styles.input} value={session.focusArea} onChangeText={session.setFocusArea} placeholder="e.g., Cover drives, Pull shots" placeholderTextColor={colors.textSecondary} />
+        </View>
+        <View style={styles.formGroup}>
+          <Text style={styles.label}>Session Goal (Optional)</Text>
+          <TextInput style={styles.input} value={session.sessionGoal} onChangeText={session.setSessionGoal} placeholder="e.g., Improve timing" placeholderTextColor={colors.textSecondary} />
+        </View>
+      </View>
+    </ScrollView>
+  );
+
   const renderStep3 = () => (
     <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-      {/* Log Mode: date & duration inputs */}
+      {/* Log Mode: session summary */}
       {isLogMode && (
         <View style={styles.logModeCard}>
           <View style={styles.logModeHeader}>
             <MaterialIcons name="history" size={20} color={colors.success} />
             <Text style={styles.logModeTitle}>Log Past Session</Text>
           </View>
-          <Text style={styles.logModeDesc}>When did this session take place?</Text>
-
-          <Pressable
-            style={styles.logDateButton}
-            onPress={() => setShowLogDatePicker(true)}
-          >
-            <MaterialIcons name="calendar-today" size={20} color={colors.primary} />
-            <Text style={styles.logDateText}>
+          <Text style={styles.logModeDesc}>Session summary</Text>
+          <View style={styles.logSummaryRow}>
+            <MaterialIcons name="calendar-today" size={16} color={colors.primary} />
+            <Text style={styles.logSummaryText}>
               {logDate.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
             </Text>
-            <MaterialIcons name="edit" size={16} color={colors.textSecondary} />
-          </Pressable>
-
-          {showLogDatePicker && (
-            <DateTimePicker
-              value={logDate}
-              mode="date"
-              maximumDate={new Date()}
-              display="default"
-              onChange={(e: any, d?: Date) => {
-                setShowLogDatePicker(false);
-                if (d) setLogDate(d);
-              }}
-            />
-          )}
-
-          <Text style={[styles.label, { marginTop: spacing.md }]}>Duration (minutes)</Text>
-          <View style={styles.durationOptions}>
-            {['15', '30', '45', '60', '90', '120'].map(mins => (
-              <Pressable
-                key={mins}
-                style={[styles.durationOption, logDuration === mins && styles.durationOptionSelected]}
-                onPress={() => setLogDuration(mins)}
-              >
-                <Text style={[styles.durationOptionText, logDuration === mins && styles.durationOptionTextSelected]}>
-                  {mins} min
-                </Text>
-              </Pressable>
-            ))}
+            <MaterialIcons name="access-time" size={16} color={colors.primary} style={{ marginLeft: spacing.md }} />
+            <Text style={styles.logSummaryText}>{logDuration} min</Text>
           </View>
+          {session.selectedTrainingTypes.size > 0 && (
+            <View style={styles.logSummaryRow}>
+              <MaterialIcons name="sports-cricket" size={16} color={colors.primary} />
+              <Text style={styles.logSummaryText} numberOfLines={2}>
+                {Array.from(session.selectedTrainingTypes).map((t: any) => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(', ')}
+              </Text>
+            </View>
+          )}
+          {session.focusArea ? (
+            <View style={styles.logSummaryRow}>
+              <MaterialIcons name="center-focus-strong" size={16} color={colors.primary} />
+              <Text style={styles.logSummaryText}>Focus: {session.focusArea}</Text>
+            </View>
+          ) : null}
+          {session.sessionGoal ? (
+            <View style={styles.logSummaryRow}>
+              <MaterialIcons name="flag" size={16} color={colors.primary} />
+              <Text style={styles.logSummaryText}>Goal: {session.sessionGoal}</Text>
+            </View>
+          ) : null}
         </View>
       )}
 
@@ -530,6 +622,28 @@ export default function FreestyleSessionScreen() {
         <RatingStars rating={session.gameAwareness} onRate={session.setGameAwareness} label="Game Awareness" sublabel="How well did you read the game situation?" color={colors.tactical} />
       </View>
 
+      {/* Focus & goal recap for live mode */}
+      {!isLogMode && (session.focusArea || session.sessionGoal) && (
+        <View style={styles.sessionContextCard}>
+          <View style={styles.sessionContextHeader}>
+            <MaterialIcons name="lightbulb" size={16} color={colors.warning} />
+            <Text style={styles.sessionContextTitle}>Session Context</Text>
+          </View>
+          {session.focusArea ? (
+            <View style={styles.sessionContextRow}>
+              <Text style={styles.sessionContextLabel}>Focus Area: </Text>
+              <Text style={styles.sessionContextValue}>{session.focusArea}</Text>
+            </View>
+          ) : null}
+          {session.sessionGoal ? (
+            <View style={styles.sessionContextRow}>
+              <Text style={styles.sessionContextLabel}>Goal: </Text>
+              <Text style={styles.sessionContextValue}>{session.sessionGoal}</Text>
+            </View>
+          ) : null}
+        </View>
+      )}
+
       <View style={styles.formGroup}>
         <Text style={styles.label}>Session Notes (Optional)</Text>
         <TextInput
@@ -598,6 +712,22 @@ export default function FreestyleSessionScreen() {
           ))}
         </View>
 
+        {/* AI Coach Tip */}
+        <View style={styles.aiTipCard}>
+          <View style={styles.aiTipHeader}>
+            <MaterialIcons name="psychology" size={20} color={colors.mental} />
+            <Text style={styles.aiTipTitle}>AI Coach Tip</Text>
+            {aiTipLoading && <ActivityIndicator size="small" color={colors.mental} style={{ marginLeft: 'auto' }} />}
+          </View>
+          {aiTipLoading ? (
+            <Text style={styles.aiTipLoading}>Analysing your session...</Text>
+          ) : aiTip ? (
+            <Text style={styles.aiTipText}>{aiTip}</Text>
+          ) : (
+            <Text style={styles.aiTipLoading}>Loading coaching tip...</Text>
+          )}
+        </View>
+
         {session.xpBreakdown && (
           <View style={styles.xpSection}>
             <Text style={styles.xpSectionTitle}>XP Earned</Text>
@@ -633,6 +763,24 @@ export default function FreestyleSessionScreen() {
   };
 
   const getFooterButton = () => {
+    // Log mode step 0: training setup
+    if (isLogMode && session.currentStep === 3 && logStep === 0) {
+      return (
+        <Pressable
+          style={[styles.saveButton, session.selectedTrainingTypes.size === 0 && styles.saveButtonDisabled]}
+          onPress={() => {
+            if (session.selectedTrainingTypes.size === 0) {
+              showAlert('Error', 'Please select at least one training type');
+              return;
+            }
+            setLogStep(1);
+          }}
+        >
+          <MaterialIcons name="arrow-forward" size={20} color={colors.textLight} />
+          <Text style={styles.saveButtonText}>Next: Rate Performance</Text>
+        </Pressable>
+      );
+    }
     switch (session.currentStep) {
       case 1:
         return (
@@ -687,8 +835,11 @@ export default function FreestyleSessionScreen() {
   };
 
   const handleBack = () => {
-    if (isLogMode && session.currentStep === 3) {
-      // Exit log mode entirely
+    if (isLogMode && session.currentStep === 3 && logStep === 1) {
+      setLogStep(0);
+      return;
+    }
+    if (isLogMode && session.currentStep === 3 && logStep === 0) {
       session.resetSession();
       setIsLogMode(false);
       router.back();
@@ -710,7 +861,12 @@ export default function FreestyleSessionScreen() {
         </Pressable>
         <View style={styles.headerTitleContainer}>
           <Text style={styles.headerTitle}>{getStepTitle()}</Text>
-          <Text style={styles.headerSubtitle}>{isLogMode ? 'Rate your performance' : `Step ${session.currentStep} of 4`}</Text>
+          <Text style={styles.headerSubtitle}>
+        {isLogMode
+          ? (logStep === 0 ? 'Step 1 of 2: Session Details' : 'Step 2 of 2: Rate Performance')
+          : `Step ${session.currentStep} of 4`
+        }
+      </Text>
         </View>
         {session.currentStep === 2 ? (
           <Pressable onPress={handleMinimize} style={[styles.headerButton, styles.headerMinimizeBtn]}>
@@ -729,7 +885,8 @@ export default function FreestyleSessionScreen() {
 
       {session.currentStep === 1 && renderStep1()}
       {session.currentStep === 2 && renderStep2()}
-      {session.currentStep === 3 && renderStep3()}
+      {session.currentStep === 3 && isLogMode && logStep === 0 && renderLogSetup()}
+      {session.currentStep === 3 && (!isLogMode || logStep === 1) && renderStep3()}
       {session.currentStep === 4 && renderStep4()}
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom + spacing.md, spacing.lg) }]}>
@@ -1011,5 +1168,82 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
     flex: 1,
+  },
+  logSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+    flexWrap: 'wrap',
+  },
+  logSummaryText: {
+    ...typography.bodySmall,
+    color: colors.text,
+    fontWeight: '600',
+    flex: 1,
+  },
+  sessionContextCard: {
+    backgroundColor: colors.warning + '10',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.warning + '30',
+  },
+  sessionContextHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  sessionContextTitle: {
+    ...typography.bodySmall,
+    color: colors.warning,
+    fontWeight: '700',
+  },
+  sessionContextRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 2,
+  },
+  sessionContextLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  sessionContextValue: {
+    ...typography.bodySmall,
+    color: colors.text,
+    flex: 1,
+  },
+  aiTipCard: {
+    backgroundColor: colors.mental + '12',
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.mental + '30',
+  },
+  aiTipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  aiTipTitle: {
+    ...typography.body,
+    color: colors.mental,
+    fontWeight: '700',
+    flex: 1,
+  },
+  aiTipLoading: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+  },
+  aiTipText: {
+    ...typography.body,
+    color: colors.text,
+    lineHeight: 22,
   },
 });
