@@ -69,6 +69,7 @@ export default function FreestyleSessionScreen() {
   const [logStep, setLogStep] = React.useState(0); // 0=setup, 1=ratings
   const [aiTip, setAiTip] = React.useState<string | null>(null);
   const [aiTipLoading, setAiTipLoading] = React.useState(false);
+  const [improvementFocus, setImprovementFocus] = React.useState('');
 
   useEffect(() => {
     if (prefilledDateStr && !session.isActive) {
@@ -192,6 +193,7 @@ export default function FreestyleSessionScreen() {
           ballsFaced: session.ballsFaced,
           ballsMiddled: session.ballsMiddled,
           isLogMode,
+          improvementFocus: improvementFocus.trim() || null,
           ...ratings,
         },
       });
@@ -643,6 +645,25 @@ export default function FreestyleSessionScreen() {
           ) : null}
         </View>
       )}
+
+      {/* Improvement focus — feeds AI tip */}
+      <View style={[styles.improvementCard]}>
+        <View style={styles.improvementHeader}>
+          <MaterialIcons name="psychology" size={18} color={colors.mental} />
+          <Text style={styles.improvementTitle}>What do you need to improve? (Optional)</Text>
+        </View>
+        <Text style={styles.improvementDesc}>Tell the AI Coach what to focus on, or leave blank for general feedback.</Text>
+        <TextInput
+          style={[styles.input, styles.improvementInput]}
+          value={improvementFocus}
+          onChangeText={setImprovementFocus}
+          placeholder="e.g., My timing against spin, footwork on leg stump..."
+          placeholderTextColor={colors.textSecondary}
+          multiline
+          numberOfLines={2}
+          textAlignVertical="top"
+        />
+      </View>
 
       <View style={styles.formGroup}>
         <Text style={styles.label}>Session Notes (Optional)</Text>
@@ -1215,6 +1236,35 @@ const styles = StyleSheet.create({
     ...typography.bodySmall,
     color: colors.text,
     flex: 1,
+  },
+  improvementCard: {
+    backgroundColor: colors.mental + '10',
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.mental + '30',
+  },
+  improvementHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  improvementTitle: {
+    ...typography.body,
+    color: colors.mental,
+    fontWeight: '700',
+    flex: 1,
+  },
+  improvementDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.md,
+  },
+  improvementInput: {
+    minHeight: 64,
+    paddingTop: spacing.sm,
   },
   aiTipCard: {
     backgroundColor: colors.mental + '12',

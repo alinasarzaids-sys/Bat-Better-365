@@ -31,13 +31,31 @@ serve(async (req) => {
       ballsFaced,
       ballsMiddled,
       isLogMode,
+      improvementFocus,
     } = await req.json();
 
     const middlePct = ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0
       ? Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)
       : null;
 
-    const prompt = `You are an expert cricket batting coach. A player just completed a ${isLogMode ? 'logged past' : 'live'} freestyle batting session. Analyse their performance data and give ONE concise, actionable coaching tip to help them improve.
+    const prompt = improvementFocus
+      ? `You are an expert cricket batting coach. A player just completed a ${isLogMode ? 'logged past' : 'live'} freestyle batting session. The player specifically wants help with: "${improvementFocus}". Give ONE focused, actionable coaching tip addressing exactly this area.
+
+Session Context:
+- Training with: ${trainingTypes || 'Not specified'}
+${focusArea ? `- Focus area: ${focusArea}` : ''}
+${sessionGoal ? `- Session goal: ${sessionGoal}` : ''}
+${ballsFaced ? `- Balls faced: ${ballsFaced}` : ''}
+${ballsMiddled ? `- Balls middled: ${ballsMiddled}${middlePct !== null ? ` (${middlePct}% middle rate)` : ''}` : ''}
+
+Performance Ratings (out of 5):
+Technical: ${technicalRating}/5 (Shot Execution: ${shotExecution}/5, Footwork: ${footwork}/5, Timing: ${timing}/5)
+Mental: ${mentalRating}/5 (Focus: ${focus}/5, Confidence: ${confidence}/5, Pressure Handling: ${pressureHandling}/5)
+Physical: ${physicalRating}/5 (Energy: ${energyLevel}/5, Reaction Speed: ${reactionSpeed}/5)
+Tactical: ${tacticalRating}/5 (Shot Selection: ${shotSelection}/5, Game Awareness: ${gameAwareness}/5)
+
+Focus your entire response on: "${improvementFocus}". Give a specific drill or mental cue in 2-3 sentences. Be encouraging.`
+      : `You are an expert cricket batting coach. A player just completed a ${isLogMode ? 'logged past' : 'live'} freestyle batting session. Analyse their performance data and give ONE concise, actionable coaching tip to help them improve.
 
 Session Details:
 - Training with: ${trainingTypes || 'Not specified'}
