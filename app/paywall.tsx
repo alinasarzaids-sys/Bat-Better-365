@@ -94,7 +94,6 @@ export default function PaywallScreen() {
 
   const findRCPackage = (planId: string) => {
     if (!rcPackages.length) return null;
-    // Match by packageType first
     const typeMap: Record<string, string> = {
       monthly: 'MONTHLY',
       sixmonth: 'SIX_MONTH',
@@ -102,7 +101,6 @@ export default function PaywallScreen() {
     };
     const targetType = typeMap[planId];
     let pkg = rcPackages.find((p: any) => p.packageType === targetType);
-    // Fallback: match by identifier string
     if (!pkg) {
       pkg = rcPackages.find((p: any) =>
         (p.identifier || '').toLowerCase().includes(planId) ||
@@ -131,7 +129,6 @@ export default function PaywallScreen() {
     const raw = discountCode.trim();
     const upper = raw.toUpperCase();
 
-    // Standard discount code
     if (upper === DISCOUNT_CODE) {
       setDiscountApplied(true);
       setShowCodeInput(false);
@@ -139,14 +136,12 @@ export default function PaywallScreen() {
       return;
     }
 
-    // Promo codes (apna1–apna28) → grant 1 year free
     const lower = raw.toLowerCase();
     if (lower.startsWith('apna') && !isNaN(Number(lower.slice(4)))) {
       if (!user?.id) { showAlert('Sign In Required', 'Please sign in before redeeming a promo code.'); return; }
       setPromoLoading(true);
       try {
         const supabase = getSupabaseClient();
-        // Find promo code
         const { data: promo, error: promoErr } = await supabase
           .from('promo_codes')
           .select('id, usage_limit, used_count, is_active')
@@ -159,7 +154,6 @@ export default function PaywallScreen() {
           showAlert('Code Used', 'This promo code has already been redeemed.'); setPromoLoading(false); return;
         }
 
-        // Check if user already redeemed this code
         const { data: existing } = await supabase
           .from('user_promo_redemptions')
           .select('id')
@@ -168,7 +162,6 @@ export default function PaywallScreen() {
           .maybeSingle();
         if (existing) { showAlert('Already Redeemed', 'You have already used this promo code.'); setPromoLoading(false); return; }
 
-        // Grant 1 month free subscription
         const expiry = new Date();
         expiry.setMonth(expiry.getMonth() + 1);
         await supabase.from('user_subscriptions').delete().eq('user_id', user.id);
@@ -182,10 +175,7 @@ export default function PaywallScreen() {
         });
         if (subErr) throw subErr;
 
-        // Record redemption
         await supabase.from('user_promo_redemptions').insert({ user_id: user.id, promo_code_id: promo.id });
-
-        // Increment used_count
         await supabase.from('promo_codes').update({ used_count: promo.used_count + 1 }).eq('id', promo.id);
 
         setPromoLoading(false);
@@ -209,7 +199,6 @@ export default function PaywallScreen() {
     const plan = PLANS.find(p => p.id === selectedPlan);
     if (!plan || !user) return;
 
-    // Find the matching RevenueCat package
     const rcPackage = findRCPackage(selectedPlan);
     if (!rcPackage) {
       showAlert(
@@ -225,13 +214,11 @@ export default function PaywallScreen() {
 
       if (!result.success) {
         setLoading(false);
-        // Silent dismiss on user cancellation
         if (result.error && result.error.toLowerCase().includes('cancel')) return;
         showAlert('Purchase Failed', result.error || 'Something went wrong. Please try again.');
         return;
       }
 
-      // Purchase succeeded — sync to Supabase for our own tracking
       const supabase = getSupabaseClient();
       const expiry = new Date();
       if (plan.id === 'monthly') expiry.setMonth(expiry.getMonth() + 1);
@@ -249,7 +236,6 @@ export default function PaywallScreen() {
       });
 
       if (subErr) {
-        // Log but don't block — RC purchase is confirmed, Supabase sync is secondary
         console.error('Supabase sync error after purchase:', subErr);
       }
 
@@ -267,7 +253,6 @@ export default function PaywallScreen() {
       const result = await revenueCatService.restorePurchases();
 
       if (result.success) {
-        // Get customer info to determine expiry for Supabase sync
         const customerInfo = await revenueCatService.getCustomerInfo();
         const activeEntitlements = customerInfo?.entitlements?.active || {};
         const entitlementKeys = Object.keys(activeEntitlements);
@@ -276,7 +261,7 @@ export default function PaywallScreen() {
           const entitlement = activeEntitlements[entitlementKeys[0]];
           const expiryDate = entitlement.expirationDate
             ? new Date(entitlement.expirationDate)
-            : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000); // 1 year fallback
+            : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000);
 
           const supabase = getSupabaseClient();
           await supabase.from('user_subscriptions').delete().eq('user_id', user!.id);
@@ -380,6 +365,11 @@ export default function PaywallScreen() {
             Train smarter. Progress faster. Perform better.{'\n'}
             Join thousands of cricketers already improving.
           </Text>
+          {/* Free trial hero banner */}
+          <View style={styles.trialHeroBanner}>
+            <MaterialIcons name="stars" size={16} color="#fff" />
+            <Text style={styles.trialHeroBannerText}>7-Day Free Trial — No charge today</Text>
+          </View>
         </View>
 
         {/* Features */}
@@ -404,6 +394,15 @@ export default function PaywallScreen() {
 
         {/* Plan selector */}
         <Text style={styles.sectionTitle}>Choose Your Plan</Text>
+
+        {/* Trial info row */}
+        <View style={styles.trialInfoBar}>
+          <MaterialIcons name="lock-open" size={15} color={colors.success} />
+          <Text style={styles.trialInfoText}>
+            All plans include a <Text style={styles.trialInfoBold}>7-day free trial</Text>. Cancel before the trial ends and you will not be charged.
+          </Text>
+        </View>
+
         {PLANS.map(plan => {
           const price = getPrice(plan);
           const selected = selectedPlan === plan.id;
@@ -425,6 +424,7 @@ export default function PaywallScreen() {
                     </View>
                   )}
                 </View>
+                <Text style={styles.planTrialTag}>7-day free trial included</Text>
                 {plan.save && discountApplied && (
                   <Text style={styles.planSave}>{plan.save}</Text>
                 )}
@@ -458,10 +458,11 @@ export default function PaywallScreen() {
           ) : (
             <>
               <MaterialIcons name="lock-open" size={20} color="#fff" />
-              <Text style={styles.subscribeBtnText}>Start Training Now</Text>
+              <Text style={styles.subscribeBtnText}>Start 7-Day Free Trial</Text>
             </>
           )}
         </Pressable>
+        <Text style={styles.trialCtaNote}>No charge today. Cancel anytime before trial ends.</Text>
 
         {/* Promo / Discount code */}
         <View style={styles.discountSection}>
@@ -494,7 +495,7 @@ export default function PaywallScreen() {
             <Text style={styles.restoreText}>Restore Purchases</Text>
           </Pressable>
           <Text style={styles.legal}>
-            Subscriptions auto-renew unless cancelled. Cancel anytime in App Store / Play Store settings.
+            Subscriptions auto-renew unless cancelled at least 24 hours before the end of the trial or current period. Cancel anytime in App Store / Play Store settings.
             By subscribing you agree to our Terms of Service and Privacy Policy.
           </Text>
         </View>
@@ -518,7 +519,13 @@ const styles = StyleSheet.create({
   },
   badgeText: { color: '#fff', fontSize: 13, fontWeight: '700' },
   headline: { fontSize: 30, fontWeight: '900', color: colors.text, textAlign: 'center', lineHeight: 36, marginBottom: spacing.sm },
-  subline: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20 },
+  subline: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: spacing.md },
+  trialHeroBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 7,
+    backgroundColor: '#22C55E', paddingHorizontal: 16, paddingVertical: 8,
+    borderRadius: 24, marginTop: spacing.xs,
+  },
+  trialHeroBannerText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   featuresCard: {
     backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
@@ -540,6 +547,16 @@ const styles = StyleSheet.create({
   discountBannerText: { color: '#fff', fontWeight: '700', fontSize: 13 },
 
   sectionTitle: { fontSize: 13, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: spacing.sm },
+
+  trialInfoBar: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: colors.success + '12', borderRadius: borderRadius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2,
+    marginBottom: spacing.sm,
+    borderWidth: 1, borderColor: colors.success + '35',
+  },
+  trialInfoText: { flex: 1, fontSize: 12, color: colors.text, lineHeight: 18 },
+  trialInfoBold: { fontWeight: '800', color: colors.success },
 
   planCard: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
@@ -563,6 +580,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.textSecondary,
   },
   planBadgeText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.5 },
+  planTrialTag: { fontSize: 11, color: colors.success, fontWeight: '700', marginTop: 3 },
   planSave: { fontSize: 11, color: '#22C55E', fontWeight: '700', marginTop: 2 },
   planPrice: { fontSize: 20, fontWeight: '900', color: colors.text },
   planOldPrice: { fontSize: 12, color: colors.textSecondary, textDecorationLine: 'line-through' },
@@ -571,10 +589,14 @@ const styles = StyleSheet.create({
   subscribeBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10,
     backgroundColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.lg, marginTop: spacing.md, marginBottom: spacing.md,
+    paddingVertical: spacing.lg, marginTop: spacing.md, marginBottom: spacing.xs,
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 10, elevation: 8,
   },
   subscribeBtnText: { color: '#fff', fontSize: 18, fontWeight: '900' },
+  trialCtaNote: {
+    textAlign: 'center', fontSize: 12, color: colors.textSecondary,
+    marginBottom: spacing.md, marginTop: 2,
+  },
 
   discountSection: { alignItems: 'center', marginBottom: spacing.md },
   discountToggle: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: spacing.sm },
