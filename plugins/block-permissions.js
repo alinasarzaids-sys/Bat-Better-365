@@ -11,6 +11,11 @@
  */
 const { withAndroidManifest } = require('@expo/config-plugins');
 
+// Permissions that MUST be present for billing to work
+const BILLING_PERMISSIONS = [
+  'com.android.vending.BILLING',
+];
+
 const PERMISSIONS_TO_REMOVE = [
   'android.permission.READ_MEDIA_IMAGES',
   'android.permission.READ_MEDIA_VIDEO',
@@ -66,6 +71,19 @@ const withBlockPermissions = (config) => {
             'tools:node': 'remove',
           },
         });
+      }
+    }
+
+    // Ensure billing permissions are present and NOT removed
+    for (const perm of BILLING_PERMISSIONS) {
+      const alreadyPresent = filteredPerms.some(
+        (p) => p.$['android:name'] === perm && p.$['tools:node'] !== 'remove'
+      );
+      if (!alreadyPresent) {
+        // Remove any accidental remove entry
+        const idx = filteredPerms.findIndex((p) => p.$['android:name'] === perm);
+        if (idx !== -1) filteredPerms.splice(idx, 1);
+        filteredPerms.push({ $: { 'android:name': perm } });
       }
     }
 
