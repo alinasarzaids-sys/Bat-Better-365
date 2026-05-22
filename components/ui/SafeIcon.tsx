@@ -415,6 +415,54 @@ const ICON_MAP: Record<string, string> = {
   'gesture': '✌',
   'pinch': '🤌',
 
+  // Auth
+  'login': '→',
+  'logout': '↩',
+  'person-add': '👤+',
+  'person-add-alt': '👤+',
+  'person-remove': '👤−',
+  'no-accounts': '🚫',
+  'switch-account': '↔',
+  'mark-email-read': '✉✓',
+  'mail-outline': '✉',
+  'mail-lock': '✉🔒',
+  'contact-mail': '✉',
+
+  // Privacy & Security
+  'privacy-tip': '🔏',
+  'lock-outline': '🔓',
+  'lock-reset': '🔑',
+  'delete-forever': '🗑',
+  'no-encryption': '🔓',
+  'enhanced-encryption': '🔒',
+  'vpn-lock': '🔒',
+
+  // Analytics extras
+  'radar': '📡',
+  'track-changes': '◎',
+  'grid-on': '⊞',
+  'grid-off': '⊟',
+  'auto-awesome': '✨',
+  'auto-fix-high': '✨',
+  'stars': '⭐',
+  'star-rate': '★',
+  'workspace-premium': '⭐',
+  'military-tech': '🏅',
+
+  // More actions
+  'power-settings-new': '⏻',
+  'restart-alt': '↺',
+  'system-update': '⬆',
+  'app-settings-alt': '⚙',
+  'manage-search': '🔍',
+  'find-in-page': '🔍',
+  'preview': '👁',
+  'open-in-browser': '↗',
+  'screenshot': '📷',
+  'cast': '📺',
+  'devices-other': '📱',
+  'phonelink': '🔗',
+
   // Default fallback
   'default': '■',
 };
