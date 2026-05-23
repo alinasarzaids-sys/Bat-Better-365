@@ -1102,6 +1102,7 @@ const hist = StyleSheet.create({
 function TrainingTimeline({ userId }: { userId: string }) {
   const [monthlyStats, setMonthlyStats] = useState<{ pillar: string; minutes: number }[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showInfoModal, setShowInfoModal] = useState(false);
 
   const loadMonthlyStats = useCallback(async () => {
     if (!userId) return;
@@ -1112,14 +1113,19 @@ function TrainingTimeline({ userId }: { userId: string }) {
       const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-      // Personal sessions this month
-      const { data: sessData } = await supabase
+      // Personal sessions this month — check BOTH completed_at AND scheduled_date
+      // because some sessions store the date in scheduled_date while completed_at may be null
+      const { data: sessAllData } = await supabase
         .from('sessions')
-        .select('session_type, duration_minutes, notes')
+        .select('session_type, duration_minutes, notes, completed_at, scheduled_date')
         .eq('user_id', userId)
-        .eq('status', 'completed')
-        .gte('completed_at', monthStart)
-        .lte('completed_at', monthEnd + 'T23:59:59');
+        .eq('status', 'completed');
+
+      // Filter client-side: session falls in current month via completed_at OR scheduled_date
+      const sessData = (sessAllData || []).filter((s: any) => {
+        const dateStr = (s.completed_at || s.scheduled_date || '').split('T')[0];
+        return dateStr >= monthStart && dateStr <= monthEnd;
+      });
 
       // Academy logs this month
       const { data: logData } = await supabase
@@ -1131,9 +1137,9 @@ function TrainingTimeline({ userId }: { userId: string }) {
 
       const pillars: Record<string, number> = { Technical: 0, Physical: 0, Mental: 0, Tactical: 0, Freestyle: 0 };
 
-      (sessData || []).forEach((s: any) => {
+      sessData.forEach((s: any) => {
         const type = (s.session_type || '').toLowerCase();
-        const mins = s.duration_minutes || 0;
+        const mins = s.duration_minutes || 30; // default 30min if not set
         // Try to detect training_types from notes JSON
         let trainingTypes: string[] = [];
         if (s.notes) {
@@ -1197,52 +1203,97 @@ function TrainingTimeline({ userId }: { userId: string }) {
   const totalMins = pillars.reduce((a, p) => a + p.minutes, 0);
 
   return (
-    <View style={tl.card}>
-      <View style={tl.headerRow}>
-        <View style={tl.headerLeft}>
-          <MaterialIcons name="bar-chart" size={18} color={colors.primary} />
-          <Text style={tl.title}>Training Timeline</Text>
-          <View style={tl.infoPill}>
-            <MaterialIcons name="info-outline" size={12} color={colors.primary} />
+    <>
+      <View style={tl.card}>
+        <View style={tl.headerRow}>
+          <View style={tl.headerLeft}>
+            <MaterialIcons name="bar-chart" size={18} color={colors.primary} />
+            <Text style={tl.title}>Training Timeline</Text>
+            <Pressable
+              onPress={() => setShowInfoModal(true)}
+              style={tl.infoPill}
+              hitSlop={8}
+            >
+              <MaterialIcons name="info-outline" size={12} color={colors.primary} />
+            </Pressable>
+          </View>
+          <View style={tl.monthBadge}>
+            <Text style={tl.monthText}>{currentMonth}</Text>
           </View>
         </View>
-        <View style={tl.monthBadge}>
-          <Text style={tl.monthText}>{currentMonth}</Text>
+        <Text style={tl.subtitle}>Track your monthly training time across all four pillars</Text>
+
+        {loading ? (
+          <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.md }} />
+        ) : totalMins === 0 ? (
+          <View style={tl.emptyBox}>
+            <Text style={tl.emptyText}>No sessions logged this month yet. Start training to see your breakdown.</Text>
+          </View>
+        ) : (
+          <View style={tl.pillarsContainer}>
+            {pillars.map(p => {
+              const pct = (p.minutes / maxMinutes) * 100;
+              return (
+                <View key={p.name} style={tl.pillarRow}>
+                  <View style={tl.pillarHeader}>
+                    <View style={[tl.pillarDot, { backgroundColor: p.color }]} />
+                    <Text style={tl.pillarName}>{p.name}</Text>
+                  </View>
+                  <View style={tl.barContainer}>
+                    <View style={[tl.bar, { width: `${Math.max(pct, 2)}%`, backgroundColor: p.color }]} />
+                  </View>
+                  <Text style={tl.pillarMins}>{p.minutes} min</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={tl.footer}>
+          <MaterialIcons name="info-outline" size={13} color={colors.textSecondary} />
+          <Text style={tl.footerText}>Resets monthly • Focus on weaker areas to improve</Text>
         </View>
       </View>
-      <Text style={tl.subtitle}>Track your monthly training time across all four pillars</Text>
 
-      {loading ? (
-        <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.md }} />
-      ) : totalMins === 0 ? (
-        <View style={tl.emptyBox}>
-          <Text style={tl.emptyText}>No sessions logged this month yet. Start training to see your breakdown.</Text>
-        </View>
-      ) : (
-        <View style={tl.pillarsContainer}>
-          {pillars.map(p => {
-            const pct = (p.minutes / maxMinutes) * 100;
-            return (
-              <View key={p.name} style={tl.pillarRow}>
-                <View style={tl.pillarHeader}>
-                  <View style={[tl.pillarDot, { backgroundColor: p.color }]} />
-                  <Text style={tl.pillarName}>{p.name}</Text>
-                </View>
-                <View style={tl.barContainer}>
-                  <View style={[tl.bar, { width: `${pct}%`, backgroundColor: p.color }]} />
-                </View>
-                <Text style={tl.pillarMins}>{p.minutes} min</Text>
+      <Modal visible={showInfoModal} animationType="fade" transparent onRequestClose={() => setShowInfoModal(false)}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: spacing.lg }}>
+          <View style={{ backgroundColor: colors.surface, borderRadius: 20, padding: spacing.lg, width: '100%', maxWidth: 400 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+                <MaterialIcons name="bar-chart" size={20} color={colors.primary} />
+                <Text style={{ fontSize: 17, fontWeight: '800', color: colors.text }}>Training Timeline</Text>
               </View>
-            );
-          })}
+              <Pressable onPress={() => setShowInfoModal(false)} hitSlop={8}>
+                <MaterialIcons name="close" size={22} color={colors.text} />
+              </Pressable>
+            </View>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.md }}>
+              This chart shows the total minutes you have trained in each pillar during the current calendar month.
+            </Text>
+            {[['Technical', colors.technical || '#2196F3', 'Batting technique, footwork, shot mechanics'],
+              ['Physical', colors.physical || '#4CAF50', 'Fitness, strength, speed, conditioning'],
+              ['Mental', colors.mental || '#9C27B0', 'Focus, confidence, composure under pressure'],
+              ['Tactical', colors.tactical || '#FF9800', 'Game strategy, field awareness, shot selection'],
+              ['Freestyle', '#E53935', 'Open sessions not tied to a specific pillar'],
+            ].map(([name, color, desc]) => (
+              <View key={name as string} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, marginBottom: spacing.sm }}>
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: color as string, marginTop: 3 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: colors.text }}>{name}</Text>
+                  <Text style={{ fontSize: 11, color: colors.textSecondary }}>{desc}</Text>
+                </View>
+              </View>
+            ))}
+            <View style={{ backgroundColor: colors.warning + '15', borderRadius: borderRadius.md, padding: spacing.sm, marginTop: spacing.sm, flexDirection: 'row', gap: spacing.xs }}>
+              <MaterialIcons name="lightbulb" size={14} color={colors.warning} />
+              <Text style={{ flex: 1, fontSize: 11, color: colors.textSecondary, lineHeight: 16 }}>
+                Aim for balance across all pillars. Resets at the start of each month.
+              </Text>
+            </View>
+          </View>
         </View>
-      )}
-
-      <View style={tl.footer}>
-        <MaterialIcons name="info-outline" size={13} color={colors.textSecondary} />
-        <Text style={tl.footerText}>Resets monthly • Focus on weaker areas to improve</Text>
-      </View>
-    </View>
+      </Modal>
+    </>
   );
 }
 

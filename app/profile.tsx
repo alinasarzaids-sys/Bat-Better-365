@@ -175,28 +175,28 @@ export default function ProfileScreen() {
                 <View style={styles.statCard}>
                   <MaterialIcons name="emoji-events" size={28} color="#FFB800" />
                   <View style={styles.statTextRow}>
-                    <Text style={styles.statValue}>{totalXP} </Text>
+                    <Text style={styles.statValue}>{totalXP}</Text>
                     <Text style={styles.statLabel}>Total XP</Text>
                   </View>
                 </View>
                 <View style={styles.statCard}>
                   <MaterialIcons name="local-fire-department" size={28} color="#FF6B35" />
                   <View style={styles.statTextRow}>
-                    <Text style={styles.statValue}>{progress.current_streak} </Text>
+                    <Text style={styles.statValue}>{progress.current_streak}</Text>
                     <Text style={styles.statLabel}>Day Streak</Text>
                   </View>
                 </View>
                 <View style={styles.statCard}>
                   <MaterialIcons name="check-circle" size={28} color="#52B788" />
                   <View style={styles.statTextRow}>
-                    <Text style={styles.statValue}>{progress.total_sessions} </Text>
+                    <Text style={styles.statValue}>{progress.total_sessions}</Text>
                     <Text style={styles.statLabel}>Sessions</Text>
                   </View>
                 </View>
                 <View style={styles.statCard}>
                   <MaterialIcons name="fitness-center" size={28} color="#4A90E2" />
                   <View style={styles.statTextRow}>
-                    <Text style={styles.statValue}>{progress.total_sessions} </Text>
+                    <Text style={styles.statValue}>{progress.total_sessions}</Text>
                     <Text style={styles.statLabel}>Drills</Text>
                   </View>
                 </View>
@@ -991,8 +991,7 @@ const styles = StyleSheet.create({
     minHeight: 90,
   },
   statTextRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     marginTop: spacing.sm,
   },
   statContent: {
@@ -1002,12 +1001,15 @@ const styles = StyleSheet.create({
     ...typography.h3,
     color: colors.textLight,
     fontWeight: '700',
-    fontSize: 24,
+    fontSize: 22,
+    textAlign: 'center',
   },
   statLabel: {
     ...typography.caption,
     color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
+    fontSize: 11,
+    textAlign: 'center',
+    flexWrap: 'wrap',
   },
   levelProgress: {
     flexDirection: 'row',
