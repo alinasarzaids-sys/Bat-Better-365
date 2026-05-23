@@ -7,7 +7,6 @@ import { useRouter } from 'expo-router';
 import { HeroCard } from '@/components/home/HeroCard';
 import { QuickActions } from '@/components/home/QuickActions';
 import { StatsRow } from '@/components/home/StatsRow';
-import { SkillHeatmap } from '@/components/home/SkillHeatmap';
 import { useProgress } from '@/hooks/useProgress';
 import { useAuth } from '@/template';
 import { sessionService } from '@/services/sessionService';
@@ -313,7 +312,6 @@ ${sessionData.session_notes ? `Notes: ${sessionData.session_notes}` : ''}`;
         <HeroCard />
         <QuickActions onPlanSession={() => setShowPlanModal(true)} />
         <StatsRow progress={progress} />
-        <SkillHeatmap progress={progress} />
 
         {/* Leaderboard Section */}
         <View style={styles.section}>

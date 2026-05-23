@@ -12,17 +12,39 @@ interface StatsRowProps {
   progress: UserProgress | null;
 }
 
-// Total balls hit: sum runs_scored (balls hit) and balls_faced from academy_training_logs
+// Total balls faced: sum from academy_training_logs + parse from personal sessions notes
 async function fetchTotalBalls(userId: string): Promise<{ faced: number }> {
   const supabase = getSupabaseClient();
-  const { data } = await supabase
+
+  // Academy logs
+  const { data: academyData } = await supabase
     .from('academy_training_logs')
     .select('balls_faced')
     .eq('user_id', userId);
   let faced = 0;
-  (data || []).forEach((l: any) => {
+  (academyData || []).forEach((l: any) => {
     faced += l.balls_faced || 0;
   });
+
+  // Personal sessions — parse "Balls Faced: X" from notes
+  const { data: sessData } = await supabase
+    .from('sessions')
+    .select('notes')
+    .eq('user_id', userId)
+    .eq('status', 'completed');
+  (sessData || []).forEach((s: any) => {
+    if (!s.notes) return;
+    const lines: string[] = s.notes.split('\n');
+    for (const line of lines) {
+      const t = line.trim();
+      if (t.startsWith('Balls Faced:')) {
+        const n = parseInt(t.replace('Balls Faced:', '').trim());
+        if (!isNaN(n)) faced += n;
+        break;
+      }
+    }
+  });
+
   return { faced };
 }
 

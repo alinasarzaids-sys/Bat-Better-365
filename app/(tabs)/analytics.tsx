@@ -1098,6 +1098,187 @@ const hist = StyleSheet.create({
   showMoreText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
 });
 
+// ─── Training Timeline ───────────────────────────────────────────────────────
+function TrainingTimeline({ userId }: { userId: string }) {
+  const [monthlyStats, setMonthlyStats] = useState<{ pillar: string; minutes: number }[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadMonthlyStats = useCallback(async () => {
+    if (!userId) return;
+    setLoading(true);
+    try {
+      const supabase = getSupabaseClient();
+      const now = new Date();
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+      // Personal sessions this month
+      const { data: sessData } = await supabase
+        .from('sessions')
+        .select('session_type, duration_minutes, notes')
+        .eq('user_id', userId)
+        .eq('status', 'completed')
+        .gte('completed_at', monthStart)
+        .lte('completed_at', monthEnd + 'T23:59:59');
+
+      // Academy logs this month
+      const { data: logData } = await supabase
+        .from('academy_training_logs')
+        .select('session_type, duration_minutes')
+        .eq('user_id', userId)
+        .gte('log_date', monthStart)
+        .lte('log_date', monthEnd);
+
+      const pillars: Record<string, number> = { Technical: 0, Physical: 0, Mental: 0, Tactical: 0, Freestyle: 0 };
+
+      (sessData || []).forEach((s: any) => {
+        const type = (s.session_type || '').toLowerCase();
+        const mins = s.duration_minutes || 0;
+        // Try to detect training_types from notes JSON
+        let trainingTypes: string[] = [];
+        if (s.notes) {
+          try {
+            const parsed = JSON.parse(s.notes);
+            if (Array.isArray(parsed.training_types)) trainingTypes = parsed.training_types;
+          } catch {}
+        }
+        if (trainingTypes.length > 0) {
+          const perPillar = Math.round(mins / trainingTypes.length);
+          trainingTypes.forEach((t: string) => {
+            if (pillars[t] !== undefined) pillars[t] += perPillar;
+          });
+        } else if (type.includes('technical')) {
+          pillars.Technical += mins;
+        } else if (type.includes('physical') || type.includes('workout')) {
+          pillars.Physical += mins;
+        } else if (type.includes('mental')) {
+          pillars.Mental += mins;
+        } else if (type.includes('tactical')) {
+          pillars.Tactical += mins;
+        } else {
+          pillars.Freestyle += mins;
+        }
+      });
+
+      (logData || []).forEach((l: any) => {
+        const type = (l.session_type || '').toLowerCase();
+        const mins = l.duration_minutes || 0;
+        if (type.includes('batting') || type.includes('technical')) pillars.Technical += mins;
+        else if (type.includes('fitness') || type.includes('physical') || type.includes('bowl')) pillars.Physical += mins;
+        else if (type.includes('mental')) pillars.Mental += mins;
+        else if (type.includes('tactical') || type.includes('field')) pillars.Tactical += mins;
+        else pillars.Freestyle += mins;
+      });
+
+      setMonthlyStats(Object.entries(pillars).map(([pillar, minutes]) => ({ pillar, minutes })));
+    } catch (e) {
+      console.error('Training timeline load error:', e);
+    }
+    setLoading(false);
+  }, [userId]);
+
+  useFocusEffect(useCallback(() => { loadMonthlyStats(); }, [loadMonthlyStats]));
+
+  const PILLAR_COLORS: Record<string, string> = {
+    Technical: colors.technical || '#2196F3',
+    Physical: colors.physical || '#4CAF50',
+    Mental: colors.mental || '#9C27B0',
+    Tactical: colors.tactical || '#FF9800',
+    Freestyle: '#E53935',
+  };
+
+  const pillars = ['Technical', 'Physical', 'Mental', 'Tactical', 'Freestyle'].map(name => ({
+    name,
+    color: PILLAR_COLORS[name],
+    minutes: monthlyStats.find(s => s.pillar === name)?.minutes || 0,
+  }));
+  const maxMinutes = Math.max(...pillars.map(p => p.minutes), 1);
+  const currentMonth = new Date().toLocaleDateString('en-US', { month: 'long' });
+  const totalMins = pillars.reduce((a, p) => a + p.minutes, 0);
+
+  return (
+    <View style={tl.card}>
+      <View style={tl.headerRow}>
+        <View style={tl.headerLeft}>
+          <MaterialIcons name="bar-chart" size={18} color={colors.primary} />
+          <Text style={tl.title}>Training Timeline</Text>
+          <View style={tl.infoPill}>
+            <MaterialIcons name="info-outline" size={12} color={colors.primary} />
+          </View>
+        </View>
+        <View style={tl.monthBadge}>
+          <Text style={tl.monthText}>{currentMonth}</Text>
+        </View>
+      </View>
+      <Text style={tl.subtitle}>Track your monthly training time across all four pillars</Text>
+
+      {loading ? (
+        <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.md }} />
+      ) : totalMins === 0 ? (
+        <View style={tl.emptyBox}>
+          <Text style={tl.emptyText}>No sessions logged this month yet. Start training to see your breakdown.</Text>
+        </View>
+      ) : (
+        <View style={tl.pillarsContainer}>
+          {pillars.map(p => {
+            const pct = (p.minutes / maxMinutes) * 100;
+            return (
+              <View key={p.name} style={tl.pillarRow}>
+                <View style={tl.pillarHeader}>
+                  <View style={[tl.pillarDot, { backgroundColor: p.color }]} />
+                  <Text style={tl.pillarName}>{p.name}</Text>
+                </View>
+                <View style={tl.barContainer}>
+                  <View style={[tl.bar, { width: `${pct}%`, backgroundColor: p.color }]} />
+                </View>
+                <Text style={tl.pillarMins}>{p.minutes} min</Text>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      <View style={tl.footer}>
+        <MaterialIcons name="info-outline" size={13} color={colors.textSecondary} />
+        <Text style={tl.footerText}>Resets monthly • Focus on weaker areas to improve</Text>
+      </View>
+    </View>
+  );
+}
+
+const tl = StyleSheet.create({
+  card: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl, padding: spacing.md,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, gap: spacing.sm,
+  },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  infoPill: {
+    width: 20, height: 20, borderRadius: 10,
+    backgroundColor: colors.primary + '18',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  title: { fontSize: 16, fontWeight: '800', color: colors.text },
+  subtitle: { fontSize: 12, color: colors.textSecondary, marginTop: -spacing.xs },
+  monthBadge: {
+    backgroundColor: colors.primary + '18', paddingHorizontal: spacing.sm,
+    paddingVertical: 4, borderRadius: 12,
+  },
+  monthText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
+  emptyBox: { paddingVertical: spacing.lg, alignItems: 'center' },
+  emptyText: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: spacing.md },
+  pillarsContainer: { gap: spacing.md },
+  pillarRow: { gap: spacing.xs },
+  pillarHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  pillarDot: { width: 12, height: 12, borderRadius: 6 },
+  pillarName: { fontSize: 13, color: colors.text, fontWeight: '600' },
+  barContainer: { height: 8, backgroundColor: colors.background, borderRadius: 4, overflow: 'hidden' },
+  bar: { height: '100%', borderRadius: 4 },
+  pillarMins: { fontSize: 12, color: colors.textSecondary, textAlign: 'right' },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: spacing.xs },
+  footerText: { fontSize: 11, color: colors.textSecondary },
+});
+
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function AnalyticsScreen() {
   const { user } = useAuth();
@@ -1275,6 +1456,7 @@ export default function AnalyticsScreen() {
         <DisciplineBreakdown academyLogs={academyLogs} />
         <CareerStatsCard personalSessions={personalSessions} academyLogs={academyLogs} isAcademyPlayer={isAcademyPlayer} />
         <ConsistencyHeatmap sessionDates={sessionDates} />
+        <TrainingTimeline userId={user?.id || ''} />
         <SessionHistoryCard personalSessions={personalSessions} />
       </ScrollView>
     </SafeAreaView>
