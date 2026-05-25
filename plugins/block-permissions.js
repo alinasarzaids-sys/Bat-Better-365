@@ -9,7 +9,13 @@
  * This plugin adds explicit <uses-permission tools:node="remove"> entries AFTER
  * all library manifests are merged, ensuring they are stripped from the final APK.
  */
-const { withAndroidManifest } = require('@expo/config-plugins');
+// Try the top-level package first; fall back to the copy bundled with expo
+let withAndroidManifest;
+try {
+  ({ withAndroidManifest } = require('@expo/config-plugins'));
+} catch {
+  ({ withAndroidManifest } = require('expo/config-plugins'));
+}
 
 // Permissions that MUST be present for billing to work
 const BILLING_PERMISSIONS = [
