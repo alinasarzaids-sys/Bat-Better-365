@@ -1,26 +1,11 @@
 /**
  * Expo Config Plugin: Force-remove media/storage/camera permissions from AndroidManifest.
  *
- * Google Play rejects apps that declare READ_MEDIA_IMAGES / READ_MEDIA_VIDEO unless
- * they have a core photo/video use case. Some transitive libraries inject these
- * permissions with `tools:node="replace"` or no merge strategy, overriding the
- * `blockedPermissions` array in app.json.
- *
- * This plugin adds explicit <uses-permission tools:node="remove"> entries AFTER
- * all library manifests are merged, ensuring they are stripped from the final APK.
+ * Wrapped in try/catch so that if @expo/config-plugins cannot be resolved
+ * (e.g. during iOS EAS builds), the plugin exits gracefully and the build continues.
  */
-// Try the top-level package first; fall back to the copy bundled with expo
-let withAndroidManifest;
-try {
-  ({ withAndroidManifest } = require('@expo/config-plugins'));
-} catch {
-  ({ withAndroidManifest } = require('expo/config-plugins'));
-}
 
-// Permissions that MUST be present for billing to work
-const BILLING_PERMISSIONS = [
-  'com.android.vending.BILLING',
-];
+const BILLING_PERMISSIONS = ['com.android.vending.BILLING'];
 
 const PERMISSIONS_TO_REMOVE = [
   'android.permission.READ_MEDIA_IMAGES',
@@ -43,50 +28,38 @@ const PERMISSIONS_TO_REMOVE = [
   'android.permission.ACTIVITY_RECOGNITION',
 ];
 
-const withBlockPermissions = (config) => {
-  return withAndroidManifest(config, (cfg) => {
+function applyManifestChanges(cfg) {
+  try {
     const manifest = cfg.modResults.manifest;
 
-    // Ensure tools namespace is declared on the root manifest element
     if (!manifest.$['xmlns:tools']) {
       manifest.$['xmlns:tools'] = 'http://schemas.android.com/tools';
     }
 
-    // Get existing uses-permission entries
     const existingPerms = manifest['uses-permission'] || [];
 
-    // Build a set of permissions already listed for removal
     const alreadyRemoved = new Set(
       existingPerms
         .filter((p) => p.$['tools:node'] === 'remove')
         .map((p) => p.$['android:name'])
     );
 
-    // Remove any existing grants for these permissions (so we only have the remove entry)
     const filteredPerms = existingPerms.filter((p) => {
       const name = p.$['android:name'];
       return !PERMISSIONS_TO_REMOVE.includes(name) || p.$['tools:node'] === 'remove';
     });
 
-    // Add force-remove entries for each blocked permission
     for (const perm of PERMISSIONS_TO_REMOVE) {
       if (!alreadyRemoved.has(perm)) {
-        filteredPerms.push({
-          $: {
-            'android:name': perm,
-            'tools:node': 'remove',
-          },
-        });
+        filteredPerms.push({ $: { 'android:name': perm, 'tools:node': 'remove' } });
       }
     }
 
-    // Ensure billing permissions are present and NOT removed
     for (const perm of BILLING_PERMISSIONS) {
       const alreadyPresent = filteredPerms.some(
         (p) => p.$['android:name'] === perm && p.$['tools:node'] !== 'remove'
       );
       if (!alreadyPresent) {
-        // Remove any accidental remove entry
         const idx = filteredPerms.findIndex((p) => p.$['android:name'] === perm);
         if (idx !== -1) filteredPerms.splice(idx, 1);
         filteredPerms.push({ $: { 'android:name': perm } });
@@ -94,9 +67,35 @@ const withBlockPermissions = (config) => {
     }
 
     manifest['uses-permission'] = filteredPerms;
+  } catch (e) {
+    console.warn('[block-permissions] Manifest modification failed, skipping:', e.message);
+  }
+  return cfg;
+}
 
-    return cfg;
-  });
-};
+function withBlockPermissions(config) {
+  // Try multiple ways to load withAndroidManifest
+  let withAndroidManifest;
+  const candidates = [
+    '@expo/config-plugins',
+    'expo/config-plugins',
+    '@expo/config-plugins/build/plugins/withAndroidManifest',
+  ];
+  for (const pkg of candidates) {
+    try {
+      const mod = require(pkg);
+      withAndroidManifest = mod.withAndroidManifest;
+      if (typeof withAndroidManifest === 'function') break;
+    } catch {}
+  }
+
+  if (typeof withAndroidManifest !== 'function') {
+    // Cannot load the helper — return config unchanged so iOS builds are not blocked
+    console.warn('[block-permissions] Could not load withAndroidManifest; skipping Android permission removal.');
+    return config;
+  }
+
+  return withAndroidManifest(config, applyManifestChanges);
+}
 
 module.exports = withBlockPermissions;
