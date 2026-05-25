@@ -132,6 +132,13 @@ export default function DrillDetailScreen() {
     
     // If instructions is already an array
     if (Array.isArray(drill.instructions)) {
+      // Check if it's the section+points format (used by Physical drills)
+      // Flatten all sections into a single step list for the "How to Execute" renderer
+      const first = drill.instructions[0];
+      if (first && typeof first === 'object' && 'section' in first && 'points' in first) {
+        // Return all sections — rendered by renderSectionedInstructions instead
+        return drill.instructions;
+      }
       return drill.instructions;
     }
     
@@ -151,6 +158,13 @@ export default function DrillDetailScreen() {
     }
     
     return [];
+  };
+
+  // Check if instructions use the section+points format
+  const isSectionedFormat = () => {
+    if (!Array.isArray(drill?.instructions) || drill.instructions.length === 0) return false;
+    const first = (drill.instructions as any[])[0];
+    return first && typeof first === 'object' && 'section' in first && 'points' in first;
   };
 
   const getPurpose = () => {
@@ -413,53 +427,106 @@ export default function DrillDetailScreen() {
 
 
 
-        {/* Purpose Section */}
-        {purpose.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="flag" size={20} color={colors.success} />
-              <Text style={styles.sectionTitle}>Purpose of This Drill</Text>
+        {/* Purpose Section — only for non-sectioned drills */}
+        {!isSectionedFormat() && (
+          purpose.length > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="flag" size={20} color={colors.success} />
+                <Text style={styles.sectionTitle}>Purpose of This Drill</Text>
+              </View>
+              <View style={styles.bulletList}>
+                {purpose.map((item: string, index: number) => (
+                  <View key={index} style={styles.bulletItem}>
+                    <MaterialIcons name="check" size={18} color={colors.success} />
+                    <Text style={styles.bulletText}>{item}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-            <View style={styles.bulletList}>
-              {purpose.map((item: string, index: number) => (
-                <View key={index} style={styles.bulletItem}>
-                  <MaterialIcons name="check" size={18} color={colors.success} />
-                  <Text style={styles.bulletText}>{item}</Text>
+          ) : (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="flag" size={20} color={colors.success} />
+                <Text style={styles.sectionTitle}>Purpose of This Drill</Text>
+              </View>
+              <View style={styles.bulletList}>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>
+                    Develop {drill.pillar.toLowerCase()} skills through focused practice.
+                  </Text>
                 </View>
-              ))}
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>
+                    Improve overall cricket performance in {drill.subcategory || drill.pillar}.
+                  </Text>
+                </View>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>
+                    Build muscle memory and technique consistency.
+                  </Text>
+                </View>
+              </View>
             </View>
-          </View>
-        ) : (
+          )
+        )}
+
+        {/* How to Execute Section — sectioned format (Physical drills) */}
+        {instructions.length > 0 && isSectionedFormat() && (
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="flag" size={20} color={colors.success} />
-              <Text style={styles.sectionTitle}>Purpose of This Drill</Text>
-            </View>
-            <View style={styles.bulletList}>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Develop {drill.pillar.toLowerCase()} skills through focused practice.
-                </Text>
+            {(instructions as any[]).map((section: any, sIdx: number) => (
+              <View key={sIdx} style={sIdx > 0 ? { marginTop: spacing.lg } : undefined}>
+                <View style={styles.sectionHeader}>
+                  <MaterialIcons
+                    name={
+                      section.section === 'How to Execute' ? 'format-list-numbered' :
+                      section.section === 'Purpose of This Drill' ? 'flag' :
+                      section.section === 'Key Coaching Points' ? 'verified' :
+                      section.section === 'Common Mistakes to Avoid' ? 'warning' :
+                      section.section === 'Age & Safety Recommendation' ? 'health-and-safety' :
+                      section.section === 'Sets & Reps' ? 'repeat' :
+                      'info'
+                    }
+                    size={18}
+                    color={
+                      section.section === 'Purpose of This Drill' ? colors.success :
+                      section.section === 'Key Coaching Points' ? colors.tactical :
+                      section.section === 'Common Mistakes to Avoid' ? colors.error :
+                      section.section === 'Age & Safety Recommendation' ? colors.warning :
+                      section.section === 'Sets & Reps' ? colors.physical :
+                      colors.primary
+                    }
+                  />
+                  <Text style={styles.sectionTitle}>{section.section}</Text>
+                </View>
+                <View style={styles.stepsList}>
+                  {(section.points || []).map((point: string, pIdx: number) => (
+                    <View key={pIdx} style={styles.stepItem}>
+                      <View style={[styles.stepNumber, {
+                        backgroundColor:
+                          section.section === 'Common Mistakes to Avoid' ? colors.error :
+                          section.section === 'Key Coaching Points' ? colors.tactical :
+                          section.section === 'Age & Safety Recommendation' ? colors.warning :
+                          section.section === 'Sets & Reps' ? colors.physical :
+                          section.section === 'Purpose of This Drill' ? colors.success :
+                          colors.primary
+                      }]}>
+                        <Text style={styles.stepNumberText}>{pIdx + 1}</Text>
+                      </View>
+                      <Text style={styles.stepText}>{point}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Improve overall cricket performance in {drill.subcategory || drill.pillar}.
-                </Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Build muscle memory and technique consistency.
-                </Text>
-              </View>
-            </View>
+            ))}
           </View>
         )}
 
-        {/* How to Execute Section */}
-        {instructions.length > 0 && (
+        {/* How to Execute Section — flat format */}
+        {instructions.length > 0 && !isSectionedFormat() && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <MaterialIcons name="format-list-numbered" size={20} color={colors.primary} />
@@ -480,100 +547,90 @@ export default function DrillDetailScreen() {
           </View>
         )}
 
-        {/* Key Coaching Points */}
-        {coachingPoints.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="verified" size={20} color={colors.tactical} />
-              <Text style={styles.sectionTitle}>Key Coaching Points</Text>
+        {/* Key Coaching Points — only for non-sectioned drills */}
+        {!isSectionedFormat() && (
+          coachingPoints.length > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="verified" size={20} color={colors.tactical} />
+                <Text style={styles.sectionTitle}>Key Coaching Points</Text>
+              </View>
+              <View style={styles.bulletList}>
+                {coachingPoints.map((point: string, index: number) => (
+                  <View key={index} style={styles.bulletItem}>
+                    <Text style={styles.arrowBullet}>→</Text>
+                    <Text style={styles.bulletText}>{point}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-            <View style={styles.bulletList}>
-              {coachingPoints.map((point: string, index: number) => (
-                <View key={index} style={styles.bulletItem}>
-                  <Text style={styles.arrowBullet}>→</Text>
-                  <Text style={styles.bulletText}>{point}</Text>
+          ) : (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="verified" size={20} color={colors.success} />
+                <Text style={styles.sectionTitle}>Key Coaching Points</Text>
+              </View>
+              <View style={styles.bulletList}>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Focus on proper technique over speed.</Text>
                 </View>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="verified" size={20} color={colors.success} />
-              <Text style={styles.sectionTitle}>Key Coaching Points</Text>
-            </View>
-            <View style={styles.bulletList}>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Focus on proper technique over speed.
-                </Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Maintain consistent form throughout the drill.
-                </Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Take breaks if needed to avoid fatigue-related mistakes.
-                </Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Gradually increase difficulty level: {drill.difficulty}.
-                </Text>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Maintain consistent form throughout the drill.</Text>
+                </View>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Take breaks if needed to avoid fatigue-related mistakes.</Text>
+                </View>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Gradually increase difficulty level: {drill.difficulty}.</Text>
+                </View>
               </View>
             </View>
-          </View>
+          )
         )}
 
-        {/* Common Mistakes to Avoid */}
-        {commonMistakes.length > 0 ? (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="close" size={20} color={colors.error} />
-              <Text style={styles.sectionTitle}>Common Mistakes to Avoid</Text>
+        {/* Common Mistakes to Avoid — only for non-sectioned drills */}
+        {!isSectionedFormat() && (
+          commonMistakes.length > 0 ? (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="close" size={20} color={colors.error} />
+                <Text style={styles.sectionTitle}>Common Mistakes to Avoid</Text>
+              </View>
+              <View style={styles.bulletList}>
+                {commonMistakes.map((mistake: string, index: number) => (
+                  <View key={index} style={styles.bulletItem}>
+                    <MaterialIcons name="close" size={18} color={colors.error} />
+                    <Text style={styles.bulletText}>{mistake}</Text>
+                  </View>
+                ))}
+              </View>
             </View>
-            <View style={styles.bulletList}>
-              {commonMistakes.map((mistake: string, index: number) => (
-                <View key={index} style={styles.bulletItem}>
-                  <MaterialIcons name="close" size={18} color={colors.error} />
-                  <Text style={styles.bulletText}>{mistake}</Text>
+          ) : (
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="warning" size={20} color={colors.warning} />
+                <Text style={styles.sectionTitle}>Common Mistakes</Text>
+              </View>
+              <View style={styles.bulletList}>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Rushing through the drill without focusing on form.</Text>
                 </View>
-              ))}
-            </View>
-          </View>
-        ) : (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <MaterialIcons name="warning" size={20} color={colors.warning} />
-              <Text style={styles.sectionTitle}>Common Mistakes</Text>
-            </View>
-            <View style={styles.bulletList}>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Rushing through the drill without focusing on form.
-                </Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Not warming up properly before starting.
-                </Text>
-              </View>
-              <View style={styles.bulletItem}>
-                <View style={styles.bullet} />
-                <Text style={styles.bulletText}>
-                  Skipping rest periods between sets.
-                </Text>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Not warming up properly before starting.</Text>
+                </View>
+                <View style={styles.bulletItem}>
+                  <View style={styles.bullet} />
+                  <Text style={styles.bulletText}>Skipping rest periods between sets.</Text>
+                </View>
               </View>
             </View>
-          </View>
+          )
         )}
 
         {/* Equipment Needed */}
@@ -951,13 +1008,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
-    padding: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingHorizontal: 0,
+    paddingBottom: 0,
   },
   videoHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
     marginBottom: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   videoHeaderText: {
     ...typography.h4,
