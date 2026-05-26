@@ -10,6 +10,7 @@ import {
   ScrollView,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -26,6 +27,8 @@ import Animated, {
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useRouter } from 'expo-router';
 import { colors, spacing, borderRadius, typography } from '@/constants/theme';
+import { getSupabaseClient } from '@/template';
+import { useAuth } from '@/template';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -58,19 +61,18 @@ const DEFAULT_POSITIONS: Omit<FielderPosition, 'x' | 'y'>[] = [
   { id: 10, label: 'Long On',      shortLabel: 'LO', color: '#2E7D32' },
 ];
 
-// Positions matching the screenshot exactly
 const INITIAL_XY: [number, number][] = [
-  [ 0.00,  0.32],   // Bowler (below stumps)
-  [ 0.05, -0.22],   // Wicketkeeper (above stumps)
-  [ 0.50,  0.80],   // Slip
-  [ 0.50,  0.28],   // Point
-  [ 0.82,  0.08],   // Cover
-  [-0.28, -0.62],   // Mid-Off
-  [-0.38, -0.26],   // Mid-On
-  [-0.38,  0.45],   // Square Leg
-  [-0.35,  0.82],   // Fine Leg
-  [ 0.52, -0.62],   // Deep Cover
-  [-0.88,  0.05],   // Long On
+  [ 0.00,  0.32],
+  [ 0.05, -0.22],
+  [ 0.50,  0.80],
+  [ 0.50,  0.28],
+  [ 0.82,  0.08],
+  [-0.28, -0.62],
+  [-0.38, -0.26],
+  [-0.38,  0.45],
+  [-0.35,  0.82],
+  [ 0.52, -0.62],
+  [-0.88,  0.05],
 ];
 
 function getInitialFielders(): FielderPosition[] {
@@ -81,7 +83,7 @@ function getInitialFielders(): FielderPosition[] {
   }));
 }
 
-// ─── Draggable Fielder ──────────────────────────────────────────────────────
+// ─── Draggable Fielder ───────────────────────────────────────────────────────
 interface DraggableFielderProps {
   fielder: FielderPosition;
   fieldRadius: number;
@@ -98,17 +100,10 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange, onTap }: Dra
   const startY = useSharedValue(0);
   const didMove = useSharedValue(false);
 
-  // Sync when fielder resets
-  useEffect(() => {
-    translateX.value = withSpring(fieldRadius + fielder.x * fieldRadius - FIELDER_HALF);
-    translateY.value = withSpring(fieldRadius + fielder.y * fieldRadius - FIELDER_HALF);
-  }, [fielder.x, fielder.y]);
-
   const updatePosition = useCallback(
     (nx: number, ny: number) => onPositionChange(fielder.id, nx, ny),
     [fielder.id, onPositionChange]
   );
-
   const handleTap = useCallback(() => onTap(fielder), [fielder, onTap]);
 
   const panGesture = Gesture.Pan()
@@ -142,9 +137,7 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange, onTap }: Dra
 
   const tapGesture = Gesture.Tap()
     .maxDuration(250)
-    .onEnd(() => {
-      runOnJS(handleTap)();
-    });
+    .onEnd(() => { runOnJS(handleTap)(); });
 
   const gesture = Gesture.Exclusive(panGesture, tapGesture);
 
@@ -173,7 +166,7 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange, onTap }: Dra
   );
 }
 
-// ─── Stepper Cell ────────────────────────────────────────────────────────────
+// ─── Stepper Cell (compact, single row) ─────────────────────────────────────
 interface StepperCellProps {
   value: string | number;
   label: string;
@@ -185,77 +178,99 @@ interface StepperCellProps {
 
 function StepperCell({ value, label, valueColor, onIncrement, onDecrement, isAuto }: StepperCellProps) {
   return (
-    <View style={stepStyles.cell}>
-      <View style={stepStyles.inner}>
-        <View style={stepStyles.left}>
-          <Text style={[stepStyles.value, { color: valueColor }]}>{value}</Text>
-          <Text style={stepStyles.label}>{label}</Text>
-        </View>
-        {!isAuto && (
-          <View style={stepStyles.stepBtns}>
-            <Pressable style={stepStyles.stepBtn} onPress={onIncrement} hitSlop={4}>
-              <View style={stepStyles.stepSquare} />
-            </Pressable>
-            <Pressable style={stepStyles.stepBtn} onPress={onDecrement} hitSlop={4}>
-              <View style={stepStyles.stepSquare} />
-            </Pressable>
-          </View>
-        )}
-      </View>
+    <View style={scStyles.cell}>
+      {!isAuto && (
+        <Pressable style={scStyles.arrowBtn} onPress={onIncrement} hitSlop={6}>
+          <Text style={scStyles.arrow}>▲</Text>
+        </Pressable>
+      )}
+      <Text
+        style={[scStyles.value, { color: valueColor }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+        minimumFontScale={0.6}
+      >
+        {value}
+      </Text>
+      <Text style={scStyles.label} numberOfLines={2}>{label}</Text>
+      {!isAuto && (
+        <Pressable style={scStyles.arrowBtn} onPress={onDecrement} hitSlop={6}>
+          <Text style={scStyles.arrow}>▼</Text>
+        </Pressable>
+      )}
+      {isAuto && <View style={{ height: 28 }} />}
     </View>
   );
 }
 
-const stepStyles = StyleSheet.create({
+const scStyles = StyleSheet.create({
   cell: {
     flex: 1,
     backgroundColor: '#fff',
     borderRadius: 10,
     borderWidth: 1,
     borderColor: '#e8e8e8',
-    padding: 10,
-    marginHorizontal: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginHorizontal: 3,
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.06,
     shadowRadius: 4,
     elevation: 2,
   },
-  inner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  arrowBtn: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
   },
-  left: { flex: 1 },
-  value: {
-    fontSize: 26,
-    fontWeight: '800',
-    lineHeight: 30,
-  },
-  label: {
+  arrow: {
     fontSize: 11,
-    color: '#888',
-    fontWeight: '500',
-    marginTop: 4,
+    color: '#bbb',
     lineHeight: 14,
   },
-  stepBtns: {
-    gap: 4,
-    alignItems: 'flex-end',
+  value: {
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 26,
+    textAlign: 'center',
   },
-  stepBtn: {
-    width: 22,
-    height: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stepSquare: {
-    width: 14,
-    height: 14,
-    backgroundColor: '#d0d0d0',
-    borderRadius: 3,
+  label: {
+    fontSize: 10,
+    color: '#888',
+    fontWeight: '500',
+    textAlign: 'center',
+    lineHeight: 13,
+    marginTop: 2,
   },
 });
+
+// ─── Rating Row ───────────────────────────────────────────────────────────────
+function RatingRow({ label, value, onChange, color }: { label: string; value: number; onChange: (v: number) => void; color: string }) {
+  return (
+    <View style={{ marginBottom: spacing.md }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+        <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>{label}</Text>
+        <Text style={{ fontSize: 13, fontWeight: '700', color }}>{value}/10</Text>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 4 }}>
+        {[1,2,3,4,5,6,7,8,9,10].map(n => (
+          <Pressable
+            key={n}
+            onPress={() => onChange(n)}
+            style={{
+              flex: 1, height: 28, borderRadius: 5,
+              backgroundColor: n <= value ? color : '#eee',
+              justifyContent: 'center', alignItems: 'center',
+            }}
+          >
+            <Text style={{ fontSize: 9, fontWeight: '700', color: n <= value ? '#fff' : '#bbb' }}>{n}</Text>
+          </Pressable>
+        ))}
+      </View>
+    </View>
+  );
+}
 
 // ─── Cricket Oval ────────────────────────────────────────────────────────────
 function CricketOval({ fieldSize }: { fieldSize: number }) {
@@ -285,8 +300,10 @@ function CricketOval({ fieldSize }: { fieldSize: number }) {
 export default function FieldSetterScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
 
-  // Fielder state
+  // resetKey forces DraggableFielder remount on reset
+  const [resetKey, setResetKey] = useState(0);
   const [fielders, setFielders] = useState<FielderPosition[]>(getInitialFielders());
   const [editingFielder, setEditingFielder] = useState<FielderPosition | null>(null);
   const [editLabel, setEditLabel] = useState('');
@@ -296,7 +313,6 @@ export default function FieldSetterScreen() {
   const [runsNeeded, setRunsNeeded] = useState(25);
   const [ballsLeft, setBallsLeft] = useState(15);
   const [wickets, setWickets] = useState(9);
-
   const reqRR = ballsLeft > 0 ? ((runsNeeded * 6) / ballsLeft).toFixed(1) : '—';
 
   // Timer
@@ -319,6 +335,20 @@ export default function FieldSetterScreen() {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
+  // Save Session state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  // Questionnaire fields
+  const [qBallsFaced, setQBallsFaced] = useState('');
+  const [qRunsScored, setQRunsScored] = useState('');
+  const [qFieldReading, setQFieldReading] = useState(5);
+  const [qShotSelection, setQShotSelection] = useState<boolean | null>(null);
+  const [qAdaptedPlan, setQAdaptedPlan] = useState(5);
+  const [qConfidence, setQConfidence] = useState(5);
+  const [qOverallMood, setQOverallMood] = useState(5);
+  const [qNotes, setQNotes] = useState('');
+
   // Fielder callbacks
   const handlePositionChange = useCallback((id: number, nx: number, ny: number) => {
     setFielders(prev => prev.map(f => f.id === id ? { ...f, x: nx, y: ny } : f));
@@ -340,9 +370,54 @@ export default function FieldSetterScreen() {
     setEditingFielder(null);
   };
 
+  // Reset - increment resetKey to force DraggableFielder remount
   const handleResetField = () => {
     const fresh = getInitialFielders();
     setFielders(fresh);
+    setResetKey(k => k + 1);
+  };
+
+  const handleSaveSession = async () => {
+    if (!user?.id) return;
+    setSaving(true);
+    try {
+      const supabase = getSupabaseClient();
+      const balls = parseInt(qBallsFaced) || 0;
+      const runs = parseInt(qRunsScored) || 0;
+      const notesStr = `Balls Faced: ${balls} | Runs Scored: ${runs}${qNotes ? ' | ' + qNotes : ''}`;
+      await supabase.from('tactical_drill_logs').insert({
+        user_id: user.id,
+        drill_name: 'Scenario Builder',
+        time_elapsed: elapsed,
+        field_reading: qFieldReading,
+        shot_selection_matched: qShotSelection ?? false,
+        adapted_plan: qAdaptedPlan,
+        confidence_pressure: qConfidence,
+        overall_mood: qOverallMood,
+        confidence: qConfidence,
+        session_notes: notesStr,
+      });
+      setSaveSuccess(true);
+      setTimeout(() => {
+        setShowSaveModal(false);
+        setSaveSuccess(false);
+        // Reset questionnaire
+        setQBallsFaced('');
+        setQRunsScored('');
+        setQFieldReading(5);
+        setQShotSelection(null);
+        setQAdaptedPlan(5);
+        setQConfidence(5);
+        setQOverallMood(5);
+        setQNotes('');
+        setTimerRunning(false);
+        setElapsed(0);
+      }, 1500);
+    } catch (_) {
+      // silent
+    } finally {
+      setSaving(false);
+    }
   };
 
   const fieldSize = FIELD_SIZE;
@@ -353,7 +428,7 @@ export default function FieldSetterScreen() {
       <SafeAreaView style={styles.container} edges={['top']}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable style={styles.backButton} onPress={() => router.back()} hitSlop={8}>
+          <Pressable style={styles.headerBtn} onPress={() => router.back()} hitSlop={8}>
             <MaterialIcons name="arrow-back" size={24} color="#fff" />
           </Pressable>
           <View style={styles.headerCenter}>
@@ -365,14 +440,14 @@ export default function FieldSetterScreen() {
           </Pressable>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) }}>
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: Math.max(insets.bottom + 16, 32) }}>
           {/* Field */}
           <View style={styles.fieldWrapper}>
             <View style={[styles.fieldContainer, { width: fieldSize, height: fieldSize }]}>
               <CricketOval fieldSize={fieldSize} />
               {fielders.map(fielder => (
                 <DraggableFielder
-                  key={fielder.id}
+                  key={`${fielder.id}-${resetKey}`}
                   fielder={fielder}
                   fieldRadius={fieldRadius}
                   onPositionChange={handlePositionChange}
@@ -405,14 +480,14 @@ export default function FieldSetterScreen() {
             <View style={styles.stepperRow}>
               <StepperCell
                 value={runsNeeded}
-                label={'runs\nneeded'}
+                label={'runs needed'}
                 valueColor="#E53935"
                 onIncrement={() => setRunsNeeded(v => v + 1)}
                 onDecrement={() => setRunsNeeded(v => Math.max(0, v - 1))}
               />
               <StepperCell
                 value={ballsLeft}
-                label={'balls\nleft'}
+                label={'balls left'}
                 valueColor="#1565C0"
                 onIncrement={() => setBallsLeft(v => v + 1)}
                 onDecrement={() => setBallsLeft(v => Math.max(0, v - 1))}
@@ -426,7 +501,7 @@ export default function FieldSetterScreen() {
               />
               <StepperCell
                 value={reqRR}
-                label={'req.\nRR'}
+                label={'req. RR'}
                 valueColor="#7B2FBE"
                 onIncrement={() => {}}
                 onDecrement={() => {}}
@@ -448,30 +523,35 @@ export default function FieldSetterScreen() {
             </Text>
           </View>
 
-          {/* Start / Pause Button */}
+          {/* Start / Pause */}
           <Pressable
             style={({ pressed }) => [styles.startBtn, pressed && { opacity: 0.85 }]}
             onPress={() => {
-              if (elapsed > 0 && !timerRunning) {
-                // Resume
-                setTimerRunning(true);
-              } else if (timerRunning) {
+              if (timerRunning) {
                 setTimerRunning(false);
+              } else if (elapsed > 0) {
+                setTimerRunning(true);
               } else {
                 setElapsed(0);
                 setTimerRunning(true);
               }
             }}
           >
-            <MaterialIcons
-              name={timerRunning ? 'pause' : 'play-arrow'}
-              size={24}
-              color="#fff"
-            />
+            <MaterialIcons name={timerRunning ? 'pause' : 'play-arrow'} size={24} color="#fff" />
             <Text style={styles.startBtnText}>
               {timerRunning ? 'Pause Scenario' : elapsed > 0 ? 'Resume Scenario' : 'Start Scenario'}
             </Text>
           </Pressable>
+
+          {elapsed > 0 && !timerRunning && (
+            <Pressable
+              style={styles.saveSessionBtn}
+              onPress={() => setShowSaveModal(true)}
+            >
+              <MaterialIcons name="save" size={20} color="#fff" />
+              <Text style={styles.saveSessionText}>Save Session</Text>
+            </Pressable>
+          )}
 
           {elapsed > 0 && (
             <Pressable
@@ -498,7 +578,6 @@ export default function FieldSetterScreen() {
               <View style={styles.modalHandle} />
               <Text style={styles.editModalTitle}>Edit Fielder Name</Text>
               <Text style={styles.editModalSub}>Changes position label on the field</Text>
-
               <Text style={styles.inputLabel}>Full Name</Text>
               <TextInput
                 style={styles.textInput}
@@ -509,7 +588,6 @@ export default function FieldSetterScreen() {
                 autoFocus
                 selectTextOnFocus
               />
-
               <Text style={styles.inputLabel}>Short Label (max 3 chars)</Text>
               <TextInput
                 style={styles.textInput}
@@ -520,7 +598,6 @@ export default function FieldSetterScreen() {
                 autoCapitalize="characters"
                 maxLength={3}
               />
-
               <View style={styles.editModalBtns}>
                 <Pressable style={styles.cancelBtn} onPress={() => setEditingFielder(null)}>
                   <Text style={styles.cancelBtnText}>Cancel</Text>
@@ -532,6 +609,133 @@ export default function FieldSetterScreen() {
             </View>
           </KeyboardAvoidingView>
         </Modal>
+
+        {/* ── Save Session Questionnaire Modal ── */}
+        <Modal
+          visible={showSaveModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowSaveModal(false)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalOverlay}
+          >
+            <View style={styles.saveModal}>
+              <View style={styles.modalHandle} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
+                <Text style={styles.editModalTitle}>Save Session</Text>
+                <Pressable onPress={() => setShowSaveModal(false)} hitSlop={8}>
+                  <MaterialIcons name="close" size={22} color={colors.textSecondary} />
+                </Pressable>
+              </View>
+              <Text style={styles.editModalSub}>Duration: {formatTime(elapsed)} · Log your performance</Text>
+
+              {saveSuccess ? (
+                <View style={styles.successBox}>
+                  <MaterialIcons name="check-circle" size={48} color={colors.success} />
+                  <Text style={styles.successText}>Session Saved!</Text>
+                  <Text style={styles.successSub}>View in Analytics → Tactical</Text>
+                </View>
+              ) : (
+                <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 480 }}>
+                  {/* Balls & Runs */}
+                  <View style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Balls Faced</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={qBallsFaced}
+                        onChangeText={setQBallsFaced}
+                        keyboardType="numeric"
+                        placeholder="e.g. 18"
+                        placeholderTextColor={colors.textSecondary}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.inputLabel}>Runs Scored</Text>
+                      <TextInput
+                        style={styles.textInput}
+                        value={qRunsScored}
+                        onChangeText={setQRunsScored}
+                        keyboardType="numeric"
+                        placeholder="e.g. 24"
+                        placeholderTextColor={colors.textSecondary}
+                      />
+                    </View>
+                  </View>
+
+                  <RatingRow
+                    label="Field Reading"
+                    value={qFieldReading}
+                    onChange={setQFieldReading}
+                    color="#2196F3"
+                  />
+                  <RatingRow
+                    label="Adapted to Plan"
+                    value={qAdaptedPlan}
+                    onChange={setQAdaptedPlan}
+                    color="#FF9800"
+                  />
+                  <RatingRow
+                    label="Confidence Under Pressure"
+                    value={qConfidence}
+                    onChange={setQConfidence}
+                    color="#9C27B0"
+                  />
+                  <RatingRow
+                    label="Overall Mood"
+                    value={qOverallMood}
+                    onChange={setQOverallMood}
+                    color="#4CAF50"
+                  />
+
+                  {/* Shot selection */}
+                  <Text style={[styles.inputLabel, { marginBottom: 8 }]}>Shot Selection Matched Plan?</Text>
+                  <View style={{ flexDirection: 'row', gap: spacing.md, marginBottom: spacing.md }}>
+                    {[true, false].map(opt => (
+                      <Pressable
+                        key={String(opt)}
+                        onPress={() => setQShotSelection(opt)}
+                        style={[
+                          styles.boolBtn,
+                          qShotSelection === opt && { backgroundColor: opt ? colors.success : colors.error, borderColor: opt ? colors.success : colors.error },
+                        ]}
+                      >
+                        <Text style={[styles.boolBtnText, qShotSelection === opt && { color: '#fff' }]}>
+                          {opt ? 'Yes' : 'No'}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+
+                  <Text style={styles.inputLabel}>Session Notes (optional)</Text>
+                  <TextInput
+                    style={[styles.textInput, { height: 72, textAlignVertical: 'top' }]}
+                    value={qNotes}
+                    onChangeText={setQNotes}
+                    placeholder="What worked? What to improve?"
+                    placeholderTextColor={colors.textSecondary}
+                    multiline
+                    numberOfLines={3}
+                  />
+
+                  <Pressable
+                    style={[styles.saveBtn, { marginTop: spacing.sm, paddingVertical: 16 }]}
+                    onPress={handleSaveSession}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={[styles.saveBtnText, { fontSize: 16 }]}>Save & Close</Text>
+                    )}
+                  </Pressable>
+                </ScrollView>
+              )}
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
       </SafeAreaView>
     </GestureHandlerRootView>
   );
@@ -540,7 +744,6 @@ export default function FieldSetterScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#1A2A1A' },
 
-  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -549,11 +752,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.4)',
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
-  backButton: {
-    width: 38, height: 38, borderRadius: borderRadius.md,
-    justifyContent: 'center', alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   headerCenter: { flex: 1, alignItems: 'center' },
   headerTitle: { fontSize: 18, fontWeight: '700', color: '#fff' },
@@ -564,7 +762,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.12)',
   },
 
-  // Field
   fieldWrapper: { alignItems: 'center', paddingVertical: spacing.md },
   fieldContainer: {
     position: 'relative',
@@ -588,7 +785,6 @@ const styles = StyleSheet.create({
   },
   fielderLabel: { fontSize: 8, fontWeight: '800', color: '#fff', letterSpacing: 0.2 },
 
-  // Legend
   legendRow: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -600,7 +796,6 @@ const styles = StyleSheet.create({
   legendDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: '#fff' },
   legendText: { fontSize: 11, color: 'rgba(255,255,255,0.7)', fontWeight: '500' },
 
-  // Match Situation Card
   matchCard: {
     backgroundColor: '#FFF8F0',
     borderRadius: 16,
@@ -623,12 +818,9 @@ const styles = StyleSheet.create({
     width: 10, height: 10, borderRadius: 5,
     borderWidth: 2, borderColor: '#FF9800',
   },
-  matchCardTitle: {
-    fontSize: 15, fontWeight: '700', color: '#333',
-  },
-  stepperRow: { flexDirection: 'row', gap: 0 },
+  matchCardTitle: { fontSize: 15, fontWeight: '700', color: '#333' },
+  stepperRow: { flexDirection: 'row' },
 
-  // Timer
   timerCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -649,15 +841,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
   },
   timerBar: { width: '100%', marginBottom: spacing.sm },
-  timerBarTrack: {
-    height: 4, backgroundColor: '#eee', borderRadius: 2, overflow: 'hidden',
-  },
-  timerBarFill: {
-    height: '100%', backgroundColor: '#FF6B35', borderRadius: 2,
-  },
+  timerBarTrack: { height: 4, backgroundColor: '#eee', borderRadius: 2, overflow: 'hidden' },
+  timerBarFill: { height: '100%', backgroundColor: '#FF6B35', borderRadius: 2 },
   timerHint: { fontSize: 12, color: '#aaa', fontWeight: '500' },
 
-  // Start Button
   startBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: spacing.sm,
@@ -674,13 +861,28 @@ const styles = StyleSheet.create({
   },
   startBtnText: { fontSize: 18, fontWeight: '800', color: '#fff', letterSpacing: 0.3 },
 
+  saveSessionBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: spacing.sm,
+    backgroundColor: '#2E7D32',
+    borderRadius: 14,
+    marginHorizontal: spacing.md,
+    paddingVertical: 15,
+    shadowColor: '#2E7D32',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
+    marginBottom: spacing.sm,
+  },
+  saveSessionText: { fontSize: 16, fontWeight: '800', color: '#fff' },
+
   resetTimerBtn: {
     alignItems: 'center', paddingVertical: spacing.md,
-    marginHorizontal: spacing.md, marginBottom: spacing.sm,
+    marginHorizontal: spacing.md,
   },
-  resetTimerText: { fontSize: 14, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },
+  resetTimerText: { fontSize: 14, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
 
-  // Modals
   modalOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.55)',
     justifyContent: 'flex-end',
@@ -689,6 +891,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,
     padding: spacing.lg, paddingBottom: spacing.xl * 2,
+  },
+  saveModal: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    maxHeight: '90%',
   },
   modalHandle: {
     width: 40, height: 4, backgroundColor: colors.border, borderRadius: 2,
@@ -713,4 +922,15 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md, alignItems: 'center',
   },
   saveBtnText: { fontSize: 15, fontWeight: '700', color: '#fff' },
+
+  boolBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: borderRadius.md,
+    alignItems: 'center', borderWidth: 1.5, borderColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  boolBtnText: { fontSize: 15, fontWeight: '700', color: colors.textSecondary },
+
+  successBox: { alignItems: 'center', paddingVertical: spacing.xl * 2 },
+  successText: { fontSize: 22, fontWeight: '800', color: colors.success, marginTop: spacing.md },
+  successSub: { fontSize: 14, color: colors.textSecondary, marginTop: spacing.sm },
 });
