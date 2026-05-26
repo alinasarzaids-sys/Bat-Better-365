@@ -202,6 +202,14 @@ export default function RootLayout() {
                 presentation: 'card'
               }} 
             />
+            <Stack.Screen 
+              name="field-setter" 
+              options={{ 
+                headerShown: false,
+                animation: 'slide_from_right',
+                presentation: 'card'
+              }} 
+            />
           </Stack>
         </SafeAreaProvider>
         </SessionProvider>

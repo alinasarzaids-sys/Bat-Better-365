@@ -331,6 +331,23 @@ export default function TrainingScreen() {
         {/* Tactical Format Cards - Show when Tactical selected but no format chosen */}
         {selectedPillar === 'Tactical' && !selectedFormat && (
           <View style={styles.formatsContainer}>
+            {/* Custom Scenario Builder Card */}
+            <Pressable
+              style={styles.scenarioBuilderCard}
+              onPress={() => router.push('/field-setter' as any)}
+            >
+              <View style={styles.scenarioBuilderLeft}>
+                <View style={styles.scenarioBuilderIcon}>
+                  <MaterialIcons name="sports-cricket" size={28} color={colors.tactical} />
+                </View>
+                <View style={styles.scenarioBuilderText}>
+                  <Text style={styles.scenarioBuilderTitle}>Custom Scenario Builder</Text>
+                  <Text style={styles.scenarioBuilderDesc}>Set field positions & match scenarios</Text>
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={colors.textSecondary} />
+            </Pressable>
+
             {tacticalFormats.map((format) => (
               <Pressable
                 key={format.name}
@@ -365,8 +382,6 @@ export default function TrainingScreen() {
             ))}
           </View>
         )}
-
-
 
         {/* Drills Grid - Show when not Tactical OR phase is selected */}
         {(selectedPillar !== 'Tactical' || selectedPhase) && (
@@ -868,6 +883,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textLight,
     textAlign: 'center',
+  },
+  scenarioBuilderCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.lg,
+    padding: spacing.lg,
+    borderWidth: 2,
+    borderColor: (colors.tactical || '#FF9800') + '40',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  scenarioBuilderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    flex: 1,
+  },
+  scenarioBuilderIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: borderRadius.md,
+    backgroundColor: (colors.tactical || '#FF9800') + '20',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scenarioBuilderText: {
+    flex: 1,
+  },
+  scenarioBuilderTitle: {
+    ...typography.h4,
+    color: colors.text,
+    marginBottom: 3,
+  },
+  scenarioBuilderDesc: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
   },
   focusAreaHeader: {
     alignItems: 'center',
