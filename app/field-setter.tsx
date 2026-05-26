@@ -173,32 +173,30 @@ interface StepperCellProps {
   valueColor: string;
   onIncrement: () => void;
   onDecrement: () => void;
+  onTapValue?: () => void;
   isAuto?: boolean;
 }
 
-function StepperCell({ value, label, valueColor, onIncrement, onDecrement, isAuto }: StepperCellProps) {
+function StepperCell({ value, label, valueColor, onIncrement, onDecrement, onTapValue, isAuto }: StepperCellProps) {
   return (
     <View style={scStyles.cell}>
-      {!isAuto && (
-        <Pressable style={scStyles.arrowBtn} onPress={onIncrement} hitSlop={6}>
-          <Text style={scStyles.arrow}>▲</Text>
-        </Pressable>
-      )}
-      <Text
-        style={[scStyles.value, { color: valueColor }]}
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.6}
-      >
-        {value}
-      </Text>
-      <Text style={scStyles.label} numberOfLines={2}>{label}</Text>
-      {!isAuto && (
-        <Pressable style={scStyles.arrowBtn} onPress={onDecrement} hitSlop={6}>
-          <Text style={scStyles.arrow}>▼</Text>
-        </Pressable>
-      )}
-      {isAuto && <View style={{ height: 28 }} />}
+      <Pressable style={scStyles.arrowBtn} onPress={onIncrement} hitSlop={6}>
+        <Text style={scStyles.arrow}>▲</Text>
+      </Pressable>
+      <Pressable onPress={onTapValue} disabled={!onTapValue}>
+        <Text
+          style={[scStyles.value, { color: valueColor }]}
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.6}
+        >
+          {value}
+        </Text>
+      </Pressable>
+      <Text style={scStyles.label} numberOfLines={2}>{label}{isAuto ? ' ✎' : ''}</Text>
+      <Pressable style={scStyles.arrowBtn} onPress={onDecrement} hitSlop={6}>
+        <Text style={scStyles.arrow}>▼</Text>
+      </Pressable>
     </View>
   );
 }
@@ -313,7 +311,29 @@ export default function FieldSetterScreen() {
   const [runsNeeded, setRunsNeeded] = useState(25);
   const [ballsLeft, setBallsLeft] = useState(15);
   const [wickets, setWickets] = useState(9);
-  const reqRR = ballsLeft > 0 ? ((runsNeeded * 6) / ballsLeft).toFixed(1) : '—';
+  const [reqRROverride, setReqRROverride] = useState<number | null>(null);
+  const autoReqRR = ballsLeft > 0 ? (runsNeeded * 6) / ballsLeft : 0;
+  const reqRR = reqRROverride !== null ? reqRROverride.toFixed(1) : (ballsLeft > 0 ? autoReqRR.toFixed(1) : '—');
+
+  // Inline number edit modal
+  const [editingField, setEditingField] = useState<{ key: string; label: string; value: string } | null>(null);
+
+  const openFieldEdit = (key: string, label: string, currentVal: string | number) => {
+    setEditingField({ key, label, value: String(currentVal) });
+  };
+
+  const confirmFieldEdit = () => {
+    if (!editingField) return;
+    const num = parseFloat(editingField.value);
+    if (isNaN(num)) { setEditingField(null); return; }
+    switch (editingField.key) {
+      case 'runs': setRunsNeeded(Math.max(0, Math.round(num))); setReqRROverride(null); break;
+      case 'balls': setBallsLeft(Math.max(0, Math.round(num))); setReqRROverride(null); break;
+      case 'wickets': setWickets(Math.min(10, Math.max(0, Math.round(num)))); break;
+      case 'rr': setReqRROverride(Math.max(0, num)); break;
+    }
+    setEditingField(null);
+  };
 
   // Timer
   const [timerRunning, setTimerRunning] = useState(false);
@@ -476,21 +496,24 @@ export default function FieldSetterScreen() {
             <View style={styles.matchCardHeader}>
               <View style={styles.matchCardDot} />
               <Text style={styles.matchCardTitle}>Match Situation</Text>
+              <Text style={{ fontSize: 10, color: '#aaa', marginLeft: 4 }}>Tap number to edit</Text>
             </View>
             <View style={styles.stepperRow}>
               <StepperCell
                 value={runsNeeded}
                 label={'runs needed'}
                 valueColor="#E53935"
-                onIncrement={() => setRunsNeeded(v => v + 1)}
-                onDecrement={() => setRunsNeeded(v => Math.max(0, v - 1))}
+                onIncrement={() => { setRunsNeeded(v => v + 1); setReqRROverride(null); }}
+                onDecrement={() => { setRunsNeeded(v => Math.max(0, v - 1)); setReqRROverride(null); }}
+                onTapValue={() => openFieldEdit('runs', 'Runs Needed', runsNeeded)}
               />
               <StepperCell
                 value={ballsLeft}
                 label={'balls left'}
                 valueColor="#1565C0"
-                onIncrement={() => setBallsLeft(v => v + 1)}
-                onDecrement={() => setBallsLeft(v => Math.max(0, v - 1))}
+                onIncrement={() => { setBallsLeft(v => v + 1); setReqRROverride(null); }}
+                onDecrement={() => { setBallsLeft(v => Math.max(0, v - 1)); setReqRROverride(null); }}
+                onTapValue={() => openFieldEdit('balls', 'Balls Left', ballsLeft)}
               />
               <StepperCell
                 value={wickets}
@@ -498,13 +521,15 @@ export default function FieldSetterScreen() {
                 valueColor="#2E7D32"
                 onIncrement={() => setWickets(v => Math.min(10, v + 1))}
                 onDecrement={() => setWickets(v => Math.max(0, v - 1))}
+                onTapValue={() => openFieldEdit('wickets', 'Wickets', wickets)}
               />
               <StepperCell
                 value={reqRR}
                 label={'req. RR'}
                 valueColor="#7B2FBE"
-                onIncrement={() => {}}
-                onDecrement={() => {}}
+                onIncrement={() => setReqRROverride(v => parseFloat(((v ?? autoReqRR) + 0.1).toFixed(1)))}
+                onDecrement={() => setReqRROverride(v => parseFloat((Math.max(0, (v ?? autoReqRR) - 0.1)).toFixed(1)))}
+                onTapValue={() => openFieldEdit('rr', 'Req. Run Rate', reqRR)}
                 isAuto
               />
             </View>
@@ -543,15 +568,13 @@ export default function FieldSetterScreen() {
             </Text>
           </Pressable>
 
-          {elapsed > 0 && !timerRunning && (
-            <Pressable
-              style={styles.saveSessionBtn}
-              onPress={() => setShowSaveModal(true)}
-            >
-              <MaterialIcons name="save" size={20} color="#fff" />
-              <Text style={styles.saveSessionText}>Save Session</Text>
-            </Pressable>
-          )}
+          <Pressable
+            style={styles.saveSessionBtn}
+            onPress={() => setShowSaveModal(true)}
+          >
+            <MaterialIcons name="save" size={20} color="#fff" />
+            <Text style={styles.saveSessionText}>Save Session{elapsed > 0 ? ` · ${formatTime(elapsed)}` : ''}</Text>
+          </Pressable>
 
           {elapsed > 0 && (
             <Pressable
@@ -562,6 +585,41 @@ export default function FieldSetterScreen() {
             </Pressable>
           )}
         </ScrollView>
+
+        {/* ── Inline Number Edit Modal ── */}
+        <Modal
+          visible={!!editingField}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setEditingField(null)}
+        >
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={styles.modalOverlay}
+          >
+            <View style={[styles.editModal, { paddingBottom: spacing.xl }]}>
+              <View style={styles.modalHandle} />
+              <Text style={styles.editModalTitle}>{editingField?.label}</Text>
+              <Text style={styles.editModalSub}>Enter value manually</Text>
+              <TextInput
+                style={[styles.textInput, { fontSize: 28, fontWeight: '800', textAlign: 'center', color: colors.primary }]}
+                value={editingField?.value ?? ''}
+                onChangeText={v => setEditingField(f => f ? { ...f, value: v } : null)}
+                keyboardType="decimal-pad"
+                autoFocus
+                selectTextOnFocus
+              />
+              <View style={styles.editModalBtns}>
+                <Pressable style={styles.cancelBtn} onPress={() => setEditingField(null)}>
+                  <Text style={styles.cancelBtnText}>Cancel</Text>
+                </Pressable>
+                <Pressable style={styles.saveBtn} onPress={confirmFieldEdit}>
+                  <Text style={styles.saveBtnText}>Set</Text>
+                </Pressable>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </Modal>
 
         {/* ── Edit Fielder Name Modal ── */}
         <Modal
@@ -629,7 +687,7 @@ export default function FieldSetterScreen() {
                   <MaterialIcons name="close" size={22} color={colors.textSecondary} />
                 </Pressable>
               </View>
-              <Text style={styles.editModalSub}>Duration: {formatTime(elapsed)} · Log your performance</Text>
+              <Text style={styles.editModalSub}>Duration: {formatTime(elapsed)} · Auto-saved with session</Text>
 
               {saveSuccess ? (
                 <View style={styles.successBox}>
