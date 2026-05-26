@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,12 +14,10 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   GestureHandlerRootView,
-  PanGestureHandler,
-  PanGestureHandlerGestureEvent,
-  State,
+  Gesture,
+  GestureDetector,
 } from 'react-native-gesture-handler';
 import Animated, {
-  useAnimatedGestureHandler,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -124,7 +122,9 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange }: DraggableF
   const translateX = useSharedValue(toPixel(fielder.x, fieldRadius));
   const translateY = useSharedValue(toPixel(fielder.y, fieldRadius));
   const scale = useSharedValue(1);
-  const zIndex = useSharedValue(1);
+  const isActive = useSharedValue(false);
+  const startX = useSharedValue(0);
+  const startY = useSharedValue(0);
 
   const updatePosition = useCallback(
     (nx: number, ny: number) => {
@@ -133,33 +133,37 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange }: DraggableF
     [fielder.id, onPositionChange]
   );
 
-  const gestureHandler = useAnimatedGestureHandler<PanGestureHandlerGestureEvent, { startX: number; startY: number }>({
-    onStart: (_, ctx) => {
-      ctx.startX = translateX.value;
-      ctx.startY = translateY.value;
+  const gesture = Gesture.Pan()
+    .minDistance(0)
+    .onBegin(() => {
+      startX.value = translateX.value;
+      startY.value = translateY.value;
       scale.value = withSpring(1.25);
-      zIndex.value = 99;
-    },
-    onActive: (event, ctx) => {
-      const newX = ctx.startX + event.translationX;
-      const newY = ctx.startY + event.translationY;
-
-      // Convert to normalized to check boundary
-      const nx = toNormalized(newX, fieldRadius);
-      const ny = toNormalized(newY, fieldRadius);
-      const [cnx, cny] = clampToField(nx, ny);
-
-      translateX.value = toPixel(cnx, fieldRadius);
-      translateY.value = toPixel(cny, fieldRadius);
-    },
-    onEnd: () => {
+      isActive.value = true;
+    })
+    .onUpdate((e) => {
+      const newPx = startX.value + e.translationX;
+      const newPy = startY.value + e.translationY;
+      const nx = (newPx + FIELDER_HALF - fieldRadius) / fieldRadius;
+      const ny = (newPy + FIELDER_HALF - fieldRadius) / fieldRadius;
+      const dist = Math.sqrt(nx * nx + ny * ny);
+      let cnx = nx;
+      let cny = ny;
+      if (dist > 0.93) {
+        const s = 0.93 / dist;
+        cnx = nx * s;
+        cny = ny * s;
+      }
+      translateX.value = fieldRadius + cnx * fieldRadius - FIELDER_HALF;
+      translateY.value = fieldRadius + cny * fieldRadius - FIELDER_HALF;
+    })
+    .onEnd(() => {
       scale.value = withSpring(1);
-      zIndex.value = 1;
-      const nx = toNormalized(translateX.value, fieldRadius);
-      const ny = toNormalized(translateY.value, fieldRadius);
+      isActive.value = false;
+      const nx = (translateX.value + FIELDER_HALF - fieldRadius) / fieldRadius;
+      const ny = (translateY.value + FIELDER_HALF - fieldRadius) / fieldRadius;
       runOnJS(updatePosition)(nx, ny);
-    },
-  });
+    });
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -167,13 +171,13 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange }: DraggableF
       { translateY: translateY.value },
       { scale: scale.value },
     ],
-    zIndex: zIndex.value,
-    shadowOpacity: scale.value > 1 ? 0.4 : 0.15,
-    elevation: scale.value > 1 ? 12 : 4,
+    zIndex: isActive.value ? 99 : 1,
+    shadowOpacity: isActive.value ? 0.4 : 0.15,
+    elevation: isActive.value ? 12 : 4,
   }));
 
   return (
-    <PanGestureHandler onGestureEvent={gestureHandler} minDist={0}>
+    <GestureDetector gesture={gesture}>
       <Animated.View
         style={[
           styles.fielder,
@@ -188,7 +192,7 @@ function DraggableFielder({ fielder, fieldRadius, onPositionChange }: DraggableF
       >
         <Text style={styles.fielderLabel}>{fielder.shortLabel}</Text>
       </Animated.View>
-    </PanGestureHandler>
+    </GestureDetector>
   );
 }
 
