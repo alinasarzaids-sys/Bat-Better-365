@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Pressable,
   TextInput,
-  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
@@ -15,7 +14,6 @@ import Slider from '@react-native-community/slider';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { getSupabaseClient, useAuth, useAlert } from '@/template';
 import { progressService } from '@/services/progressService';
-import { drillService } from '@/services/drillService';
 
 export default function TechnicalCompleteScreen() {
   const router = useRouter();
@@ -33,100 +31,14 @@ export default function TechnicalCompleteScreen() {
   const [shotControl, setShotControl] = useState(7);
   const [timing, setTiming] = useState(7);
 
-  // AI-Generated Questions
-  const [aiQuestions, setAiQuestions] = useState<string[]>([]);
-  const [aiResponses, setAiResponses] = useState<string[]>(['', '', '']);
-  const [loadingQuestions, setLoadingQuestions] = useState(false);
-
   // Additional Feedback
   const [reflectionNotes, setReflectionNotes] = useState('');
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (drillId) {
-      generateAIQuestions();
-    }
-  }, [drillId]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const generateAIQuestions = async () => {
-    setLoadingQuestions(true);
-
-    try {
-      // Get drill details to generate context-specific questions
-      const { data: drill } = await drillService.getDrillById(drillId);
-      
-      const supabase = getSupabaseClient();
-      const { data, error } = await supabase.functions.invoke('ai-coach-chat', {
-        body: {
-          messages: [
-            {
-              role: 'user',
-              content: `You are a cricket batting coach. Generate exactly 3 specific, actionable reflection questions for a batsman who just completed this technical drill:
-
-Drill Name: ${drillName}
-Drill Type: ${drill?.subcategory || 'Technical Batting'}
-Description: ${drill?.description || 'Batting technique drill'}
-
-Requirements:
-1. Each question should focus on a specific technical aspect (e.g., footwork, head position, bat swing, balance, follow-through)
-2. Questions should help identify what went well and areas for improvement
-3. Keep questions concise and focused (max 15 words each)
-4. Make questions batting-specific and actionable
-5. Return ONLY the 3 questions, numbered 1-3, with no additional text
-
-Example format:
-1. Was your front foot moving toward the ball on each shot?
-2. Did you maintain a still head position throughout the swing?
-3. Were you able to play late and close to your body?`
-            }
-          ]
-        }
-      });
-
-      if (error || !data?.choices?.[0]?.message?.content) {
-        console.error('AI question generation error:', error);
-        // Fallback to generic questions
-        setAiQuestions([
-          'How well did you execute the key coaching points from this drill?',
-          'What technical aspect felt most challenging during the session?',
-          'Did you notice improvement compared to your previous attempts?'
-        ]);
-      } else {
-        // Parse AI response to extract questions
-        const aiResponse = data.choices[0].message.content;
-        const questionMatches = aiResponse.match(/\d+\.\s*(.+)/g);
-        
-        if (questionMatches && questionMatches.length >= 3) {
-          const parsedQuestions = questionMatches
-            .slice(0, 3)
-            .map((q: string) => q.replace(/^\d+\.\s*/, '').trim());
-          setAiQuestions(parsedQuestions);
-        } else {
-          // Fallback if parsing fails
-          setAiQuestions([
-            'How well did you execute the key coaching points from this drill?',
-            'What technical aspect felt most challenging during the session?',
-            'Did you notice improvement compared to your previous attempts?'
-          ]);
-        }
-      }
-    } catch (err) {
-      console.error('Question generation error:', err);
-      // Fallback questions
-      setAiQuestions([
-        'How well did you execute the key coaching points from this drill?',
-        'What technical aspect felt most challenging during the session?',
-        'Did you notice improvement compared to your previous attempts?'
-      ]);
-    } finally {
-      setLoadingQuestions(false);
-    }
   };
 
   const handleSave = async () => {
@@ -165,12 +77,6 @@ Example format:
         consistency: consistency,
         shot_control: shotControl,
         timing: timing,
-        ai_question_1: aiQuestions[0] || null,
-        ai_response_1: aiResponses[0]?.trim() || null,
-        ai_question_2: aiQuestions[1] || null,
-        ai_response_2: aiResponses[1]?.trim() || null,
-        ai_question_3: aiQuestions[2] || null,
-        ai_response_3: aiResponses[2]?.trim() || null,
         reflection_notes: reflectionNotes.trim() || null,
       });
 
@@ -351,41 +257,6 @@ Example format:
               <Text style={[styles.sliderValue, { color: '#FF9800' }]}>{timing}</Text>
             </View>
           </View>
-        </View>
-
-        {/* Drill-Specific Reflection */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <MaterialIcons name="lightbulb" size={22} color="#FF9800" />
-            <Text style={styles.sectionTitle}>Drill-Specific Reflection</Text>
-          </View>
-          {loadingQuestions ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-              <Text style={styles.loadingText}>Generating personalized questions...</Text>
-            </View>
-          ) : (
-            aiQuestions.map((question, index) => (
-              <View key={index} style={styles.aiQuestionContainer}>
-                <Text style={styles.aiQuestionNumber}>Question {index + 1}</Text>
-                <Text style={styles.aiQuestionText}>{question}</Text>
-                <TextInput
-                  style={styles.aiResponseInput}
-                  placeholder="Your response..."
-                  placeholderTextColor="#9E9E9E"
-                  value={aiResponses[index]}
-                  onChangeText={(text) => {
-                    const newResponses = [...aiResponses];
-                    newResponses[index] = text;
-                    setAiResponses(newResponses);
-                  }}
-                  multiline
-                  numberOfLines={3}
-                  textAlignVertical="top"
-                />
-              </View>
-            ))
-          )}
         </View>
 
         {/* Reflection Notes */}
@@ -628,7 +499,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: spacing.lg,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.md,
     borderTopWidth: 1,
     borderTopColor: '#E0E0E0',
     backgroundColor: colors.surface,
