@@ -440,28 +440,63 @@ function DonutChart({ pct, color, label, sublabel }: { pct: number; color: strin
 
 // ─── Progress Bars ────────────────────────────────────────────────────────────
 function ProgressBars({ items, color }: { items: { label: string; value: number; maxVal?: number }[]; color: string }) {
+  const maxVal = Math.max(...items.map(i => i.maxVal || 10), 1);
+  const chartW = Math.max(1, SCREEN_WIDTH - spacing.md * 4 - 32 - 80);
   return (
-    <View style={{ gap: spacing.sm }}>
-      {items.map((item, i) => {
-        const maxV = item.maxVal || 10;
-        const pct = item.value > 0 ? Math.min(100, (item.value / maxV) * 100) : 0;
+    <View style={{ gap: spacing.xs + 2 }}>
+      {items.map((item, idx) => {
+        const mV = item.maxVal || 10;
+        const pct = item.value > 0 ? Math.min(100, (item.value / mV) * 100) : 0;
+        const barW = Math.max(4, (pct / 100) * chartW);
+        const hasVal = item.value > 0;
+        const barColor = hasVal ? color : colors.border;
+        const tier = item.value >= 8 ? '🔥' : item.value >= 6 ? '✓' : item.value >= 4 ? '~' : item.value > 0 ? '↑' : '';
         return (
-          <View key={i}>
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.text }}>{item.label}</Text>
-              <Text style={{ fontSize: 12, fontWeight: '800', color: item.value > 0 ? color : colors.textSecondary }}>
-                {item.value > 0 ? `${item.value.toFixed(1)}/${maxV}` : '—'}
-              </Text>
+          <View key={idx} style={pbS.row}>
+            <Text style={pbS.label} numberOfLines={1}>{item.label}</Text>
+            <View style={pbS.barTrack}>
+              <View style={[pbS.barFill, { width: barW, backgroundColor: barColor }]}>
+                {hasVal && pct > 18 && (
+                  <Text style={pbS.inlineVal}>{item.value.toFixed(1)}</Text>
+                )}
+              </View>
+              {(!hasVal || pct <= 18) && (
+                <Text style={[pbS.sideVal, { color: hasVal ? color : colors.textSecondary }]}>
+                  {hasVal ? item.value.toFixed(1) : '—'}
+                </Text>
+              )}
             </View>
-            <View style={{ height: 8, backgroundColor: colors.border, borderRadius: 4, overflow: 'hidden' }}>
-              <View style={{ width: `${pct}%`, height: '100%', backgroundColor: color, borderRadius: 4 }} />
+            <View style={pbS.badge}>
+              <Text style={[pbS.badgeScore, { color: hasVal ? color : colors.textSecondary }]}>
+                {hasVal ? `${item.value.toFixed(1)}` : '—'}
+              </Text>
+              <Text style={pbS.badgeMax}>/{mV}</Text>
+              {tier ? <Text style={{ fontSize: 11 }}>{tier}</Text> : null}
             </View>
           </View>
         );
       })}
+      <View style={pbS.scaleRow}>
+        {[0, 2, 4, 6, 8, 10].map(v => (
+          <Text key={v} style={pbS.scaleTick}>{v}</Text>
+        ))}
+      </View>
     </View>
   );
 }
+const pbS = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 2 },
+  label: { fontSize: 11, fontWeight: '700', color: colors.text, width: 88, flexShrink: 0 },
+  barTrack: { flex: 1, height: 22, backgroundColor: colors.border + '60', borderRadius: 11, overflow: 'hidden', justifyContent: 'center', flexDirection: 'row', alignItems: 'center' },
+  barFill: { position: 'absolute', left: 0, top: 0, bottom: 0, borderRadius: 11, justifyContent: 'center', paddingLeft: 6 },
+  inlineVal: { fontSize: 11, fontWeight: '900', color: '#fff' },
+  sideVal: { fontSize: 11, fontWeight: '700', paddingLeft: 6 },
+  badge: { flexDirection: 'row', alignItems: 'baseline', gap: 0, width: 58, justifyContent: 'flex-end' },
+  badgeScore: { fontSize: 13, fontWeight: '900' },
+  badgeMax: { fontSize: 10, color: colors.textSecondary, fontWeight: '600' },
+  scaleRow: { flexDirection: 'row', justifyContent: 'space-between', paddingLeft: 92, paddingRight: 62, marginTop: 2 },
+  scaleTick: { fontSize: 9, color: colors.textSecondary },
+});
 
 // ─── Objective Strike Rate (Freestyle only) ───────────────────────────────────
 function ObjectiveStrikeRate({ sessionsMet, totalSessions, tabColor }: {
@@ -897,11 +932,15 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
   const avgAdapted = avg(logs.map(l => l.adapted_plan));
   const avgConfidence = avg(logs.map(l => l.confidence_pressure));
 
+  // Parse balls faced from ALL sessions (not just Freestyle-Tactical) since sessions may be tagged 'Freestyle' but contain tactical notes
   let tacBalls = 0, tacMiddled = 0;
-  tacticalFreestyle.forEach(s => {
+  sessions.forEach(s => {
     if (!s.notes) return;
+    let inBattingSection = false;
     s.notes.split('\n').forEach(line => {
-      const lower = line.toLowerCase().trim();
+      const trimmed = line.trim();
+      if (trimmed.startsWith('---')) { inBattingSection = trimmed.toLowerCase().includes('batting'); return; }
+      const lower = trimmed.toLowerCase();
       if (lower.startsWith('balls faced:')) { const v = parseInt(lower.replace('balls faced:', '').trim()); if (!isNaN(v) && v > 0) tacBalls += v; }
       if (lower.startsWith('balls middled:')) { const v = parseInt(lower.replace('balls middled:', '').trim()); if (!isNaN(v) && v > 0) tacMiddled += v; }
     });
