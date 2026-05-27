@@ -504,6 +504,75 @@ const sc = StyleSheet.create({
   title: { fontSize: 15, fontWeight: '800', color: colors.text },
 });
 
+// ─── Objective Strike Rate ──────────────────────────────────────────────────────
+function ObjectiveStrikeRate({ sessionsMet, totalSessions, tabColor }: {
+  sessionsMet: number; totalSessions: number; tabColor: string;
+}) {
+  if (totalSessions === 0) return null;
+  const pct = Math.round((sessionsMet / totalSessions) * 100);
+  const tier =
+    pct >= 90 ? 'Elite Execution' :
+    pct >= 80 ? 'Elite Performer' :
+    pct >= 60 ? 'Consistent' :
+    pct >= 40 ? 'Developing' : 'Needs Work';
+  const tierColor =
+    pct >= 80 ? colors.success :
+    pct >= 60 ? '#2196F3' :
+    pct >= 40 ? colors.warning : colors.error;
+
+  const SIZE = 140; const STROKE = 18; const R = (SIZE - STROKE) / 2;
+  const CIRCUM = 2 * Math.PI * R;
+  const offset = CIRCUM * (1 - pct / 100);
+
+  return (
+    <SCard title="Objective Strike Rate" icon="center-focus-strong" color={tabColor}>
+      <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: spacing.md }}>
+        Sessions where you hit your target
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xl }}>
+        <View style={{ width: SIZE, height: SIZE, justifyContent: 'center', alignItems: 'center' }}>
+          <Svg width={SIZE} height={SIZE} style={{ position: 'absolute' }}>
+            <Circle cx={SIZE/2} cy={SIZE/2} r={R} stroke={colors.border} strokeWidth={STROKE} fill="none" />
+            <Circle cx={SIZE/2} cy={SIZE/2} r={R} stroke={tierColor} strokeWidth={STROKE} fill="none"
+              strokeDasharray={`${CIRCUM} ${CIRCUM}`} strokeDashoffset={offset}
+              strokeLinecap="round" rotation="-90" originX={SIZE/2} originY={SIZE/2} />
+          </Svg>
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 34, fontWeight: '900', color: tierColor, lineHeight: 38 }}>{pct}</Text>
+            <Text style={{ fontSize: 13, fontWeight: '800', color: tierColor }}>%</Text>
+            <Text style={{ fontSize: 10, color: colors.textSecondary, textAlign: 'center', marginTop: 2 }}>of sessions</Text>
+          </View>
+        </View>
+        <View style={{ flex: 1, gap: spacing.sm }}>
+          <View style={[osrStyle.tierBadge, { backgroundColor: tierColor + '18', borderColor: tierColor + '40' }]}>
+            <Text style={[osrStyle.tierText, { color: tierColor }]}>{tier}</Text>
+          </View>
+          <View style={osrStyle.statRow}>
+            <Text style={[osrStyle.statIcon, { color: tierColor }]}>{'\u2713'}</Text>
+            <Text style={osrStyle.statText}><Text style={osrStyle.statBold}>{sessionsMet} objectives</Text> met</Text>
+          </View>
+          <View style={osrStyle.statRow}>
+            <MaterialIcons name="calendar-today" size={14} color={colors.textSecondary} />
+            <Text style={osrStyle.statText}><Text style={osrStyle.statBold}>{totalSessions} total</Text> sessions</Text>
+          </View>
+          <View style={[osrStyle.statRow, { alignItems: 'flex-start', marginTop: 2 }]}>
+            <Text style={[osrStyle.statIcon, { color: colors.textSecondary, fontSize: 11 }]}>i</Text>
+            <Text style={[osrStyle.statText, { flex: 1 }]}>Target: avg rating {'>'}=7/10 or academy intensity {'>'}=6/10</Text>
+          </View>
+        </View>
+      </View>
+    </SCard>
+  );
+}
+const osrStyle = StyleSheet.create({
+  tierBadge: { paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: 20, borderWidth: 1, alignSelf: 'flex-start' },
+  tierText: { fontSize: 13, fontWeight: '800' },
+  statRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  statIcon: { fontSize: 14, fontWeight: '900', width: 16, color: colors.success },
+  statText: { fontSize: 13, color: colors.text, lineHeight: 18, flexShrink: 1 },
+  statBold: { fontWeight: '800' },
+});
+
 // ─── TAB CONTENTS ─────────────────────────────────────────────────────────────
 
 // ── Overall Tab ───────────────────────────────────────────────────────────────
@@ -518,10 +587,35 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
     [...techLogs, ...physLogs, ...mentalLogs, ...tacLogs].reduce((a, l: any) => a + Math.round((l.time_elapsed || 0) / 60), 0)
   );
   const totalSessions = sessions.length + academyLogs.length + techLogs.length + physLogs.length + mentalLogs.length + tacLogs.length;
-  const totalBalls = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+
+  // Aggregate balls from all sources
+  const ballsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.balls_faced) || 0), 0);
+  const ballsFromTechDrills = techLogs.reduce((a, l) => a + (Number(l.balls_faced) || 0), 0);
+  const middledFromTechDrills = techLogs.reduce((a, l) => a + (Number(l.balls_middled) || 0), 0);
+  let ballsFromSessNotes = 0, middledFromSessNotes = 0;
+  sessions.forEach(s => {
+    if (!s.notes) return;
+    s.notes.split('\n').forEach(line => {
+      const lower = line.toLowerCase().trim();
+      if (lower.startsWith('balls faced:')) { const v = parseInt(lower.replace('balls faced:', '').trim()); if (!isNaN(v) && v > 0) ballsFromSessNotes += v; }
+      if (lower.startsWith('balls middled:')) { const v = parseInt(lower.replace('balls middled:', '').trim()); if (!isNaN(v) && v > 0) middledFromSessNotes += v; }
+    });
+  });
+  const totalBalls = ballsFromAcademy + ballsFromTechDrills + ballsFromSessNotes;
+  const totalMiddled = middledFromTechDrills + middledFromSessNotes;
   const totalRuns = academyLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
-  const middleRate = totalBalls > 0 ? Math.round((totalRuns / totalBalls) * 100) : null;
-  const strikeRate = totalBalls > 0 ? Math.round((totalRuns / totalBalls) * 100) : null;
+  const overallMiddleRate = totalBalls > 0 && totalMiddled > 0 ? Math.round((totalMiddled / totalBalls) * 100) : null;
+  const strikeRate = ballsFromAcademy > 0 ? Math.round((totalRuns / ballsFromAcademy) * 100) : null;
+
+  // Objective Strike Rate
+  const techObjMet = techLogs.filter(l => avg([l.technique_quality, l.consistency, l.shot_control, l.timing]) >= 7).length;
+  const physObjMet = physLogs.filter(l => avg([l.technique_quality, l.consistency, l.focus_level, l.confidence_level]) >= 7).length;
+  const menObjMet = mentalLogs.filter(l => avg([l.adherence, l.engagement, l.focus_level, l.confidence_level]) >= 7).length;
+  const tacObjMet = tacLogs.filter(l => avg([l.field_reading, l.adapted_plan, l.confidence_pressure]) >= 7).length;
+  const freeObjMet = sessions.filter(s => { const p = parseSessionNotes(s.notes || ''); const vals = [Number(p['technical']),Number(p['mental']),Number(p['physical']),Number(p['tactical'])].filter(v=>v>0); return vals.length > 0 && (vals.reduce((a,b)=>a+b,0)/vals.length) >= 3.5; }).length;
+  const acaObjMet = academyLogs.filter(l => (l.intensity || 0) >= 6).length;
+  const objMet = techObjMet + physObjMet + menObjMet + tacObjMet + freeObjMet + acaObjMet;
+  const objTotal = techLogs.length + physLogs.length + mentalLogs.length + tacLogs.length + sessions.length + academyLogs.length;
 
   const pillarMins = {
     Technical: Math.round(techLogs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0) + academyLogs.filter(l => (l.session_type || '').toLowerCase().includes('batting') || (l.session_type || '').toLowerCase().includes('tech')).reduce((a, l) => a + (l.duration_minutes || 0), 0)),
@@ -553,9 +647,12 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
       <KPIRow items={[
         { label: 'Total Time', value: fmtMins(totalTime), icon: 'timer', color: '#6366F1' },
         { label: 'Sessions', value: String(totalSessions), icon: 'check-circle', color: colors.success },
-        { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'sports-cricket', color: colors.technical || '#2196F3' },
-        { label: 'Strike Rate', value: strikeRate !== null ? `${strikeRate}` : '—', icon: 'trending-up', color: colors.warning, sub: totalBalls > 0 ? `${totalRuns} runs / ${totalBalls} balls` : undefined },
+        { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'adjust', color: colors.technical || '#2196F3' },
+        { label: 'Middle Rate', value: overallMiddleRate !== null ? `${overallMiddleRate}%` : '—', icon: 'center-focus-strong', color: colors.success, sub: totalMiddled > 0 ? `${totalMiddled}/${totalBalls}` : undefined },
+        ...(strikeRate !== null ? [{ label: 'Strike Rate', value: String(strikeRate), icon: 'trending-up', color: colors.warning, sub: `${totalRuns}r / ${ballsFromAcademy}b` }] : []),
       ]} />
+
+      <ObjectiveStrikeRate sessionsMet={objMet} totalSessions={objTotal} tabColor="#6366F1" />
 
       <SCard title="Pillar Balance" icon="radar" color="#6366F1">
         <RadarChart data={radarData} color="#6366F1" />
@@ -647,6 +744,11 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
         { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'center-focus-strong', color: colors.success },
         ...(techStrikeRate !== null ? [{ label: 'Strike Rate', value: String(techStrikeRate), icon: 'trending-up', color: '#2196F3', sub: 'runs per 100 balls' }] : []),
       ]} />
+      <ObjectiveStrikeRate
+        sessionsMet={logs.filter(l => avg([l.technique_quality, l.consistency, l.shot_control, l.timing]) >= 7).length}
+        totalSessions={logs.length}
+        tabColor={colors.technical || '#2196F3'}
+      />
       <SCard title="Metric Averages" icon="bar-chart" color={colors.technical || '#2196F3'}>
         <ProgressBars items={metricData} color={colors.technical || '#2196F3'} />
       </SCard>
@@ -704,6 +806,11 @@ function PhysicalTab({ logs, sessions, tf }: { logs: PhysLog[]; sessions: Sessio
         { label: 'Avg Energy', value: avgEnergy > 0 ? `${avgEnergy}/10` : '—', icon: 'bolt', color: colors.warning },
         { label: 'Avg Reaction', value: avgReaction > 0 ? `${avgReaction}/10` : '—', icon: 'trending-up', color: colors.success },
       ]} />
+      <ObjectiveStrikeRate
+        sessionsMet={logs.filter(l => avg([l.technique_quality, l.consistency, l.focus_level, l.confidence_level]) >= 7).length}
+        totalSessions={logs.length}
+        tabColor={colors.physical || '#4CAF50'}
+      />
       <SCard title="Avg Ratings Over Time" icon="show-chart" color={colors.physical || '#4CAF50'}>
         <ProgressBars items={[
           { label: 'Energy Level', value: avgEnergy },
@@ -773,6 +880,11 @@ function MentalTab({ logs, sessions, tf }: { logs: MentalLog[]; sessions: Sessio
         { label: 'Avg Confidence', value: avgConfidence > 0 ? `${avgConfidence}/10` : '—', icon: 'star', color: confColor },
         { label: 'Avg Adherence', value: avgAdherence > 0 ? `${avgAdherence}/10` : '—', icon: 'done', color: colors.success },
       ]} />
+      <ObjectiveStrikeRate
+        sessionsMet={logs.filter(l => avg([l.adherence, l.engagement, l.focus_level, l.confidence_level]) >= 7).length}
+        totalSessions={logs.length}
+        tabColor={colors.mental || '#9C27B0'}
+      />
       <SCard title="Mental Metrics" icon="bar-chart" color={colors.mental || '#9C27B0'}>
         <ProgressBars items={moodData} color={colors.mental || '#9C27B0'} />
       </SCard>
@@ -807,6 +919,18 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
   const avgConfidence = avg(logs.map(l => l.confidence_pressure));
   const avgMood = avg(logs.map(l => l.overall_mood));
 
+  // Balls faced from tactical-tagged freestyle sessions notes
+  let tacBalls = 0, tacMiddled = 0;
+  tacticalFreestyle.forEach(s => {
+    if (!s.notes) return;
+    s.notes.split('\n').forEach(line => {
+      const lower = line.toLowerCase().trim();
+      if (lower.startsWith('balls faced:')) { const v = parseInt(lower.replace('balls faced:', '').trim()); if (!isNaN(v) && v > 0) tacBalls += v; }
+      if (lower.startsWith('balls middled:')) { const v = parseInt(lower.replace('balls middled:', '').trim()); if (!isNaN(v) && v > 0) tacMiddled += v; }
+    });
+  });
+  const tacMiddleRate = tacBalls > 0 && tacMiddled > 0 ? Math.round((tacMiddled / tacBalls) * 100) : null;
+
   const matchedYes = logs.filter(l => l.shot_selection_matched === true).length;
   const matchedNo = logs.filter(l => l.shot_selection_matched === false).length;
   const matchedTotal = matchedYes + matchedNo;
@@ -828,7 +952,14 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
         { label: 'Tactical Time', value: fmtMins(totalMins), icon: 'timer', color: colors.tactical || '#FF9800' },
         { label: 'Shot Match', value: matchedPct !== null ? `${matchedPct}%` : '—', icon: 'done', color: colors.success, sub: matchedTotal > 0 ? `${matchedYes}/${matchedTotal}` : undefined },
         { label: 'Field Reading', value: avgFieldReading > 0 ? `${avgFieldReading}/10` : '—', icon: 'visibility', color: colors.warning },
+        { label: 'Balls Faced', value: tacBalls > 0 ? String(tacBalls) : '—', icon: 'adjust', color: colors.tactical || '#FF9800' },
+        ...(tacMiddleRate !== null ? [{ label: 'Middle Rate', value: `${tacMiddleRate}%`, icon: 'center-focus-strong', color: colors.success, sub: `${tacMiddled}/${tacBalls}` }] : []),
       ]} />
+      <ObjectiveStrikeRate
+        sessionsMet={logs.filter(l => avg([l.field_reading, l.adapted_plan, l.confidence_pressure]) >= 7).length}
+        totalSessions={logs.length}
+        tabColor={colors.tactical || '#FF9800'}
+      />
       <SCard title="Decision Success" icon="pie-chart" color={colors.tactical || '#FF9800'}>
         {matchedTotal > 0 ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', flexWrap: 'wrap', gap: spacing.md }}>
@@ -923,6 +1054,10 @@ function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe
         { label: 'Methods Used', value: Object.keys(equipmentCount).length > 0 ? String(Object.keys(equipmentCount).length) : '—', icon: 'view-list', color: '#6366F1' },
         { label: 'Top Method', value: topPct !== null ? `${topPct}%` : '—', icon: 'whatshot', color: colors.primary, sub: topMethod },
       ]} />
+      {(() => {
+        const freeMet = freestyleSessions.filter(s => { const p = parseSessionNotes(s.notes || ''); const vals = [Number(p['technical']),Number(p['mental']),Number(p['physical']),Number(p['tactical'])].filter(v=>v>0); return vals.length > 0 && (vals.reduce((a,b)=>a+b,0)/vals.length) >= 3.5; }).length;
+        return freestyleSessions.length > 0 ? <ObjectiveStrikeRate sessionsMet={freeMet} totalSessions={freestyleSessions.length} tabColor="#E53935" /> : null;
+      })()}
       {sorted.length > 0 ? (
         <SCard title="Training Method Distribution" icon="bar-chart" color="#E53935">
           <View style={{ gap: spacing.sm }}>
