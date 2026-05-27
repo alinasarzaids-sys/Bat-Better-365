@@ -635,8 +635,17 @@ export default function ProfileScreen() {
                   <Text style={styles.levelIcon}>👑</Text>
                   <View style={styles.levelDetails}>
                     <Text style={styles.levelName}>Expert</Text>
-                    <Text style={styles.levelRange}>3,000+ XP</Text>
+                    <Text style={styles.levelRange}>3,000 - 9,999 XP</Text>
                     <Text style={styles.levelBenefits}>Peak performance{"\n"}Consistent excellence</Text>
+                  </View>
+                </View>
+                
+                <View style={styles.levelItem}>
+                  <Text style={styles.levelIcon}>💎</Text>
+                  <View style={styles.levelDetails}>
+                    <Text style={styles.levelName}>Elite</Text>
+                    <Text style={styles.levelRange}>10,000+ XP</Text>
+                    <Text style={styles.levelBenefits}>Cricket legend{"\n"}Elite-level mastery achieved</Text>
                   </View>
                 </View>
               </View>

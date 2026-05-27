@@ -159,12 +159,13 @@ export const profileService = {
       { level: 'Beginner', max: 500 },
       { level: 'Intermediate', max: 1500 },
       { level: 'Advanced', max: 3000 },
-      { level: 'Expert', max: Infinity },
+      { level: 'Expert', max: 10000 },
+      { level: 'Elite', max: Infinity },
     ];
 
     const currentIndex = levels.findIndex((l) => l.level === currentLevel);
     if (currentIndex === -1 || currentIndex === levels.length - 1) {
-      return { level: 'Expert', xpRequired: 3000 };
+      return { level: 'Elite', xpRequired: 10000 };
     }
 
     return { level: levels[currentIndex + 1].level, xpRequired: levels[currentIndex + 1].max };
@@ -175,7 +176,8 @@ export const profileService = {
       { level: 'Beginner', min: 0, max: 500 },
       { level: 'Intermediate', min: 500, max: 1500 },
       { level: 'Advanced', min: 1500, max: 3000 },
-      { level: 'Expert', min: 3000, max: Infinity },
+      { level: 'Expert', min: 3000, max: 10000 },
+      { level: 'Elite', min: 10000, max: Infinity },
     ];
 
     const current = levels.find((l) => l.level === currentLevel);

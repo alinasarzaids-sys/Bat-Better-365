@@ -24,6 +24,7 @@ const HOME_LEVELS = [
   { label: 'Intermediate', xp: LEVEL_THRESHOLDS.Intermediate, color: '#42A5F5', icon: '⭐', desc: 'More consistent' },
   { label: 'Advanced', xp: LEVEL_THRESHOLDS.Advanced, color: '#66BB6A', icon: '🔥', desc: 'Advanced skills' },
   { label: 'Expert', xp: LEVEL_THRESHOLDS.Expert, color: '#FFA726', icon: '👑', desc: 'Peak performance' },
+  { label: 'Elite', xp: LEVEL_THRESHOLDS.Elite, color: '#E91E63', icon: '💎', desc: 'Cricket legend' },
 ];
 
 interface SessionWithDrill extends Session {

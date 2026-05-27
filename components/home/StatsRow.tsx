@@ -86,6 +86,7 @@ const LEVELS = [
   { label: 'Intermediate', xp: LEVEL_THRESHOLDS.Intermediate, color: '#42A5F5' },
   { label: 'Advanced', xp: LEVEL_THRESHOLDS.Advanced, color: '#66BB6A' },
   { label: 'Expert', xp: LEVEL_THRESHOLDS.Expert, color: '#FFA726' },
+  { label: 'Elite', xp: LEVEL_THRESHOLDS.Elite, color: '#E91E63' },
 ];
 
 export function StatsRow({ progress }: StatsRowProps) {

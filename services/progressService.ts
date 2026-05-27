@@ -17,6 +17,7 @@ export const LEVEL_THRESHOLDS = {
   Intermediate: 500,
   Advanced: 1500,
   Expert: 3000,
+  Elite: 10000,
 };
 
 export const progressService = {
@@ -281,6 +282,7 @@ export const progressService = {
    * Determine skill level based on total XP
    */
   getSkillLevel(totalXP: number): string {
+    if (totalXP >= LEVEL_THRESHOLDS.Elite) return 'Elite';
     if (totalXP >= LEVEL_THRESHOLDS.Expert) return 'Expert';
     if (totalXP >= LEVEL_THRESHOLDS.Advanced) return 'Advanced';
     if (totalXP >= LEVEL_THRESHOLDS.Intermediate) return 'Intermediate';
@@ -291,11 +293,11 @@ export const progressService = {
    * Get next level info
    */
   getNextLevel(currentLevel: string): { level: string; requiredXP: number } {
-    const levels = ['Beginner', 'Intermediate', 'Advanced', 'Expert'];
+    const levels = ['Beginner', 'Intermediate', 'Advanced', 'Expert', 'Elite'];
     const currentIndex = levels.indexOf(currentLevel);
     
     if (currentIndex === -1 || currentIndex >= levels.length - 1) {
-      return { level: 'Expert', requiredXP: LEVEL_THRESHOLDS.Expert };
+      return { level: 'Elite', requiredXP: LEVEL_THRESHOLDS.Elite };
     }
 
     const nextLevel = levels[currentIndex + 1];
