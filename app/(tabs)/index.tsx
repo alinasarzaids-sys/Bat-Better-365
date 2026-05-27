@@ -17,6 +17,14 @@ import { getSupabaseClient } from '@/template';
 
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { Session, Drill } from '@/types';
+import { LEVEL_THRESHOLDS, XP_REWARDS } from '@/services/progressService';
+
+const HOME_LEVELS = [
+  { label: 'Beginner', xp: 0, color: '#78909C', icon: '☀️', desc: 'New player' },
+  { label: 'Intermediate', xp: LEVEL_THRESHOLDS.Intermediate, color: '#42A5F5', icon: '⭐', desc: 'More consistent' },
+  { label: 'Advanced', xp: LEVEL_THRESHOLDS.Advanced, color: '#66BB6A', icon: '🔥', desc: 'Advanced skills' },
+  { label: 'Expert', xp: LEVEL_THRESHOLDS.Expert, color: '#FFA726', icon: '👑', desc: 'Peak performance' },
+];
 
 interface SessionWithDrill extends Session {
   drill?: Drill;
@@ -312,6 +320,84 @@ ${sessionData.session_notes ? `Notes: ${sessionData.session_notes}` : ''}`;
         <HeroCard />
         <QuickActions onPlanSession={() => setShowPlanModal(true)} />
         <StatsRow progress={progress} />
+
+        {/* Level Progress Section */}
+        {progress && (() => {
+          const totalXP = (progress.technical_points || 0) + (progress.physical_points || 0) + (progress.mental_points || 0) + (progress.tactical_points || 0);
+          const currentLevel = progress.skill_level || 'Beginner';
+          const levelInfo = HOME_LEVELS.find(l => l.label === currentLevel) || HOME_LEVELS[0];
+          const nextLevel = HOME_LEVELS.find(l => l.xp > totalXP);
+          const prevThreshold = levelInfo.xp;
+          const nextThreshold = nextLevel?.xp ?? totalXP;
+          const levelPct = nextLevel ? Math.min(100, Math.round(((totalXP - prevThreshold) / (nextThreshold - prevThreshold)) * 100)) : 100;
+          return (
+            <View style={styles.levelSection}>
+              <View style={styles.sectionHeader}>
+                <MaterialIcons name="military-tech" size={22} color={levelInfo.color} />
+                <Text style={styles.sectionTitle}>Your Level Progress</Text>
+              </View>
+
+              {/* Current Level Card */}
+              <View style={[styles.levelCard, { borderColor: levelInfo.color + '40', backgroundColor: levelInfo.color + '0D' }]}>
+                <View style={styles.levelCardTop}>
+                  <View style={styles.levelCardLeft}>
+                    <Text style={styles.levelCardIcon}>{levelInfo.icon}</Text>
+                    <View>
+                      <Text style={[styles.levelCardName, { color: levelInfo.color }]}>{currentLevel}</Text>
+                      <Text style={styles.levelCardDesc}>{levelInfo.desc}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.levelCardRight}>
+                    <Text style={[styles.levelCardXP, { color: levelInfo.color }]}>{totalXP} XP</Text>
+                    {nextLevel && <Text style={styles.levelCardNext}>{nextLevel.xp - totalXP} to {nextLevel.label}</Text>}
+                  </View>
+                </View>
+                <View style={styles.levelBarTrack}>
+                  <View style={[styles.levelBarFill, { width: `${levelPct}%`, backgroundColor: levelInfo.color }]} />
+                </View>
+                <View style={styles.levelBarLabels}>
+                  <Text style={styles.levelBarLabel}>{prevThreshold} XP</Text>
+                  <Text style={[styles.levelBarPct, { color: levelInfo.color }]}>{levelPct}%</Text>
+                  {nextLevel && <Text style={styles.levelBarLabel}>{nextThreshold} XP</Text>}
+                </View>
+              </View>
+
+              {/* Level Ladder */}
+              <View style={styles.levelLadder}>
+                {HOME_LEVELS.map((lvl) => {
+                  const isCurrent = lvl.label === currentLevel;
+                  const isUnlocked = totalXP >= lvl.xp;
+                  return (
+                    <View key={lvl.label} style={[styles.levelLadderRow, isCurrent && { backgroundColor: lvl.color + '18', borderColor: lvl.color + '50' }]}>
+                      <View style={[styles.levelLadderDot, { backgroundColor: isUnlocked ? lvl.color : colors.border }]} />
+                      <Text style={styles.levelLadderIcon}>{lvl.icon}</Text>
+                      <Text style={[styles.levelLadderName, isCurrent && { color: lvl.color, fontWeight: '800' }]}>{lvl.label}</Text>
+                      <Text style={styles.levelLadderXP}>{lvl.xp === 0 ? 'Starting level' : `${lvl.xp}+ XP`}</Text>
+                      {isCurrent && <View style={[styles.youBadge, { borderColor: lvl.color }]}><Text style={[styles.youBadgeText, { color: lvl.color }]}>YOU</Text></View>}
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* How to Earn */}
+              <View style={styles.earnCard}>
+                <Text style={styles.earnTitle}>HOW TO EARN XP</Text>
+                {[
+                  { icon: 'check-circle' as const, color: colors.success, text: `Complete any drill — +${XP_REWARDS.DRILL_COMPLETION} XP` },
+                  { icon: 'star' as const, color: colors.warning, text: `Rate session 7+/10 — +${XP_REWARDS.GOOD_RATING} XP bonus` },
+                  { icon: 'local-fire-department' as const, color: colors.error, text: `3+ day streak — +${XP_REWARDS.STREAK} XP bonus` },
+                  { icon: 'event-repeat' as const, color: colors.primary, text: `3+ sessions/week — +${XP_REWARDS.CONSISTENCY} XP bonus` },
+                  { icon: 'book' as const, color: colors.mental, text: 'Complete journal daily — +40 XP' },
+                ].map((item, i) => (
+                  <View key={i} style={styles.earnRow}>
+                    <MaterialIcons name={item.icon} size={16} color={item.color} />
+                    <Text style={styles.earnText}>{item.text}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          );
+        })()}
 
         {/* Leaderboard Section */}
         <View style={styles.section}>
@@ -1273,5 +1359,45 @@ const styles = StyleSheet.create({
     color: colors.textLight,
     fontWeight: '600',
   },
+
+  // Level Progress Section
+  levelSection: { marginTop: spacing.xl },
+  levelCard: {
+    borderRadius: borderRadius.lg, borderWidth: 1.5,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  levelCardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  levelCardLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  levelCardIcon: { fontSize: 28 },
+  levelCardName: { fontSize: 17, fontWeight: '800' },
+  levelCardDesc: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
+  levelCardRight: { alignItems: 'flex-end' },
+  levelCardXP: { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  levelCardNext: { fontSize: 11, color: colors.textSecondary, marginTop: 2 },
+  levelBarTrack: { height: 10, backgroundColor: colors.border, borderRadius: 5, overflow: 'hidden', marginBottom: 4 },
+  levelBarFill: { height: '100%', borderRadius: 5 },
+  levelBarLabels: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  levelBarLabel: { fontSize: 10, color: colors.textSecondary },
+  levelBarPct: { fontSize: 11, fontWeight: '700' },
+  levelLadder: { gap: 4, marginBottom: spacing.sm },
+  levelLadderRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2,
+    borderRadius: borderRadius.md, borderWidth: 1, borderColor: 'transparent',
+    backgroundColor: colors.surface,
+  },
+  levelLadderDot: { width: 10, height: 10, borderRadius: 5 },
+  levelLadderIcon: { fontSize: 16 },
+  levelLadderName: { flex: 1, fontSize: 14, color: colors.text, fontWeight: '600' },
+  levelLadderXP: { fontSize: 12, color: colors.textSecondary },
+  youBadge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, borderWidth: 1.5 },
+  youBadgeText: { fontSize: 9, fontWeight: '900', letterSpacing: 1 },
+  earnCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  earnTitle: { fontSize: 10, color: colors.textSecondary, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: spacing.sm },
+  earnRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.sm },
+  earnText: { flex: 1, fontSize: 13, color: colors.textSecondary },
 
 });

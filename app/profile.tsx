@@ -577,16 +577,23 @@ export default function ProfileScreen() {
                 </View>
                 
                 <View style={styles.xpItem}>
-                  <MaterialIcons name="trending-up" size={20} color="#2196F3" />
+                  <MaterialIcons name="local-fire-department" size={20} color="#FF6B35" />
                   <Text style={styles.xpItemText}>
-                    <Text style={styles.xpItemBold}>Consistency (3+ sessions/week):</Text> +15 XP
+                    <Text style={styles.xpItemBold}>3+ day training streak:</Text> +20 XP bonus
                   </Text>
                 </View>
                 
                 <View style={styles.xpItem}>
-                  <MaterialIcons name="local-fire-department" size={20} color="#FF6B35" />
+                  <MaterialIcons name="trending-up" size={20} color="#2196F3" />
                   <Text style={styles.xpItemText}>
-                    <Text style={styles.xpItemBold}>Streak (3+ days):</Text> +20 XP
+                    <Text style={styles.xpItemBold}>3+ sessions this week:</Text> +15 XP bonus
+                  </Text>
+                </View>
+
+                <View style={styles.xpItem}>
+                  <MaterialIcons name="book" size={20} color="#9C27B0" />
+                  <Text style={styles.xpItemText}>
+                    <Text style={styles.xpItemBold}>Complete today's journal:</Text> +40 XP
                   </Text>
                 </View>
               </View>
@@ -601,7 +608,7 @@ export default function ProfileScreen() {
                   <Text style={styles.levelIcon}>☀️</Text>
                   <View style={styles.levelDetails}>
                     <Text style={styles.levelName}>Beginner</Text>
-                    <Text style={styles.levelRange}>0 - 500 XP</Text>
+                    <Text style={styles.levelRange}>0 - 499 XP · Starting level</Text>
                     <Text style={styles.levelBenefits}>New player{"\n"}Still building fundamentals</Text>
                   </View>
                 </View>
@@ -609,35 +616,26 @@ export default function ProfileScreen() {
                 <View style={styles.levelItem}>
                   <Text style={styles.levelIcon}>⭐</Text>
                   <View style={styles.levelDetails}>
-                    <Text style={styles.levelName}>Amateur</Text>
-                    <Text style={styles.levelRange}>500 - 1,500 XP</Text>
-                    <Text style={styles.levelBenefits}>More consistent{"\n"}Better understanding</Text>
+                    <Text style={styles.levelName}>Intermediate</Text>
+                    <Text style={styles.levelRange}>500 - 1,499 XP</Text>
+                    <Text style={styles.levelBenefits}>More consistent{"\n"}Better understanding of the game</Text>
                   </View>
                 </View>
                 
                 <View style={styles.levelItem}>
                   <Text style={styles.levelIcon}>🔥</Text>
                   <View style={styles.levelDetails}>
-                    <Text style={styles.levelName}>Semi-Pro</Text>
-                    <Text style={styles.levelRange}>1,500 - 3,000 XP</Text>
-                    <Text style={styles.levelBenefits}>Advanced skills{"\n"}Structured training</Text>
-                  </View>
-                </View>
-                
-                <View style={styles.levelItem}>
-                  <Text style={styles.levelIcon}>🏆</Text>
-                  <View style={styles.levelDetails}>
-                    <Text style={styles.levelName}>Pro</Text>
-                    <Text style={styles.levelRange}>3,000 - 5,000 XP</Text>
-                    <Text style={styles.levelBenefits}>High-level player{"\n"}Strong performance</Text>
+                    <Text style={styles.levelName}>Advanced</Text>
+                    <Text style={styles.levelRange}>1,500 - 2,999 XP</Text>
+                    <Text style={styles.levelBenefits}>Advanced skills{"\n"}Structured & consistent training</Text>
                   </View>
                 </View>
                 
                 <View style={styles.levelItem}>
                   <Text style={styles.levelIcon}>👑</Text>
                   <View style={styles.levelDetails}>
-                    <Text style={styles.levelName}>Elite</Text>
-                    <Text style={styles.levelRange}>5,000+ XP</Text>
+                    <Text style={styles.levelName}>Expert</Text>
+                    <Text style={styles.levelRange}>3,000+ XP</Text>
                     <Text style={styles.levelBenefits}>Peak performance{"\n"}Consistent excellence</Text>
                   </View>
                 </View>

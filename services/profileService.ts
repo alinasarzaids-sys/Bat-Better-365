@@ -157,15 +157,14 @@ export const profileService = {
   getNextLevel(currentLevel: string): { level: string; xpRequired: number } {
     const levels = [
       { level: 'Beginner', max: 500 },
-      { level: 'Amateur', max: 1500 },
-      { level: 'Semi-Pro', max: 3000 },
-      { level: 'Pro', max: 5000 },
-      { level: 'Elite', max: Infinity },
+      { level: 'Intermediate', max: 1500 },
+      { level: 'Advanced', max: 3000 },
+      { level: 'Expert', max: Infinity },
     ];
 
     const currentIndex = levels.findIndex((l) => l.level === currentLevel);
     if (currentIndex === -1 || currentIndex === levels.length - 1) {
-      return { level: 'Elite', xpRequired: 5000 };
+      return { level: 'Expert', xpRequired: 3000 };
     }
 
     return { level: levels[currentIndex + 1].level, xpRequired: levels[currentIndex + 1].max };
@@ -174,10 +173,9 @@ export const profileService = {
   calculateLevelProgress(totalXP: number, currentLevel: string): number {
     const levels = [
       { level: 'Beginner', min: 0, max: 500 },
-      { level: 'Amateur', min: 500, max: 1500 },
-      { level: 'Semi-Pro', min: 1500, max: 3000 },
-      { level: 'Pro', min: 3000, max: 5000 },
-      { level: 'Elite', min: 5000, max: Infinity },
+      { level: 'Intermediate', min: 500, max: 1500 },
+      { level: 'Advanced', min: 1500, max: 3000 },
+      { level: 'Expert', min: 3000, max: Infinity },
     ];
 
     const current = levels.find((l) => l.level === currentLevel);
