@@ -17,6 +17,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface SessionNote {
   completed_at: string;
+  created_at: string;
   duration_minutes: number;
   notes: string;
   session_type: string;
@@ -120,15 +121,18 @@ function fmtDate(iso: string): string {
 }
 
 function filterByTimeframe<T extends { created_at?: string; log_date?: string; completed_at?: string }>(items: T[], tf: Timeframe): T[] {
+  if (tf === 'alltime') return items;
   const now = new Date();
   let from = new Date('2000-01-01');
   if (tf === 'week') { from = new Date(); from.setDate(now.getDate() - 7); }
   else if (tf === 'month') { from = new Date(); from.setDate(now.getDate() - 30); }
   else if (tf === 'season') { from = new Date(); from.setMonth(now.getMonth() - 6); }
-  const fromStr = from.toISOString().split('T')[0];
+  const fromMs = from.getTime();
   return items.filter(item => {
-    const dateStr = (item.created_at || item.log_date || item.completed_at || '').split('T')[0];
-    return dateStr >= fromStr;
+    // Use any available date field — completed_at may be null for freestyle sessions
+    const rawDate = item.completed_at || item.created_at || item.log_date || '';
+    if (!rawDate) return true; // include items with no date rather than silently drop them
+    return new Date(rawDate).getTime() >= fromMs;
   });
 }
 
@@ -585,15 +589,23 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
   const middledFromDrills = logs.reduce((a, l) => a + (Number(l.balls_middled) || 0), 0);
   // Balls faced: academy training logs
   const ballsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.balls_faced) || 0), 0);
-  // Balls faced: parse from freestyle session notes line-by-line
+  // Balls faced + middled: parse from ALL session notes (freestyle sessions tagged or untagged)
   let ballsFromSessions = 0;
   let middledFromSessions = 0;
-  sessions.forEach(s => {
+  // Also parse from all sessions (not just technical-tagged ones)
+  const allSessForTech = sessions; // sessions already filtered by timeframe
+  allSessForTech.forEach(s => {
     if (!s.notes) return;
     s.notes.split('\n').forEach(line => {
       const lower = line.toLowerCase().trim();
-      if (lower.startsWith('balls faced:')) { const v = parseInt(lower.replace('balls faced:', '').trim()); if (!isNaN(v) && v > 0) ballsFromSessions += v; }
-      if (lower.startsWith('balls middled:')) { const v = parseInt(lower.replace('balls middled:', '').trim()); if (!isNaN(v) && v > 0) middledFromSessions += v; }
+      if (lower.startsWith('balls faced:')) {
+        const v = parseInt(lower.replace('balls faced:', '').trim());
+        if (!isNaN(v) && v > 0) ballsFromSessions += v;
+      }
+      if (lower.startsWith('balls middled:')) {
+        const v = parseInt(lower.replace('balls middled:', '').trim());
+        if (!isNaN(v) && v > 0) middledFromSessions += v;
+      }
     });
   });
   const totalBalls = ballsFromDrills + ballsFromAcademy + ballsFromSessions;
@@ -850,9 +862,11 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
 // ── Freestyle Tab ─────────────────────────────────────────────────────────────
 function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe }) {
   // Show ALL Freestyle sessions: null type, 'Freestyle', or 'Freestyle-*' pillar-tagged
+  // Note: completed_at is often null for freestyle sessions — filterByTimeframe now uses created_at fallback
   const freestyleSessions = sessions.filter(s => {
     const st = (s.session_type || '').trim();
-    return !st || st === 'Freestyle' || st.startsWith('Freestyle');
+    // Include sessions with no type (old sessions), 'Freestyle', or pillar-tagged ones
+    return !st || st === 'Freestyle' || st.startsWith('Freestyle') || st === 'Training';
   });
   const totalMins = freestyleSessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
 
@@ -952,7 +966,7 @@ export default function AnalyticsScreen() {
     setLoading(true);
     const supabase = getSupabaseClient();
     const [sessRes, acaRes, techRes, physRes, menRes, tacRes] = await Promise.all([
-      supabase.from('sessions').select('id, completed_at, duration_minutes, notes, session_type').eq('user_id', user.id).in('status', ['completed']).order('completed_at', { ascending: false }).limit(300),
+      supabase.from('sessions').select('id, completed_at, created_at, duration_minutes, notes, session_type').eq('user_id', user.id).in('status', ['completed']).order('created_at', { ascending: false }).limit(300),
       supabase.from('academy_training_logs').select('*').eq('user_id', user.id).order('log_date', { ascending: false }).limit(200),
       supabase.from('technical_drill_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
       supabase.from('workout_drill_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
