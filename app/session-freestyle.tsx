@@ -20,6 +20,15 @@ import { useActiveSession } from '@/hooks/useActiveSession';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 
 type TrainingType = 'bowling_machine' | 'bowler_spinner' | 'bowler_fast' | 'side_arm' | 'over_arm' | 'under_arm';
+type PillarFocus = 'Technical' | 'Physical' | 'Mental' | 'Tactical' | 'Freestyle';
+
+const PILLAR_OPTIONS: { id: PillarFocus; label: string; icon: string; color: string; desc: string }[] = [
+  { id: 'Technical',  label: 'Technical',  icon: 'sports-cricket', color: '#2196F3', desc: 'Batting technique & shot play' },
+  { id: 'Physical',   label: 'Physical',   icon: 'fitness-center',  color: '#4CAF50', desc: 'Fitness, strength & conditioning' },
+  { id: 'Mental',     label: 'Mental',     icon: 'psychology',      color: '#9C27B0', desc: 'Focus, composure & mindset' },
+  { id: 'Tactical',   label: 'Tactical',   icon: 'lightbulb',       color: '#FF9800', desc: 'Game awareness & match IQ' },
+  { id: 'Freestyle',  label: 'Open / Freestyle', icon: 'flash-on', color: '#E53935', desc: 'Mixed / general net session' },
+];
 
 const TRAINING_TYPES = [
   { id: 'bowling_machine' as TrainingType, label: 'Bowling Machine', icon: 'sports-cricket' },
@@ -70,6 +79,7 @@ export default function FreestyleSessionScreen() {
   const [aiTip, setAiTip] = React.useState<string | null>(null);
   const [aiTipLoading, setAiTipLoading] = React.useState(false);
   const [improvementFocus, setImprovementFocus] = React.useState('');
+  const [pillarFocus, setPillarFocus] = React.useState<PillarFocus>('Freestyle');
 
   useEffect(() => {
     if (prefilledDateStr && !session.isActive) {
@@ -139,13 +149,14 @@ export default function FreestyleSessionScreen() {
     const trainingTypesText = Array.from(session.selectedTrainingTypes)
       .map(t => TRAINING_TYPES.find(tt => tt.id === t)?.label).join(', ');
     let notes = `Training Types: ${trainingTypesText}\n`;
+    notes += `Pillar Focus: ${pillarFocus}\n`;
     if (session.focusArea) notes += `Focus Area: ${session.focusArea}\n`;
     if (session.sessionGoal) notes += `Session Goal: ${session.sessionGoal}`;
     const { error } = await sessionService.createSession({
       user_id: user.id, title: 'Freestyle Session',
       scheduled_date: scheduledDateTime.toISOString(),
       duration_minutes: parseInt(session.estimatedDuration),
-      session_type: 'Freestyle', status: 'planned', notes,
+      session_type: pillarFocus === 'Freestyle' ? 'Freestyle' : `Freestyle-${pillarFocus}`, status: 'planned', notes,
     });
     session.setSaving(false);
     if (error) { showAlert('Error', error); return; }
@@ -221,6 +232,7 @@ export default function FreestyleSessionScreen() {
       ? Math.round((parseInt(session.ballsMiddled) / parseInt(session.ballsFaced)) * 100) : 0;
 
     let notes = `Training Types: ${trainingTypesText}\n`;
+    notes += `Pillar Focus: ${pillarFocus}\n`;
     if (session.focusArea) notes += `Focus Area: ${session.focusArea}\n`;
     if (session.sessionGoal) notes += `Session Goal: ${session.sessionGoal}\n`;
     notes += `\n--- Batting Stats ---\n`;
@@ -238,10 +250,11 @@ export default function FreestyleSessionScreen() {
     notes += `\nPhysical: ${physicalRating}/5\nMental: ${mentalRating}/5\nTactical: ${tacticalRating}/5\nTechnical: ${technicalRating}/5`;
     if (session.sessionNotes) notes += `\n\nNotes: ${session.sessionNotes}`;
 
+    const sessionType = pillarFocus === 'Freestyle' ? 'Freestyle' : `Freestyle-${pillarFocus}`;
     const { error } = await sessionService.createSession({
       user_id: user.id, title: isLogMode ? 'Freestyle Session (Logged)' : 'Freestyle Session',
       scheduled_date: sessionDate,
-      duration_minutes: actualDuration, session_type: 'Freestyle', status: 'completed', notes,
+      duration_minutes: actualDuration, session_type: sessionType, status: 'completed', notes,
     });
     if (error) { session.setSaving(false); showAlert('Error', error); return; }
 
@@ -335,7 +348,32 @@ export default function FreestyleSessionScreen() {
         </View>
       )}
 
-      <Text style={styles.stepTitle}>What are you training with today?</Text>
+      {/* Pillar Focus Selector */}
+      <Text style={styles.stepTitle}>What pillar are you focusing on?</Text>
+      <Text style={styles.stepSubtitle}>This routes your session to the correct analytics tab</Text>
+      <View style={styles.pillarPickerGrid}>
+        {PILLAR_OPTIONS.map(opt => {
+          const isSelected = pillarFocus === opt.id;
+          return (
+            <Pressable
+              key={opt.id}
+              style={[styles.pillarPickerCard, isSelected && { borderColor: opt.color, backgroundColor: opt.color + '12' }]}
+              onPress={() => setPillarFocus(opt.id)}
+            >
+              <View style={[styles.pillarPickerIcon, { backgroundColor: isSelected ? opt.color : opt.color + '20' }]}>
+                <MaterialIcons name={opt.icon as any} size={24} color={isSelected ? '#fff' : opt.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.pillarPickerLabel, isSelected && { color: opt.color, fontWeight: '800' }]}>{opt.label}</Text>
+                <Text style={styles.pillarPickerDesc} numberOfLines={1}>{opt.desc}</Text>
+              </View>
+              {isSelected && <MaterialIcons name="check-circle" size={20} color={opt.color} />}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text style={[styles.stepTitle, { marginTop: spacing.lg }]}>What are you training with today?</Text>
       <Text style={styles.stepSubtitle}>Select all that apply</Text>
       <View style={styles.trainingTypesGrid}>
         {TRAINING_TYPES.map(type => {
@@ -485,7 +523,32 @@ export default function FreestyleSessionScreen() {
         </View>
       </View>
 
-      <Text style={styles.stepTitle}>What did you train with?</Text>
+      {/* Pillar Focus Selector for Log Mode */}
+      <Text style={styles.stepTitle}>What pillar did you focus on?</Text>
+      <Text style={styles.stepSubtitle}>Routes data to the correct analytics tab</Text>
+      <View style={styles.pillarPickerGrid}>
+        {PILLAR_OPTIONS.map(opt => {
+          const isSelected = pillarFocus === opt.id;
+          return (
+            <Pressable
+              key={opt.id}
+              style={[styles.pillarPickerCard, isSelected && { borderColor: opt.color, backgroundColor: opt.color + '12' }]}
+              onPress={() => setPillarFocus(opt.id)}
+            >
+              <View style={[styles.pillarPickerIcon, { backgroundColor: isSelected ? opt.color : opt.color + '20' }]}>
+                <MaterialIcons name={opt.icon as any} size={24} color={isSelected ? '#fff' : opt.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.pillarPickerLabel, isSelected && { color: opt.color, fontWeight: '800' }]}>{opt.label}</Text>
+                <Text style={styles.pillarPickerDesc} numberOfLines={1}>{opt.desc}</Text>
+              </View>
+              {isSelected && <MaterialIcons name="check-circle" size={20} color={opt.color} />}
+            </Pressable>
+          );
+        })}
+      </View>
+
+      <Text style={[styles.stepTitle, { marginTop: spacing.lg }]}>What did you train with?</Text>
       <Text style={styles.stepSubtitle}>Select all that apply</Text>
       <View style={styles.trainingTypesGrid}>
         {TRAINING_TYPES.map(type => {
@@ -1296,4 +1359,17 @@ const styles = StyleSheet.create({
     color: colors.text,
     lineHeight: 22,
   },
+  // Pillar picker
+  pillarPickerGrid: { gap: spacing.sm, marginBottom: spacing.xl },
+  pillarPickerCard: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+    padding: spacing.md, borderWidth: 2, borderColor: colors.border,
+  },
+  pillarPickerIcon: {
+    width: 44, height: 44, borderRadius: 22,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  pillarPickerLabel: { fontSize: 14, color: colors.text, fontWeight: '700' },
+  pillarPickerDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
 });

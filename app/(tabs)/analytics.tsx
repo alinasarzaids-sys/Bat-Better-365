@@ -49,6 +49,8 @@ interface TechLog {
   timing: number;
   focus_level: number;
   confidence_level: number;
+  balls_faced: number;
+  balls_middled: number;
   reflection_notes: string;
 }
 interface PhysLog {
@@ -578,15 +580,24 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
 // ── Technical Tab ─────────────────────────────────────────────────────────────
 function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; sessions: SessionNote[]; academyLogs: AcademyLog[]; tf: Timeframe }) {
   const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0));
-  // Balls faced: academy logs + freestyle session notes
+  // Balls faced: technical drill logs + academy logs + freestyle session notes
+  const ballsFromDrills = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+  const middledFromDrills = logs.reduce((a, l) => a + (l.balls_middled || 0), 0);
   const ballsFromAcademy = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
   const ballsFromSessions = sessions.reduce((a, s) => {
     const p = parseSessionNotes(s.notes || '');
     return a + (Number(p['balls_faced']) || 0);
   }, 0);
-  const totalBalls = ballsFromAcademy + ballsFromSessions;
+  const middledFromSessions = sessions.reduce((a, s) => {
+    const p = parseSessionNotes(s.notes || '');
+    return a + (Number(p['balls_middled']) || Number(p['balls_middled:']) || 0);
+  }, 0);
+  const totalBalls = ballsFromDrills + ballsFromAcademy + ballsFromSessions;
+  const totalMiddled = middledFromDrills + middledFromSessions;
   const runsFromAcademy = academyLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
-  const middleRate = totalBalls > 0 ? Math.round((runsFromAcademy / totalBalls) * 100) : null;
+  // Middle rate: use balls_middled from drills + sessions; fall back to runs_scored from academy
+  const totalMiddledAll = totalMiddled > 0 ? totalMiddled : runsFromAcademy;
+  const middleRate = totalBalls > 0 ? Math.round((totalMiddledAll / totalBalls) * 100) : null;
 
   const metricData = [
     { label: 'Shot Execution', value: avg(logs.map(l => l.technique_quality)) },
@@ -650,8 +661,10 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
 }
 
 // ── Physical Tab ──────────────────────────────────────────────────────────────
-function PhysicalTab({ logs, tf }: { logs: PhysLog[]; tf: Timeframe }) {
-  const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0));
+function PhysicalTab({ logs, sessions, tf }: { logs: PhysLog[]; sessions: SessionNote[]; tf: Timeframe }) {
+  const physicalFreestyle = sessions.filter(s => s.session_type === 'Freestyle-Physical');
+  const freestyleMins = physicalFreestyle.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+  const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0)) + freestyleMins;
 
   const energyTrend = logs.slice(0, 10).reverse().map(l => ({ x: fmtDate(l.created_at), y: l.focus_level || 0 }));
   const reactionTrend = logs.slice(0, 10).reverse().map(l => ({ x: fmtDate(l.created_at), y: l.confidence_level || 0 }));
@@ -669,7 +682,7 @@ function PhysicalTab({ logs, tf }: { logs: PhysLog[]; tf: Timeframe }) {
     <>
       <AIInsightCard tab="physical" timeframe={tf} tabColor={colors.physical || '#4CAF50'} title="Workload" />
       <KPIRow items={[
-        { label: 'Sessions', value: String(logs.length), icon: 'fitness-center', color: colors.physical || '#4CAF50' },
+        { label: 'Sessions', value: String(logs.length + physicalFreestyle.length), icon: 'fitness-center', color: colors.physical || '#4CAF50' },
         { label: 'Training Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.physical || '#4CAF50' },
         { label: 'Avg Energy', value: avgEnergy > 0 ? `${avgEnergy}/10` : '—', icon: 'bolt', color: colors.warning },
         { label: 'Avg Reaction', value: avgReaction > 0 ? `${avgReaction}/10` : '—', icon: 'speed', color: colors.success },
@@ -710,8 +723,10 @@ function PhysicalTab({ logs, tf }: { logs: PhysLog[]; tf: Timeframe }) {
 }
 
 // ── Mental Tab ────────────────────────────────────────────────────────────────
-function MentalTab({ logs, tf }: { logs: MentalLog[]; tf: Timeframe }) {
-  const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0));
+function MentalTab({ logs, sessions, tf }: { logs: MentalLog[]; sessions: SessionNote[]; tf: Timeframe }) {
+  const mentalFreestyle = sessions.filter(s => s.session_type === 'Freestyle-Mental');
+  const freestyleMins = mentalFreestyle.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+  const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0)) + freestyleMins;
 
   const avgAdherence = avg(logs.map(l => l.adherence));
   const avgFocus = avg(logs.map(l => l.focus_level));
@@ -736,7 +751,7 @@ function MentalTab({ logs, tf }: { logs: MentalLog[]; tf: Timeframe }) {
     <>
       <AIInsightCard tab="mental" timeframe={tf} tabColor={colors.mental || '#9C27B0'} title="Mindset" />
       <KPIRow items={[
-        { label: 'Sessions', value: String(logs.length), icon: 'psychology', color: colors.mental || '#9C27B0' },
+        { label: 'Sessions', value: String(logs.length + mentalFreestyle.length), icon: 'psychology', color: colors.mental || '#9C27B0' },
         { label: 'Training Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.mental || '#9C27B0' },
         { label: 'Avg Confidence', value: avgConfidence > 0 ? `${avgConfidence}/10` : '—', icon: 'star', color: confColor },
         { label: 'Avg Adherence', value: avgAdherence > 0 ? `${avgAdherence}/10` : '—', icon: 'check-circle', color: colors.success },
@@ -765,8 +780,10 @@ function MentalTab({ logs, tf }: { logs: MentalLog[]; tf: Timeframe }) {
 }
 
 // ── Tactical Tab ──────────────────────────────────────────────────────────────
-function TacticalTab({ logs, tf }: { logs: TacLog[]; tf: Timeframe }) {
-  const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0));
+function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: SessionNote[]; tf: Timeframe }) {
+  const tacticalFreestyle = sessions.filter(s => s.session_type === 'Freestyle-Tactical');
+  const freestyleMins = tacticalFreestyle.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+  const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0)) + freestyleMins;
 
   const avgFieldReading = avg(logs.map(l => l.field_reading));
   const avgAdapted = avg(logs.map(l => l.adapted_plan));
@@ -790,7 +807,7 @@ function TacticalTab({ logs, tf }: { logs: TacLog[]; tf: Timeframe }) {
     <>
       <AIInsightCard tab="tactical" timeframe={tf} tabColor={colors.tactical || '#FF9800'} title="Match IQ" />
       <KPIRow items={[
-        { label: 'Scenarios', value: String(logs.length), icon: 'lightbulb', color: colors.tactical || '#FF9800' },
+        { label: 'Scenarios', value: String(logs.length + tacticalFreestyle.length), icon: 'lightbulb', color: colors.tactical || '#FF9800' },
         { label: 'Tactical Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.tactical || '#FF9800' },
         { label: 'Shot Match', value: matchedPct !== null ? `${matchedPct}%` : '—', icon: 'check-circle', color: colors.success, sub: matchedTotal > 0 ? `${matchedYes}/${matchedTotal}` : undefined },
         { label: 'Field Reading', value: avgFieldReading > 0 ? `${avgFieldReading}/10` : '—', icon: 'visibility', color: colors.warning },
@@ -829,10 +846,12 @@ function TacticalTab({ logs, tf }: { logs: TacLog[]; tf: Timeframe }) {
 
 // ── Freestyle Tab ─────────────────────────────────────────────────────────────
 function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe }) {
-  const totalMins = sessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+  // Only show pure Freestyle sessions (not pillar-tagged ones)
+  const freestyleSessions = sessions.filter(s => !s.session_type || s.session_type === 'Freestyle');
+  const totalMins = freestyleSessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
 
   const equipmentCount: Record<string, number> = {};
-  sessions.forEach(s => {
+  freestyleSessions.forEach(s => {
     if (!s.notes) return;
     try {
       const parsed = JSON.parse(s.notes);
@@ -851,13 +870,13 @@ function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe
   const EQUIP_COLORS = ['#E53935', '#1565C0', '#2E7D32', '#F57C00', '#7B2FBE', '#0288D1', '#558B2F'];
 
   const topMethod = sorted[0]?.[0];
-  const topPct = sorted[0] && sessions.length > 0 ? Math.round((sorted[0][1] / sessions.length) * 100) : null;
+  const topPct = sorted[0] && freestyleSessions.length > 0 ? Math.round((sorted[0][1] / freestyleSessions.length) * 100) : null;
 
   return (
     <>
       <AIInsightCard tab="freestyle" timeframe={tf} tabColor="#E53935" title="Training Variety" />
       <KPIRow items={[
-        { label: 'Sessions', value: String(sessions.length), icon: 'flash-on', color: '#E53935' },
+        { label: 'Sessions', value: String(freestyleSessions.length), icon: 'flash-on', color: '#E53935' },
         { label: 'Total Time', value: fmtMins(totalMins), icon: 'access-time', color: '#E53935' },
         { label: 'Methods Used', value: String(Object.keys(equipmentCount).length || '—'), icon: 'category', color: colors.warning },
         { label: 'Top Method', value: topPct !== null ? `${topPct}%` : '—', icon: 'star', color: colors.primary, sub: topMethod },
@@ -868,7 +887,7 @@ function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe
             {sorted.map(([name, count], i) => {
               const barColor = EQUIP_COLORS[i % EQUIP_COLORS.length];
               const pct = Math.max(4, (count / maxCount) * 100);
-              const sessionPct = sessions.length > 0 ? Math.round((count / sessions.length) * 100) : 0;
+              const sessionPct = freestyleSessions.length > 0 ? Math.round((count / freestyleSessions.length) * 100) : 0;
               return (
                 <View key={name} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
                   <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: barColor }} />
@@ -1012,9 +1031,9 @@ export default function AnalyticsScreen() {
       >
         {activeTab === 'overall'   && <OverallTab sessions={sessions} academyLogs={academyLogs} techLogs={techLogs} physLogs={physLogs} mentalLogs={mentalLogs} tacLogs={tacLogs} tf={timeframe} />}
         {activeTab === 'technical' && <TechnicalTab logs={techLogs} sessions={sessions} academyLogs={academyLogs} tf={timeframe} />}
-        {activeTab === 'physical'  && <PhysicalTab logs={physLogs} tf={timeframe} />}
-        {activeTab === 'mental'    && <MentalTab logs={mentalLogs} tf={timeframe} />}
-        {activeTab === 'tactical'  && <TacticalTab logs={tacLogs} tf={timeframe} />}
+        {activeTab === 'physical'  && <PhysicalTab logs={physLogs} sessions={sessions} tf={timeframe} />}
+        {activeTab === 'mental'    && <MentalTab logs={mentalLogs} sessions={sessions} tf={timeframe} />}
+        {activeTab === 'tactical'  && <TacticalTab logs={tacLogs} sessions={sessions} tf={timeframe} />}
         {activeTab === 'freestyle' && <FreestyleTab sessions={sessions} tf={timeframe} />}
       </ScrollView>
 

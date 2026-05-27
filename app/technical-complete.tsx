@@ -33,6 +33,10 @@ export default function TechnicalCompleteScreen() {
   const [focusLevel, setFocusLevel] = useState(7);
   const [confidenceLevel, setConfidenceLevel] = useState(7);
 
+  // Batting Stats
+  const [ballsFaced, setBallsFaced] = useState('');
+  const [ballsMiddled, setBallsMiddled] = useState('');
+
   // Additional Feedback
   const [reflectionNotes, setReflectionNotes] = useState('');
   const [saving, setSaving] = useState(false);
@@ -69,6 +73,9 @@ export default function TechnicalCompleteScreen() {
         (techniqueQuality + consistency + shotControl + timing + focusLevel + confidenceLevel) / 6
       );
 
+      const bFaced = parseInt(ballsFaced) || null;
+      const bMiddled = parseInt(ballsMiddled) || null;
+
       // Save technical drill log
       const { error } = await supabase.from('technical_drill_logs').insert({
         user_id: user.id,
@@ -81,6 +88,8 @@ export default function TechnicalCompleteScreen() {
         timing: timing,
         focus_level: focusLevel,
         confidence_level: confidenceLevel,
+        balls_faced: bFaced,
+        balls_middled: bMiddled,
         reflection_notes: reflectionNotes.trim() || null,
       });
 
@@ -166,6 +175,48 @@ export default function TechnicalCompleteScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {/* Batting Stats */}
+        <View style={[styles.section, { marginBottom: spacing.md }]}>
+          <View style={styles.sectionHeader}>
+            <MaterialIcons name="sports-cricket" size={22} color="#FF9800" />
+            <Text style={styles.sectionTitle}>Batting Stats (Optional)</Text>
+          </View>
+          <Text style={styles.scaleHint}>Record balls faced and how many you middled cleanly</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.md, marginTop: spacing.md }}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metricLabel}>Balls Faced</Text>
+              <TextInput
+                style={[styles.notesInput, { minHeight: 56, textAlign: 'center', fontSize: 22, fontWeight: '700' }]}
+                value={ballsFaced}
+                onChangeText={setBallsFaced}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor="#9E9E9E"
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.metricLabel}>Balls Middled</Text>
+              <TextInput
+                style={[styles.notesInput, { minHeight: 56, textAlign: 'center', fontSize: 22, fontWeight: '700' }]}
+                value={ballsMiddled}
+                onChangeText={setBallsMiddled}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor="#9E9E9E"
+              />
+            </View>
+          </View>
+          {ballsFaced && ballsMiddled && parseInt(ballsFaced) > 0 ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginTop: spacing.sm,
+              backgroundColor: '#E8F5E9', borderRadius: borderRadius.md, padding: spacing.sm }}>
+              <MaterialIcons name="gps-fixed" size={16} color="#4CAF50" />
+              <Text style={{ color: '#4CAF50', fontWeight: '700', fontSize: 14 }}>
+                Middle Rate: {Math.round((parseInt(ballsMiddled) / parseInt(ballsFaced)) * 100)}%
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
         {/* Performance Metrics */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
