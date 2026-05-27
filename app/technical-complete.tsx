@@ -30,6 +30,8 @@ export default function TechnicalCompleteScreen() {
   const [consistency, setConsistency] = useState(7);
   const [shotControl, setShotControl] = useState(7);
   const [timing, setTiming] = useState(7);
+  const [focusLevel, setFocusLevel] = useState(7);
+  const [confidenceLevel, setConfidenceLevel] = useState(7);
 
   // Additional Feedback
   const [reflectionNotes, setReflectionNotes] = useState('');
@@ -64,7 +66,7 @@ export default function TechnicalCompleteScreen() {
 
       // Calculate overall performance rating (1-10 scale)
       const performanceRating = Math.round(
-        (techniqueQuality + consistency + shotControl + timing) / 4
+        (techniqueQuality + consistency + shotControl + timing + focusLevel + confidenceLevel) / 6
       );
 
       // Save technical drill log
@@ -77,6 +79,8 @@ export default function TechnicalCompleteScreen() {
         consistency: consistency,
         shot_control: shotControl,
         timing: timing,
+        focus_level: focusLevel,
+        confidence_level: confidenceLevel,
         reflection_notes: reflectionNotes.trim() || null,
       });
 
@@ -255,6 +259,50 @@ export default function TechnicalCompleteScreen() {
                 thumbTintColor="#FF9800"
               />
               <Text style={[styles.sliderValue, { color: '#FF9800' }]}>{timing}</Text>
+            </View>
+          </View>
+
+          {/* Focus Level */}
+          <View style={styles.metricContainer}>
+            <Text style={styles.metricLabel}>Focus Level</Text>
+            <Text style={styles.metricSubtext}>
+              How focused and mentally present were you throughout the drill?
+            </Text>
+            <View style={styles.sliderRow}>
+              <Slider
+                style={styles.slider}
+                minimumValue={1}
+                maximumValue={10}
+                step={1}
+                value={focusLevel}
+                onValueChange={setFocusLevel}
+                minimumTrackTintColor="#00BCD4"
+                maximumTrackTintColor="#E0E0E0"
+                thumbTintColor="#00BCD4"
+              />
+              <Text style={[styles.sliderValue, { color: '#00BCD4' }]}>{focusLevel}</Text>
+            </View>
+          </View>
+
+          {/* Confidence Level */}
+          <View style={[styles.metricContainer, { marginBottom: 0 }]}>
+            <Text style={styles.metricLabel}>Confidence Level</Text>
+            <Text style={styles.metricSubtext}>
+              How confident did you feel in your ability during the session?
+            </Text>
+            <View style={styles.sliderRow}>
+              <Slider
+                style={styles.slider}
+                minimumValue={1}
+                maximumValue={10}
+                step={1}
+                value={confidenceLevel}
+                onValueChange={setConfidenceLevel}
+                minimumTrackTintColor="#E91E63"
+                maximumTrackTintColor="#E0E0E0"
+                thumbTintColor="#E91E63"
+              />
+              <Text style={[styles.sliderValue, { color: '#E91E63' }]}>{confidenceLevel}</Text>
             </View>
           </View>
         </View>

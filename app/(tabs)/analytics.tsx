@@ -4,7 +4,7 @@ import {
   Modal, Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, Polygon, Line, Text as SvgText, G, Rect } from 'react-native-svg';
+import Svg, { Circle, Polygon, Line, Text as SvgText, G, Rect, Path } from 'react-native-svg';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import { useFocusEffect } from 'expo-router';
 import { useAuth } from '@/template';
@@ -306,44 +306,89 @@ const bc = StyleSheet.create({
 });
 
 // ─── Trend Line ───────────────────────────────────────────────────────────────
-function TrendLine({ points, color, label, maxVal = 10 }: {
-  points: { x: string; y: number }[]; color: string; label: string; maxVal?: number;
+function TrendLine({ points, color, label }: {
+  points: { x: string; y: number }[]; color: string; label: string;
 }) {
-  if (points.length < 2) return null;
-  const W = SCREEN_WIDTH - spacing.md * 2 - spacing.md * 2;
-  const H = 80;
-  const PAD = 12;
-  const iW = W - PAD * 2;
-  const iH = H - PAD * 2;
-  const maxY = Math.max(...points.map(p => p.y), maxVal * 0.2);
+  if (points.length < 1) return null;
+  const W = Math.max(1, SCREEN_WIDTH - spacing.md * 4 - 32);
+  const H = 130;
+  const PAD_L = 32; const PAD_R = 12; const PAD_T = 20; const PAD_B = 30;
+  const iW = W - PAD_L - PAD_R;
+  const iH = H - PAD_T - PAD_B;
+  const minY = Math.max(0, Math.min(...points.map(p => p.y)) - 0.5);
+  const maxY = Math.max(...points.map(p => p.y), 1) + 0.5;
+  const yRange = Math.max(maxY - minY, 0.1);
+
   const coords = points.map((p, i) => ({
-    x: PAD + (i / (points.length - 1)) * iW,
-    y: PAD + iH - (p.y / maxY) * iH,
+    x: PAD_L + (points.length === 1 ? iW / 2 : (i / (points.length - 1)) * iW),
+    y: PAD_T + iH - ((p.y - minY) / yRange) * iH,
+    val: p.y,
+    label: p.x,
   }));
-  const pathD = coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+
+  const pathD = coords.length >= 2
+    ? coords.map((c, i) => `${i === 0 ? 'M' : 'L'}${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ')
+    : '';
+
+  const areaD = pathD && coords.length >= 2
+    ? `${pathD} L${coords[coords.length-1].x.toFixed(1)},${(PAD_T+iH).toFixed(1)} L${coords[0].x.toFixed(1)},${(PAD_T+iH).toFixed(1)} Z`
+    : '';
+
+  const latest = points[points.length - 1]?.y ?? 0;
+  const trend = points.length >= 2 ? latest - points[0].y : 0;
+  const trendColor = trend > 0.05 ? colors.success : trend < -0.05 ? colors.error : colors.textSecondary;
+  const trendIcon = trend > 0.05 ? '↑' : trend < -0.05 ? '↓' : '→';
+  const gridVals = [Math.ceil(minY), Math.round((minY + maxY) / 2), Math.floor(maxY)];
+
   return (
     <View style={tl2.card}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
-        <Text style={tl2.label}>{label}</Text>
-        <Text style={[tl2.latest, { color }]}>{points[points.length - 1]?.y.toFixed(1)}/10</Text>
+      <View style={tl2.topRow}>
+        <Text style={tl2.label} numberOfLines={1}>{label}</Text>
+        <View style={tl2.statsRow}>
+          <Text style={[tl2.latest, { color }]}>{latest.toFixed(1)}<Text style={tl2.sub}>/10</Text></Text>
+          {points.length >= 2 && (
+            <View style={[tl2.badge, { backgroundColor: trendColor + '20' }]}>
+              <Text style={[tl2.badgeText, { color: trendColor }]}>{trendIcon} {Math.abs(trend).toFixed(1)}</Text>
+            </View>
+          )}
+        </View>
       </View>
       <Svg width={W} height={H}>
-        {[0, maxY / 2, maxY].map((v, i) => {
-          const y = PAD + iH - (v / maxY) * iH;
-          return <Line key={i} x1={PAD} y1={y} x2={PAD + iW} y2={y} stroke={colors.border} strokeWidth={1} />;
+        {gridVals.filter((v,i,a) => a.indexOf(v)===i).map((v, i) => {
+          const y = PAD_T + iH - ((v - minY) / yRange) * iH;
+          return (
+            <G key={i}>
+              <Line x1={PAD_L} y1={y} x2={PAD_L+iW} y2={y} stroke={colors.border} strokeWidth={1} strokeDasharray={i===0?'0':'4,3'} />
+              <SvgText x={PAD_L-4} y={y+4} fill={colors.textSecondary} fontSize="9" textAnchor="end">{v}</SvgText>
+            </G>
+          );
         })}
-        <SvgText x={0} y={H} fill={colors.textSecondary} fontSize="9">{points[0]?.x}</SvgText>
-        <SvgText x={W} y={H} fill={colors.textSecondary} fontSize="9" textAnchor="end">{points[points.length - 1]?.x}</SvgText>
-        <Svg><Line x1={0} y1={0} x2={0} y2={0} stroke={color} strokeWidth={2} d={pathD} /></Svg>
-        {coords.map((c, i) => <Circle key={i} cx={c.x} cy={c.y} r={3} fill={color} />)}
+        {areaD ? <Path d={areaD} fill={color} fillOpacity={0.1} /> : null}
+        {pathD ? <Path d={pathD} stroke={color} strokeWidth={2.5} fill="none" strokeLinecap="round" strokeLinejoin="round" /> : null}
+        {coords.map((c, i) => (
+          <G key={i}>
+            <Circle cx={c.x} cy={c.y} r={5} fill={colors.surface} stroke={color} strokeWidth={2} />
+            <Circle cx={c.x} cy={c.y} r={3} fill={color} />
+            <SvgText x={c.x} y={c.y - 10} fill={color} fontSize="10" fontWeight="700" textAnchor="middle">{c.val.toFixed(1)}</SvgText>
+          </G>
+        ))}
+        {coords.map((c, i) => {
+          const show = coords.length <= 5 || i === 0 || i === coords.length-1 || i % Math.ceil(coords.length/4) === 0;
+          return show ? <SvgText key={`xl${i}`} x={c.x} y={H-4} fill={colors.textSecondary} fontSize="9" textAnchor="middle">{c.label}</SvgText> : null;
+        })}
       </Svg>
     </View>
   );
 }
 const tl2 = StyleSheet.create({
-  card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.sm, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
-  label: { fontSize: 12, fontWeight: '700', color: colors.text },
-  latest: { fontSize: 13, fontWeight: '900' },
+  card: { backgroundColor: colors.surface, borderRadius: borderRadius.lg, padding: spacing.sm, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border, overflow: 'hidden' },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, paddingHorizontal: 4 },
+  label: { fontSize: 12, fontWeight: '700', color: colors.text, flex: 1 },
+  statsRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  latest: { fontSize: 16, fontWeight: '900' },
+  sub: { fontSize: 11, fontWeight: '500', color: colors.textSecondary },
+  badge: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  badgeText: { fontSize: 11, fontWeight: '800' },
 });
 
 // ─── Radar Chart ─────────────────────────────────────────────────────────────
@@ -531,25 +576,25 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
 }
 
 // ── Technical Tab ─────────────────────────────────────────────────────────────
-function TechnicalTab({ logs, sessions, tf }: { logs: TechLog[]; sessions: SessionNote[]; tf: Timeframe }) {
+function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; sessions: SessionNote[]; academyLogs: AcademyLog[]; tf: Timeframe }) {
   const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0));
-  const totalBalls = sessions.reduce((a, s) => {
+  // Balls faced: academy logs + freestyle session notes
+  const ballsFromAcademy = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
+  const ballsFromSessions = sessions.reduce((a, s) => {
     const p = parseSessionNotes(s.notes || '');
     return a + (Number(p['balls_faced']) || 0);
   }, 0);
-  const careerMiddled = sessions.reduce((a, s) => {
-    const p = parseSessionNotes(s.notes || '');
-    return a + (Number(p['balls_middled']) || 0);
-  }, 0);
-  const middleRate = totalBalls > 0 ? Math.round((careerMiddled / totalBalls) * 100) : null;
+  const totalBalls = ballsFromAcademy + ballsFromSessions;
+  const runsFromAcademy = academyLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
+  const middleRate = totalBalls > 0 ? Math.round((runsFromAcademy / totalBalls) * 100) : null;
 
   const metricData = [
     { label: 'Shot Execution', value: avg(logs.map(l => l.technique_quality)) },
     { label: 'Footwork', value: avg(logs.map(l => l.consistency)) },
     { label: 'Timing', value: avg(logs.map(l => l.timing)) },
     { label: 'Shot Control', value: avg(logs.map(l => l.shot_control)) },
-    { label: 'Focus', value: avg(logs.map(l => l.focus_level)) },
-    { label: 'Confidence', value: avg(logs.map(l => l.confidence_level)) },
+    { label: 'Focus', value: avg(logs.map((l: any) => l.focus_level || 0)) },
+    { label: 'Confidence', value: avg(logs.map((l: any) => l.confidence_level || 0)) },
   ];
 
   const trendPoints = logs.slice(0, 10).reverse().map((l, i) => ({
@@ -907,7 +952,7 @@ export default function AnalyticsScreen() {
   const mentalLogs = filterByTimeframe(allMentalLogs, timeframe);
   const tacLogs   = filterByTimeframe(allTacLogs, timeframe);
 
-  const activeTabInfo = TABS.find(t => t.key === activeTab)!;
+  const activeTabInfo = TABS.find(t => t.key === activeTab) ?? TABS[0];
   const tfLabel = TIMEFRAMES.find(t => t.key === timeframe)?.label || 'Last 30 Days';
 
   if (loading) {
@@ -966,7 +1011,7 @@ export default function AnalyticsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {activeTab === 'overall'   && <OverallTab sessions={sessions} academyLogs={academyLogs} techLogs={techLogs} physLogs={physLogs} mentalLogs={mentalLogs} tacLogs={tacLogs} tf={timeframe} />}
-        {activeTab === 'technical' && <TechnicalTab logs={techLogs} sessions={sessions} tf={timeframe} />}
+        {activeTab === 'technical' && <TechnicalTab logs={techLogs} sessions={sessions} academyLogs={academyLogs} tf={timeframe} />}
         {activeTab === 'physical'  && <PhysicalTab logs={physLogs} tf={timeframe} />}
         {activeTab === 'mental'    && <MentalTab logs={mentalLogs} tf={timeframe} />}
         {activeTab === 'tactical'  && <TacticalTab logs={tacLogs} tf={timeframe} />}
@@ -1003,6 +1048,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: spacing.md, paddingVertical: spacing.md,
     backgroundColor: colors.surface, borderBottomWidth: 1, borderBottomColor: colors.border,
+    zIndex: 10, elevation: 4,
   },
   headerTitle: { ...typography.h3, color: colors.text, fontWeight: '700' },
   headerSub: { ...typography.caption, color: colors.textSecondary, marginTop: 1 },
