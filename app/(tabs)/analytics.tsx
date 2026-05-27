@@ -546,10 +546,10 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
     <>
       <AIInsightCard tab="overall" timeframe={tf} tabColor="#6366F1" title="Career" />
       <KPIRow items={[
-        { label: 'Total Time', value: fmtMins(totalTime), icon: 'access-time', color: '#6366F1' },
-        { label: 'Sessions', value: String(totalSessions), icon: 'event-available', color: colors.success },
+        { label: 'Total Time', value: fmtMins(totalTime), icon: 'timer', color: '#6366F1' },
+        { label: 'Sessions', value: String(totalSessions), icon: 'check-circle', color: colors.success },
         { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'sports-cricket', color: colors.technical || '#2196F3' },
-        { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'track-changes', color: colors.warning, sub: totalBalls > 0 ? `${totalBalls} faced` : undefined },
+        { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'center-focus-strong', color: colors.warning, sub: totalBalls > 0 ? `${totalBalls} faced` : undefined },
       ]} />
 
       <SCard title="Pillar Balance" icon="radar" color="#6366F1">
@@ -580,32 +580,35 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
 // ── Technical Tab ─────────────────────────────────────────────────────────────
 function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; sessions: SessionNote[]; academyLogs: AcademyLog[]; tf: Timeframe }) {
   const totalMins = Math.round(logs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0));
-  // Balls faced: technical drill logs + academy logs + freestyle session notes
-  const ballsFromDrills = logs.reduce((a, l) => a + (l.balls_faced || 0), 0);
-  const middledFromDrills = logs.reduce((a, l) => a + (l.balls_middled || 0), 0);
-  const ballsFromAcademy = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
-  const ballsFromSessions = sessions.reduce((a, s) => {
-    const p = parseSessionNotes(s.notes || '');
-    return a + (Number(p['balls_faced']) || 0);
-  }, 0);
-  const middledFromSessions = sessions.reduce((a, s) => {
-    const p = parseSessionNotes(s.notes || '');
-    return a + (Number(p['balls_middled']) || Number(p['balls_middled:']) || 0);
-  }, 0);
+  // Balls faced: technical drill logs (direct DB fields)
+  const ballsFromDrills = logs.reduce((a, l) => a + (Number(l.balls_faced) || 0), 0);
+  const middledFromDrills = logs.reduce((a, l) => a + (Number(l.balls_middled) || 0), 0);
+  // Balls faced: academy training logs
+  const ballsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.balls_faced) || 0), 0);
+  // Balls faced: parse from freestyle session notes line-by-line
+  let ballsFromSessions = 0;
+  let middledFromSessions = 0;
+  sessions.forEach(s => {
+    if (!s.notes) return;
+    s.notes.split('\n').forEach(line => {
+      const lower = line.toLowerCase().trim();
+      if (lower.startsWith('balls faced:')) { const v = parseInt(lower.replace('balls faced:', '').trim()); if (!isNaN(v) && v > 0) ballsFromSessions += v; }
+      if (lower.startsWith('balls middled:')) { const v = parseInt(lower.replace('balls middled:', '').trim()); if (!isNaN(v) && v > 0) middledFromSessions += v; }
+    });
+  });
   const totalBalls = ballsFromDrills + ballsFromAcademy + ballsFromSessions;
   const totalMiddled = middledFromDrills + middledFromSessions;
-  const runsFromAcademy = academyLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
-  // Middle rate: use balls_middled from drills + sessions; fall back to runs_scored from academy
+  const runsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.runs_scored) || 0), 0);
   const totalMiddledAll = totalMiddled > 0 ? totalMiddled : runsFromAcademy;
   const middleRate = totalBalls > 0 ? Math.round((totalMiddledAll / totalBalls) * 100) : null;
 
   const metricData = [
-    { label: 'Shot Execution', value: avg(logs.map(l => l.technique_quality)) },
-    { label: 'Footwork', value: avg(logs.map(l => l.consistency)) },
-    { label: 'Timing', value: avg(logs.map(l => l.timing)) },
-    { label: 'Shot Control', value: avg(logs.map(l => l.shot_control)) },
-    { label: 'Focus', value: avg(logs.map((l: any) => l.focus_level || 0)) },
-    { label: 'Confidence', value: avg(logs.map((l: any) => l.confidence_level || 0)) },
+    { label: 'Shot Execution', value: avg(logs.map(l => Number(l.technique_quality) || 0)) },
+    { label: 'Footwork', value: avg(logs.map(l => Number(l.consistency) || 0)) },
+    { label: 'Timing', value: avg(logs.map(l => Number(l.timing) || 0)) },
+    { label: 'Shot Control', value: avg(logs.map(l => Number(l.shot_control) || 0)) },
+    { label: 'Focus Level', value: avg(logs.map(l => Number(l.focus_level) || 0)) },
+    { label: 'Confidence', value: avg(logs.map(l => Number(l.confidence_level) || 0)) },
   ];
 
   const trendPoints = logs.slice(0, 10).reverse().map((l, i) => ({
@@ -626,9 +629,9 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
       <AIInsightCard tab="technical" timeframe={tf} tabColor={colors.technical || '#2196F3'} title="Technique" />
       <KPIRow items={[
         { label: 'Sessions', value: String(logs.length), icon: 'sports-cricket', color: colors.technical || '#2196F3' },
-        { label: 'Training Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.technical || '#2196F3' },
-        { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'sports-cricket', color: colors.warning },
-        { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'track-changes', color: colors.success },
+        { label: 'Training Time', value: fmtMins(totalMins), icon: 'timer', color: colors.technical || '#2196F3' },
+        { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'adjust', color: colors.warning },
+        { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'center-focus-strong', color: colors.success },
       ]} />
       <SCard title="Metric Averages" icon="bar-chart" color={colors.technical || '#2196F3'}>
         <ProgressBars items={metricData} color={colors.technical || '#2196F3'} />
@@ -683,9 +686,9 @@ function PhysicalTab({ logs, sessions, tf }: { logs: PhysLog[]; sessions: Sessio
       <AIInsightCard tab="physical" timeframe={tf} tabColor={colors.physical || '#4CAF50'} title="Workload" />
       <KPIRow items={[
         { label: 'Sessions', value: String(logs.length + physicalFreestyle.length), icon: 'fitness-center', color: colors.physical || '#4CAF50' },
-        { label: 'Training Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.physical || '#4CAF50' },
+        { label: 'Training Time', value: fmtMins(totalMins), icon: 'timer', color: colors.physical || '#4CAF50' },
         { label: 'Avg Energy', value: avgEnergy > 0 ? `${avgEnergy}/10` : '—', icon: 'bolt', color: colors.warning },
-        { label: 'Avg Reaction', value: avgReaction > 0 ? `${avgReaction}/10` : '—', icon: 'speed', color: colors.success },
+        { label: 'Avg Reaction', value: avgReaction > 0 ? `${avgReaction}/10` : '—', icon: 'trending-up', color: colors.success },
       ]} />
       <SCard title="Avg Ratings Over Time" icon="show-chart" color={colors.physical || '#4CAF50'}>
         <ProgressBars items={[
@@ -752,9 +755,9 @@ function MentalTab({ logs, sessions, tf }: { logs: MentalLog[]; sessions: Sessio
       <AIInsightCard tab="mental" timeframe={tf} tabColor={colors.mental || '#9C27B0'} title="Mindset" />
       <KPIRow items={[
         { label: 'Sessions', value: String(logs.length + mentalFreestyle.length), icon: 'psychology', color: colors.mental || '#9C27B0' },
-        { label: 'Training Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.mental || '#9C27B0' },
+        { label: 'Training Time', value: fmtMins(totalMins), icon: 'timer', color: colors.mental || '#9C27B0' },
         { label: 'Avg Confidence', value: avgConfidence > 0 ? `${avgConfidence}/10` : '—', icon: 'star', color: confColor },
-        { label: 'Avg Adherence', value: avgAdherence > 0 ? `${avgAdherence}/10` : '—', icon: 'check-circle', color: colors.success },
+        { label: 'Avg Adherence', value: avgAdherence > 0 ? `${avgAdherence}/10` : '—', icon: 'done', color: colors.success },
       ]} />
       <SCard title="Mental Metrics" icon="bar-chart" color={colors.mental || '#9C27B0'}>
         <ProgressBars items={moodData} color={colors.mental || '#9C27B0'} />
@@ -808,8 +811,8 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
       <AIInsightCard tab="tactical" timeframe={tf} tabColor={colors.tactical || '#FF9800'} title="Match IQ" />
       <KPIRow items={[
         { label: 'Scenarios', value: String(logs.length + tacticalFreestyle.length), icon: 'lightbulb', color: colors.tactical || '#FF9800' },
-        { label: 'Tactical Time', value: fmtMins(totalMins), icon: 'access-time', color: colors.tactical || '#FF9800' },
-        { label: 'Shot Match', value: matchedPct !== null ? `${matchedPct}%` : '—', icon: 'check-circle', color: colors.success, sub: matchedTotal > 0 ? `${matchedYes}/${matchedTotal}` : undefined },
+        { label: 'Tactical Time', value: fmtMins(totalMins), icon: 'timer', color: colors.tactical || '#FF9800' },
+        { label: 'Shot Match', value: matchedPct !== null ? `${matchedPct}%` : '—', icon: 'done', color: colors.success, sub: matchedTotal > 0 ? `${matchedYes}/${matchedTotal}` : undefined },
         { label: 'Field Reading', value: avgFieldReading > 0 ? `${avgFieldReading}/10` : '—', icon: 'visibility', color: colors.warning },
       ]} />
       <SCard title="Decision Success" icon="pie-chart" color={colors.tactical || '#FF9800'}>
@@ -846,23 +849,27 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
 
 // ── Freestyle Tab ─────────────────────────────────────────────────────────────
 function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe }) {
-  // Only show pure Freestyle sessions (not pillar-tagged ones)
-  const freestyleSessions = sessions.filter(s => !s.session_type || s.session_type === 'Freestyle');
+  // Show ALL Freestyle sessions: null type, 'Freestyle', or 'Freestyle-*' pillar-tagged
+  const freestyleSessions = sessions.filter(s => {
+    const st = (s.session_type || '').trim();
+    return !st || st === 'Freestyle' || st.startsWith('Freestyle');
+  });
   const totalMins = freestyleSessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
 
   const equipmentCount: Record<string, number> = {};
   freestyleSessions.forEach(s => {
     if (!s.notes) return;
-    try {
-      const parsed = JSON.parse(s.notes);
-      if (Array.isArray(parsed.training_types)) {
-        parsed.training_types.forEach((t: string) => { equipmentCount[t] = (equipmentCount[t] || 0) + 1; });
+    // Parse "Training Types: Bowling Machine, Bowler (Spinner)" line from notes
+    s.notes.split('\n').forEach(line => {
+      const lower = line.toLowerCase().trim();
+      if (lower.startsWith('training types:')) {
+        const typesStr = line.replace(/training types:/i, '').trim();
+        typesStr.split(',').forEach(t => {
+          const trimmed = t.trim();
+          if (trimmed.length > 1) equipmentCount[trimmed] = (equipmentCount[trimmed] || 0) + 1;
+        });
       }
-    } catch {
-      const p = parseSessionNotes(s.notes);
-      const eq = String(p['equipment'] || p['training_type'] || '').trim();
-      if (eq) equipmentCount[eq] = (equipmentCount[eq] || 0) + 1;
-    }
+    });
   });
 
   const sorted = Object.entries(equipmentCount).sort((a, b) => b[1] - a[1]);
@@ -877,9 +884,9 @@ function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe
       <AIInsightCard tab="freestyle" timeframe={tf} tabColor="#E53935" title="Training Variety" />
       <KPIRow items={[
         { label: 'Sessions', value: String(freestyleSessions.length), icon: 'flash-on', color: '#E53935' },
-        { label: 'Total Time', value: fmtMins(totalMins), icon: 'access-time', color: '#E53935' },
-        { label: 'Methods Used', value: String(Object.keys(equipmentCount).length || '—'), icon: 'category', color: colors.warning },
-        { label: 'Top Method', value: topPct !== null ? `${topPct}%` : '—', icon: 'star', color: colors.primary, sub: topMethod },
+        { label: 'Total Time', value: fmtMins(totalMins), icon: 'timer', color: '#E53935' },
+        { label: 'Methods Used', value: Object.keys(equipmentCount).length > 0 ? String(Object.keys(equipmentCount).length) : '—', icon: 'adjust', color: colors.warning },
+        { label: 'Top Method', value: topPct !== null ? `${topPct}%` : '—', icon: 'whatshot', color: colors.primary, sub: topMethod },
       ]} />
       {sorted.length > 0 ? (
         <SCard title="Training Method Distribution" icon="bar-chart" color="#E53935">
@@ -945,14 +952,16 @@ export default function AnalyticsScreen() {
     setLoading(true);
     const supabase = getSupabaseClient();
     const [sessRes, acaRes, techRes, physRes, menRes, tacRes] = await Promise.all([
-      supabase.from('sessions').select('completed_at, duration_minutes, notes, session_type').eq('user_id', user.id).eq('status', 'completed').order('completed_at', { ascending: false }).limit(200),
+      supabase.from('sessions').select('id, completed_at, duration_minutes, notes, session_type').eq('user_id', user.id).in('status', ['completed']).order('completed_at', { ascending: false }).limit(300),
       supabase.from('academy_training_logs').select('*').eq('user_id', user.id).order('log_date', { ascending: false }).limit(200),
       supabase.from('technical_drill_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
       supabase.from('workout_drill_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
       supabase.from('mental_drill_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
       supabase.from('tactical_drill_logs').select('*').eq('user_id', user.id).order('created_at', { ascending: false }).limit(200),
     ]);
-    setAllSessions(sessRes.data || []);
+    const sessData = (sessRes.data || []) as SessionNote[];
+    console.log('[Analytics] sessions loaded:', sessData.length, 'types:', [...new Set(sessData.map((s: any) => s.session_type))]);
+    setAllSessions(sessData);
     setAllAcademyLogs(acaRes.data || []);
     setAllTechLogs(techRes.data || []);
     setAllPhysLogs(physRes.data || []);
