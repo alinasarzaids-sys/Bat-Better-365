@@ -519,8 +519,9 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
   );
   const totalSessions = sessions.length + academyLogs.length + techLogs.length + physLogs.length + mentalLogs.length + tacLogs.length;
   const totalBalls = academyLogs.reduce((a, l) => a + (l.balls_faced || 0), 0);
-  const totalMiddled = academyLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
-  const middleRate = totalBalls > 0 ? Math.round((totalMiddled / totalBalls) * 100) : null;
+  const totalRuns = academyLogs.reduce((a, l) => a + (l.runs_scored || 0), 0);
+  const middleRate = totalBalls > 0 ? Math.round((totalRuns / totalBalls) * 100) : null;
+  const strikeRate = totalBalls > 0 ? Math.round((totalRuns / totalBalls) * 100) : null;
 
   const pillarMins = {
     Technical: Math.round(techLogs.reduce((a, l) => a + Math.round((l.time_elapsed || 0) / 60), 0) + academyLogs.filter(l => (l.session_type || '').toLowerCase().includes('batting') || (l.session_type || '').toLowerCase().includes('tech')).reduce((a, l) => a + (l.duration_minutes || 0), 0)),
@@ -553,7 +554,7 @@ function OverallTab({ sessions, academyLogs, techLogs, physLogs, mentalLogs, tac
         { label: 'Total Time', value: fmtMins(totalTime), icon: 'timer', color: '#6366F1' },
         { label: 'Sessions', value: String(totalSessions), icon: 'check-circle', color: colors.success },
         { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'sports-cricket', color: colors.technical || '#2196F3' },
-        { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'center-focus-strong', color: colors.warning, sub: totalBalls > 0 ? `${totalBalls} faced` : undefined },
+        { label: 'Strike Rate', value: strikeRate !== null ? `${strikeRate}` : '—', icon: 'trending-up', color: colors.warning, sub: totalBalls > 0 ? `${totalRuns} runs / ${totalBalls} balls` : undefined },
       ]} />
 
       <SCard title="Pillar Balance" icon="radar" color="#6366F1">
@@ -589,12 +590,11 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
   const middledFromDrills = logs.reduce((a, l) => a + (Number(l.balls_middled) || 0), 0);
   // Balls faced: academy training logs
   const ballsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.balls_faced) || 0), 0);
-  // Balls faced + middled: parse from ALL session notes (freestyle sessions tagged or untagged)
+  const runsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.runs_scored) || 0), 0);
+  // Balls faced + middled: parse from ALL session notes
   let ballsFromSessions = 0;
   let middledFromSessions = 0;
-  // Also parse from all sessions (not just technical-tagged ones)
-  const allSessForTech = sessions; // sessions already filtered by timeframe
-  allSessForTech.forEach(s => {
+  sessions.forEach(s => {
     if (!s.notes) return;
     s.notes.split('\n').forEach(line => {
       const lower = line.toLowerCase().trim();
@@ -610,9 +610,10 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
   });
   const totalBalls = ballsFromDrills + ballsFromAcademy + ballsFromSessions;
   const totalMiddled = middledFromDrills + middledFromSessions;
-  const runsFromAcademy = academyLogs.reduce((a, l) => a + (Number(l.runs_scored) || 0), 0);
   const totalMiddledAll = totalMiddled > 0 ? totalMiddled : runsFromAcademy;
   const middleRate = totalBalls > 0 ? Math.round((totalMiddledAll / totalBalls) * 100) : null;
+  // Strike rate: runs per 100 balls (from academy logs where actual runs are tracked)
+  const techStrikeRate = ballsFromAcademy > 0 ? Math.round((runsFromAcademy / ballsFromAcademy) * 100) : null;
 
   const metricData = [
     { label: 'Shot Execution', value: avg(logs.map(l => Number(l.technique_quality) || 0)) },
@@ -644,6 +645,7 @@ function TechnicalTab({ logs, sessions, academyLogs, tf }: { logs: TechLog[]; se
         { label: 'Training Time', value: fmtMins(totalMins), icon: 'timer', color: colors.technical || '#2196F3' },
         { label: 'Balls Faced', value: totalBalls > 0 ? String(totalBalls) : '—', icon: 'adjust', color: colors.warning },
         { label: 'Middle Rate', value: middleRate !== null ? `${middleRate}%` : '—', icon: 'center-focus-strong', color: colors.success },
+        ...(techStrikeRate !== null ? [{ label: 'Strike Rate', value: String(techStrikeRate), icon: 'trending-up', color: '#2196F3', sub: 'runs per 100 balls' }] : []),
       ]} />
       <SCard title="Metric Averages" icon="bar-chart" color={colors.technical || '#2196F3'}>
         <ProgressBars items={metricData} color={colors.technical || '#2196F3'} />
@@ -862,13 +864,30 @@ function TacticalTab({ logs, sessions, tf }: { logs: TacLog[]; sessions: Session
 // ── Freestyle Tab ─────────────────────────────────────────────────────────────
 function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe }) {
   // Show ALL Freestyle sessions: null type, 'Freestyle', or 'Freestyle-*' pillar-tagged
-  // Note: completed_at is often null for freestyle sessions — filterByTimeframe now uses created_at fallback
   const freestyleSessions = sessions.filter(s => {
     const st = (s.session_type || '').trim();
-    // Include sessions with no type (old sessions), 'Freestyle', or pillar-tagged ones
     return !st || st === 'Freestyle' || st.startsWith('Freestyle') || st === 'Training';
   });
   const totalMins = freestyleSessions.reduce((a, s) => a + (s.duration_minutes || 0), 0);
+
+  // Balls Faced & Middled from session notes
+  let freeBalls = 0;
+  let freeMiddled = 0;
+  freestyleSessions.forEach(s => {
+    if (!s.notes) return;
+    s.notes.split('\n').forEach(line => {
+      const lower = line.toLowerCase().trim();
+      if (lower.startsWith('balls faced:')) {
+        const v = parseInt(lower.replace('balls faced:', '').trim());
+        if (!isNaN(v) && v > 0) freeBalls += v;
+      }
+      if (lower.startsWith('balls middled:')) {
+        const v = parseInt(lower.replace('balls middled:', '').trim());
+        if (!isNaN(v) && v > 0) freeMiddled += v;
+      }
+    });
+  });
+  const freeMiddleRate = freeBalls > 0 && freeMiddled > 0 ? Math.round((freeMiddled / freeBalls) * 100) : null;
 
   const equipmentCount: Record<string, number> = {};
   freestyleSessions.forEach(s => {
@@ -899,7 +918,9 @@ function FreestyleTab({ sessions, tf }: { sessions: SessionNote[]; tf: Timeframe
       <KPIRow items={[
         { label: 'Sessions', value: String(freestyleSessions.length), icon: 'flash-on', color: '#E53935' },
         { label: 'Total Time', value: fmtMins(totalMins), icon: 'timer', color: '#E53935' },
-        { label: 'Methods Used', value: Object.keys(equipmentCount).length > 0 ? String(Object.keys(equipmentCount).length) : '—', icon: 'adjust', color: colors.warning },
+        { label: 'Balls Faced', value: freeBalls > 0 ? String(freeBalls) : '—', icon: 'adjust', color: colors.warning },
+        { label: 'Middle Rate', value: freeMiddleRate !== null ? `${freeMiddleRate}%` : '—', icon: 'center-focus-strong', color: colors.success, sub: freeBalls > 0 ? `${freeMiddled}/${freeBalls}` : undefined },
+        { label: 'Methods Used', value: Object.keys(equipmentCount).length > 0 ? String(Object.keys(equipmentCount).length) : '—', icon: 'view-list', color: '#6366F1' },
         { label: 'Top Method', value: topPct !== null ? `${topPct}%` : '—', icon: 'whatshot', color: colors.primary, sub: topMethod },
       ]} />
       {sorted.length > 0 ? (
