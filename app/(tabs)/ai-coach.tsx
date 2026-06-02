@@ -10,7 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   Modal,
-  Animated,
+  Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -207,7 +207,21 @@ function ShotAnalysisTab() {
       }
 
       if (!permResult.granted) {
-        showAlert('Permission Required', fromCamera ? 'Camera access is needed to take a photo.' : 'Photo library access is needed to pick an image.');
+        const canAskAgain = permResult.canAskAgain;
+        showAlert(
+          'Permission Required',
+          canAskAgain
+            ? (fromCamera ? 'Camera access is needed to capture your shot.' : 'Photo library access is needed to pick an image.')
+            : (fromCamera
+                ? 'Camera access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'
+                : 'Photo access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'),
+          canAskAgain
+            ? [{ text: 'OK', style: 'cancel' }]
+            : [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Open Settings', onPress: () => Linking.openSettings() },
+              ]
+        );
         return;
       }
 
