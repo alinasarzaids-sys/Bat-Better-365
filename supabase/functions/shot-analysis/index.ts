@@ -6,11 +6,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { imageBase64, mimeType, shotContext } = await req.json();
+    const { imageBase64, mimeType, shotContext, isVideo } = await req.json();
 
     if (!imageBase64) {
       return new Response(
-        JSON.stringify({ error: 'Image data is required' }),
+        JSON.stringify({ error: 'Media data is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -27,7 +27,9 @@ Deno.serve(async (req) => {
 
     const contextLine = shotContext ? `The player mentioned: "${shotContext}".\n` : '';
 
-    const systemPrompt = `You are an elite cricket batting coach and biomechanics expert with 20+ years of experience coaching international batters. You analyse batting images/screenshots with precision and provide highly actionable, structured feedback.
+    const mediaLabel = isVideo ? 'video clip' : 'image/screenshot';
+
+    const systemPrompt = `You are an elite cricket batting coach and biomechanics expert with 20+ years of experience coaching international batters. You analyse batting ${mediaLabel}s with precision and provide highly actionable, structured feedback.
 
 Your analysis must always follow this exact JSON structure:
 {
@@ -48,20 +50,26 @@ Your analysis must always follow this exact JSON structure:
 
 Be specific to cricket batting. Reference actual body parts (front elbow, back foot, head position, weight transfer, follow-through, etc.). Keep wentWell to 2-4 points. Keep improvements to 2-3 points maximum. Output ONLY valid JSON, no markdown fences.`;
 
+    // Build content array — video uses video_url, image uses image_url
+    const mediaContent = isVideo
+      ? {
+          type: 'video_url',
+          video_url: { url: `data:${mimeType || 'video/mp4'};base64,${imageBase64}` }
+        }
+      : {
+          type: 'image_url',
+          image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}` }
+        };
+
     const userContent = [
       {
         type: 'text',
-        text: `${contextLine}Please analyse this batting image and provide structured feedback.`
+        text: `${contextLine}Please analyse this batting ${mediaLabel} and provide structured feedback. ${isVideo ? 'Focus on the key moment of shot execution visible in the clip — footwork, backswing, contact point, follow-through, and head position.' : ''}`
       },
-      {
-        type: 'image_url',
-        image_url: {
-          url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}`
-        }
-      }
+      mediaContent
     ];
 
-    console.log('Calling OnSpace AI for shot analysis...');
+    console.log(`Calling OnSpace AI for shot analysis (${isVideo ? 'video' : 'image'})...`);
 
     const aiResponse = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',

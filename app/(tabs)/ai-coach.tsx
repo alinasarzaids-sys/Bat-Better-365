@@ -43,6 +43,18 @@ interface ShotImprovement {
   fix: string;
 }
 
+type MediaMode = 'image' | 'video';
+
+interface PickedMedia {
+  uri: string;
+  base64: string;
+  mimeType: string;
+  isVideo: boolean;
+  fileName?: string;
+  duration?: number; // seconds
+  fileSize?: number; // bytes
+}
+
 interface ShotAnalysis {
   shotType: string;
   overallScore: number;
@@ -190,14 +202,18 @@ function WeeklyReportModal({
 // ─── Shot Analysis Tab ─────────────────────────────────────────────────────────
 function ShotAnalysisTab() {
   const { showAlert } = useAlert();
-  const [pickedImage, setPickedImage] = useState<{ uri: string; base64: string; mimeType: string } | null>(null);
+  const [mediaMode, setMediaMode] = useState<MediaMode>('image');
+  const [pickedMedia, setPickedMedia] = useState<PickedMedia | null>(null);
   const [context, setContext] = useState('');
   const [analysing, setAnalysing] = useState(false);
   const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
   const [expandedImprovement, setExpandedImprovement] = useState<number | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
-  const pickImage = useCallback(async (fromCamera: boolean) => {
+  // Max video size: ~7 MB base64 (~5.25 MB raw) to stay under 10 MB edge function limit
+  const MAX_VIDEO_BYTES = 5.5 * 1024 * 1024;
+
+  const pickMedia = useCallback(async (fromCamera: boolean, mode: MediaMode) => {
     try {
       let permResult;
       if (fromCamera) {
@@ -211,10 +227,10 @@ function ShotAnalysisTab() {
         showAlert(
           'Permission Required',
           canAskAgain
-            ? (fromCamera ? 'Camera access is needed to capture your shot.' : 'Photo library access is needed to pick an image.')
+            ? (fromCamera ? 'Camera access is needed to capture your shot.' : 'Photo library access is needed to pick a file.')
             : (fromCamera
                 ? 'Camera access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'
-                : 'Photo access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'),
+                : 'Photo/media access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'),
           canAskAgain
             ? [{ text: 'OK', style: 'cancel' }]
             : [
@@ -225,33 +241,82 @@ function ShotAnalysisTab() {
         return;
       }
 
+      const isVideo = mode === 'video';
+      const mediaTypes = isVideo ? 'videos' : 'images';
+
       const result = fromCamera
-        ? await ImagePicker.launchCameraAsync({ mediaTypes: 'images', quality: 0.7, base64: true })
-        : await ImagePicker.launchImageLibraryAsync({ mediaTypes: 'images', quality: 0.7, base64: true });
+        ? await ImagePicker.launchCameraAsync({
+            mediaTypes,
+            quality: isVideo ? 0.5 : 0.7,
+            base64: !isVideo, // base64 for images only; videos read manually
+            videoMaxDuration: 10, // cap at 10 seconds
+            videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
+          })
+        : await ImagePicker.launchImageLibraryAsync({
+            mediaTypes,
+            quality: isVideo ? 0.5 : 0.7,
+            base64: !isVideo,
+            videoMaxDuration: 10,
+          });
 
       if (result.canceled || !result.assets?.[0]) return;
-
       const asset = result.assets[0];
 
-      let base64Data = asset.base64 || '';
+      if (isVideo) {
+        // Read video as base64 via FileSystem
+        const fileInfo = await FileSystem.getInfoAsync(asset.uri);
+        const fileSizeBytes = (fileInfo as any).size || 0;
 
-      // Fallback: read file as base64 if not provided
-      if (!base64Data && asset.uri) {
-        base64Data = await FileSystem.readAsStringAsync(asset.uri, {
+        if (fileSizeBytes > MAX_VIDEO_BYTES) {
+          showAlert(
+            'Video Too Large',
+            `The video is ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB. Please use a clip under 10 seconds or at lower quality (max ~5 MB).`,
+            [{ text: 'OK', style: 'cancel' }]
+          );
+          return;
+        }
+
+        const base64Data = await FileSystem.readAsStringAsync(asset.uri, {
           encoding: FileSystem.EncodingType.Base64,
+        });
+
+        const mimeType = asset.mimeType || 'video/mp4';
+        const durationSec = asset.duration ? Math.round(asset.duration / 1000) : undefined;
+        const fileName = asset.uri.split('/').pop() || 'video';
+
+        setPickedMedia({
+          uri: asset.uri,
+          base64: base64Data,
+          mimeType,
+          isVideo: true,
+          fileName,
+          duration: durationSec,
+          fileSize: fileSizeBytes,
+        });
+      } else {
+        let base64Data = asset.base64 || '';
+        if (!base64Data && asset.uri) {
+          base64Data = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        }
+        setPickedMedia({
+          uri: asset.uri,
+          base64: base64Data,
+          mimeType: asset.mimeType || 'image/jpeg',
+          isVideo: false,
+          fileSize: (asset as any).fileSize,
         });
       }
 
-      const mimeType = asset.mimeType || 'image/jpeg';
-      setPickedImage({ uri: asset.uri, base64: base64Data, mimeType });
       setAnalysis(null);
     } catch (e: any) {
-      showAlert('Error', e.message || 'Failed to pick image');
+      showAlert('Error', e.message || 'Failed to pick media');
     }
   }, [showAlert]);
 
   const handleAnalyse = async () => {
-    if (!pickedImage) return;
+    if (!pickedMedia) return;
     setAnalysing(true);
     setAnalysis(null);
     setExpandedImprovement(null);
@@ -260,8 +325,9 @@ function ShotAnalysisTab() {
       const supabase = getSupabaseClient();
       const { data, error } = await supabase.functions.invoke('shot-analysis', {
         body: {
-          imageBase64: pickedImage.base64,
-          mimeType: pickedImage.mimeType,
+          imageBase64: pickedMedia.base64,
+          mimeType: pickedMedia.mimeType,
+          isVideo: pickedMedia.isVideo,
           shotContext: context.trim() || undefined,
         },
       });
@@ -291,7 +357,7 @@ function ShotAnalysisTab() {
   };
 
   const resetAnalysis = () => {
-    setPickedImage(null);
+    setPickedMedia(null);
     setAnalysis(null);
     setContext('');
     setExpandedImprovement(null);
@@ -312,37 +378,113 @@ function ShotAnalysisTab() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={saStyles.heroTitle}>Shot Analyser</Text>
-          <Text style={saStyles.heroSub}>Upload a photo or screenshot of your batting shot and get instant AI coaching feedback</Text>
+          <Text style={saStyles.heroSub}>Upload a photo or short video of your batting shot and get instant AI coaching feedback</Text>
         </View>
       </View>
+
+      {/* Media mode toggle */}
+      {!pickedMedia && (
+        <View style={saStyles.modeToggle}>
+          <Pressable
+            style={[saStyles.modeBtn, mediaMode === 'image' && saStyles.modeBtnActive]}
+            onPress={() => setMediaMode('image')}
+          >
+            <MaterialIcons name="photo-camera" size={16} color={mediaMode === 'image' ? colors.primary : colors.textSecondary} />
+            <Text style={[saStyles.modeBtnText, mediaMode === 'image' && saStyles.modeBtnTextActive]}>Photo</Text>
+          </Pressable>
+          <Pressable
+            style={[saStyles.modeBtn, mediaMode === 'video' && saStyles.modeBtnActive]}
+            onPress={() => setMediaMode('video')}
+          >
+            <MaterialIcons name="videocam" size={16} color={mediaMode === 'video' ? colors.primary : colors.textSecondary} />
+            <Text style={[saStyles.modeBtnText, mediaMode === 'video' && saStyles.modeBtnTextActive]}>Video</Text>
+            <View style={saStyles.newBadgeSmall}><Text style={saStyles.newBadgeSmallText}>NEW</Text></View>
+          </Pressable>
+        </View>
+      )}
+
+      {mediaMode === 'video' && !pickedMedia && (
+        <View style={saStyles.videoHintCard}>
+          <MaterialIcons name="info" size={15} color={colors.primary} />
+          <Text style={saStyles.videoHintText}>
+            Keep the clip under 10 seconds for best results. Side-on or front-on angle works best. Max file size ~5 MB.
+          </Text>
+        </View>
+      )}
 
       {/* Step 1: Upload */}
       <View style={saStyles.stepCard}>
         <View style={saStyles.stepHeader}>
           <View style={saStyles.stepBadge}><Text style={saStyles.stepNum}>1</Text></View>
-          <Text style={saStyles.stepTitle}>Upload Your Shot</Text>
+          <Text style={saStyles.stepTitle}>Upload Your {mediaMode === 'video' ? 'Video Clip' : 'Shot Photo'}</Text>
         </View>
 
-        {!pickedImage ? (
+        {!pickedMedia ? (
           <View style={saStyles.uploadZone}>
-            <MaterialIcons name="add-photo-alternate" size={40} color={colors.textSecondary} />
-            <Text style={saStyles.uploadTitle}>Add a batting photo</Text>
-            <Text style={saStyles.uploadSub}>A clear side-on or front-on image works best</Text>
+            <MaterialIcons
+              name={mediaMode === 'video' ? 'video-library' : 'add-photo-alternate'}
+              size={40}
+              color={colors.textSecondary}
+            />
+            <Text style={saStyles.uploadTitle}>
+              {mediaMode === 'video' ? 'Add a batting video clip' : 'Add a batting photo'}
+            </Text>
+            <Text style={saStyles.uploadSub}>
+              {mediaMode === 'video'
+                ? 'Record your shot or pick a short clip (≤10 sec)'
+                : 'A clear side-on or front-on image works best'}
+            </Text>
             <View style={saStyles.uploadBtns}>
-              <Pressable style={saStyles.uploadBtn} onPress={() => pickImage(true)}>
+              <Pressable style={saStyles.uploadBtn} onPress={() => pickMedia(true, mediaMode)}>
                 <MaterialIcons name="camera-alt" size={18} color={colors.textLight} />
-                <Text style={saStyles.uploadBtnText}>Camera</Text>
+                <Text style={saStyles.uploadBtnText}>
+                  {mediaMode === 'video' ? 'Record' : 'Camera'}
+                </Text>
               </Pressable>
-              <Pressable style={[saStyles.uploadBtn, saStyles.uploadBtnOutline]} onPress={() => pickImage(false)}>
-                <MaterialIcons name="photo-library" size={18} color={colors.primary} />
+              <Pressable style={[saStyles.uploadBtn, saStyles.uploadBtnOutline]} onPress={() => pickMedia(false, mediaMode)}>
+                <MaterialIcons name={mediaMode === 'video' ? 'video-library' : 'photo-library'} size={18} color={colors.primary} />
                 <Text style={[saStyles.uploadBtnText, { color: colors.primary }]}>Gallery</Text>
               </Pressable>
             </View>
           </View>
+        ) : pickedMedia.isVideo ? (
+          /* Video preview — no expo-video; show a styled placeholder card */
+          <View style={saStyles.videoPreviewCard}>
+            <View style={saStyles.videoPreviewInner}>
+              <View style={saStyles.videoPlayCircle}>
+                <MaterialIcons name="play-arrow" size={36} color={colors.textLight} />
+              </View>
+              <View style={{ flex: 1, gap: 4 }}>
+                <Text style={saStyles.videoFileName} numberOfLines={1}>
+                  {pickedMedia.fileName || 'Video clip'}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+                  {pickedMedia.duration !== undefined && (
+                    <View style={saStyles.videoMeta}>
+                      <MaterialIcons name="timer" size={12} color={colors.textSecondary} />
+                      <Text style={saStyles.videoMetaText}>{pickedMedia.duration}s</Text>
+                    </View>
+                  )}
+                  {pickedMedia.fileSize !== undefined && (
+                    <View style={saStyles.videoMeta}>
+                      <MaterialIcons name="storage" size={12} color={colors.textSecondary} />
+                      <Text style={saStyles.videoMetaText}>{(pickedMedia.fileSize / (1024 * 1024)).toFixed(1)} MB</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+            {!analysis && (
+              <Pressable style={saStyles.changeImgBtn} onPress={resetAnalysis}>
+                <MaterialIcons name="swap-horiz" size={14} color={colors.textSecondary} />
+                <Text style={saStyles.changeImgText}>Change video</Text>
+              </Pressable>
+            )}
+          </View>
         ) : (
           <View style={saStyles.imagePreview}>
             <Image
-              source={{ uri: pickedImage.uri }}
+              source={{ uri: pickedMedia.uri }}
               style={saStyles.previewImg}
               contentFit="cover"
               transition={200}
@@ -358,7 +500,7 @@ function ShotAnalysisTab() {
       </View>
 
       {/* Step 2: Context (optional) */}
-      {pickedImage && !analysis && (
+      {pickedMedia && !analysis && (
         <View style={saStyles.stepCard}>
           <View style={saStyles.stepHeader}>
             <View style={saStyles.stepBadge}><Text style={saStyles.stepNum}>2</Text></View>
@@ -378,7 +520,7 @@ function ShotAnalysisTab() {
       )}
 
       {/* Analyse button */}
-      {pickedImage && !analysis && (
+      {pickedMedia && !analysis && (
         <Pressable
           style={[saStyles.analyseBtn, analysing && saStyles.analyseBtnDisabled]}
           onPress={handleAnalyse}
@@ -387,12 +529,16 @@ function ShotAnalysisTab() {
           {analysing ? (
             <>
               <ActivityIndicator size="small" color={colors.textLight} />
-              <Text style={saStyles.analyseBtnText}>Analysing your technique...</Text>
+              <Text style={saStyles.analyseBtnText}>
+                {pickedMedia.isVideo ? 'Analysing your video...' : 'Analysing your technique...'}
+              </Text>
             </>
           ) : (
             <>
               <MaterialIcons name="auto-awesome" size={20} color={colors.textLight} />
-              <Text style={saStyles.analyseBtnText}>Analyse My Shot</Text>
+              <Text style={saStyles.analyseBtnText}>
+                {pickedMedia.isVideo ? 'Analyse My Video' : 'Analyse My Shot'}
+              </Text>
             </>
           )}
         </Pressable>
@@ -482,7 +628,7 @@ function ShotAnalysisTab() {
           </View>
 
           {/* Analyse again */}
-          <Pressable style={saStyles.resetBtn} onPress={resetAnalysis}>
+          <Pressable style={saStyles.resetBtn} onPress={() => { resetAnalysis(); }}>
             <MaterialIcons name="refresh" size={18} color={colors.primary} />
             <Text style={saStyles.resetBtnText}>Analyse Another Shot</Text>
           </Pressable>
@@ -710,6 +856,56 @@ export default function AICoachScreen() {
 // ─── Shot Analysis Styles ──────────────────────────────────────────────────────
 const saStyles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
+
+  modeToggle: {
+    flexDirection: 'row',
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.full,
+    borderWidth: 1, borderColor: colors.border,
+    padding: 3,
+    alignSelf: 'center',
+  },
+  modeBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingVertical: 8, paddingHorizontal: 20,
+    borderRadius: borderRadius.full,
+  },
+  modeBtnActive: { backgroundColor: colors.primary + '18' },
+  modeBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  modeBtnTextActive: { color: colors.primary, fontWeight: '800' },
+  newBadgeSmall: {
+    backgroundColor: colors.success, borderRadius: 3,
+    paddingHorizontal: 4, paddingVertical: 1,
+  },
+  newBadgeSmallText: { fontSize: 8, fontWeight: '900', color: colors.textLight },
+
+  videoHintCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
+    backgroundColor: colors.primary + '08', borderRadius: borderRadius.md,
+    borderWidth: 1, borderColor: colors.primary + '25',
+    padding: spacing.sm + 2, paddingHorizontal: spacing.md,
+  },
+  videoHintText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
+
+  videoPreviewCard: {
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden', gap: spacing.sm,
+  },
+  videoPreviewInner: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    padding: spacing.md,
+    backgroundColor: '#0D0D0D',
+    minHeight: 90,
+  },
+  videoPlayCircle: {
+    width: 56, height: 56, borderRadius: 28,
+    backgroundColor: colors.primary,
+    justifyContent: 'center', alignItems: 'center',
+  },
+  videoFileName: { fontSize: 13, fontWeight: '700', color: colors.textLight },
+  videoMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  videoMetaText: { fontSize: 11, color: colors.textSecondary },
 
   heroCard: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
