@@ -57,6 +57,7 @@
     "plugins": [
       "expo-router",
       "./plugins/block-permissions",
+      "./plugins/exclude-expo-video",
       [
         "expo-image-picker",
         {
