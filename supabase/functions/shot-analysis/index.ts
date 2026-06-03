@@ -26,52 +26,14 @@ Deno.serve(async (req) => {
     }
 
     const contextLine = shotContext ? `The player mentioned: "${shotContext}".\n` : '';
-
     const mediaLabel = isVideo ? 'video clip' : 'image/screenshot';
 
-    const systemPrompt = `You are an elite cricket batting coach and biomechanics expert with 20+ years of experience coaching international batters. You analyse batting ${mediaLabel}s with precision and provide highly actionable, structured feedback.
+    // ── Step 1: Resolve final base64 + mime BEFORE building the content array ──
+    // For videos: fetch from Supabase Storage URL (avoids 413 on request body)
+    // For images: use the base64 passed directly from the client
+    let finalBase64 = imageBase64 || '';
+    let finalMime = mimeType || (isVideo ? 'video/mp4' : 'image/jpeg');
 
-Your analysis must always follow this exact JSON structure:
-{
-  "shotType": "Name of the shot being played (e.g. Cover Drive, Pull Shot, Sweep Shot, Defensive Block)",
-  "overallScore": <number 1-10>,
-  "wentWell": ["point 1", "point 2", "point 3"],
-  "improvements": [
-    {
-      "issue": "Short description of the issue",
-      "detail": "Why this matters and how it affects performance",
-      "fix": "Specific actionable drill or technique tip to fix it"
-    }
-  ],
-  "keyFocus": "The single most important thing to work on right now",
-  "demoTip": "A vivid mental image or cue the player can visualise to instantly feel the correct technique",
-  "encouragement": "A short motivating message personalised to what you see"
-}
-
-Be specific to cricket batting. Reference actual body parts (front elbow, back foot, head position, weight transfer, follow-through, etc.). Keep wentWell to 2-4 points. Keep improvements to 2-3 points maximum. Output ONLY valid JSON, no markdown fences.`;
-
-    // Build content array — video uses video_url, image uses image_url
-    const mediaContent = isVideo
-      ? {
-          type: 'video_url',
-          video_url: { url: `data:${finalMime || 'video/mp4'};base64,${finalBase64}` }
-        }
-      : {
-          type: 'image_url',
-          image_url: { url: `data:${finalMime || 'image/jpeg'};base64,${finalBase64}` }
-        };
-
-    const userContent = [
-      {
-        type: 'text',
-        text: `${contextLine}Please analyse this batting ${mediaLabel} and provide structured feedback. ${isVideo ? 'Focus on the key moment of shot execution visible in the clip — footwork, backswing, contact point, follow-through, and head position.' : ''}`
-      },
-      mediaContent
-    ];
-
-    // If a storage URL is provided (video case), fetch and convert to base64 server-side
-    let finalBase64 = imageBase64;
-    let finalMime = mimeType;
     if (mediaUrl && !imageBase64) {
       console.log('Fetching media from storage URL...');
       const mediaResp = await fetch(mediaUrl);
@@ -93,7 +55,48 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
       console.log(`Fetched ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB from storage`);
     }
 
-    console.log(`Calling OnSpace AI for shot analysis (${isVideo ? 'video' : 'image'})...`);
+    // ── Step 2: Build the AI prompt ──────────────────────────────────────────
+    const systemPrompt = `You are an elite cricket batting coach and biomechanics expert with 20+ years of experience coaching international batters. You analyse batting ${mediaLabel}s with precision and provide highly actionable, structured feedback.
+
+Your analysis must always follow this exact JSON structure:
+{
+  "shotType": "Name of the shot being played (e.g. Cover Drive, Pull Shot, Sweep Shot, Defensive Block)",
+  "overallScore": <number 1-10>,
+  "wentWell": ["point 1", "point 2", "point 3"],
+  "improvements": [
+    {
+      "issue": "Short description of the issue",
+      "detail": "Why this matters and how it affects performance",
+      "fix": "Specific actionable drill or technique tip to fix it"
+    }
+  ],
+  "keyFocus": "The single most important thing to work on right now",
+  "demoTip": "A vivid mental image or cue the player can visualise to instantly feel the correct technique",
+  "encouragement": "A short motivating message personalised to what you see"
+}
+
+Be specific to cricket batting. Reference actual body parts (front elbow, back foot, head position, weight transfer, follow-through, etc.). Keep wentWell to 2-4 points. Keep improvements to 2-3 points maximum. Output ONLY valid JSON, no markdown fences.`;
+
+    // ── Step 3: Build content array (finalBase64 + finalMime are now initialised) ──
+    const mediaContent = isVideo
+      ? {
+          type: 'video_url',
+          video_url: { url: `data:${finalMime};base64,${finalBase64}` }
+        }
+      : {
+          type: 'image_url',
+          image_url: { url: `data:${finalMime};base64,${finalBase64}` }
+        };
+
+    const userContent = [
+      {
+        type: 'text',
+        text: `${contextLine}Please analyse this batting ${mediaLabel} and provide structured feedback. ${isVideo ? 'Focus on the key moment of shot execution visible in the clip — footwork, backswing, contact point, follow-through, and head position.' : ''}`
+      },
+      mediaContent
+    ];
+
+    console.log(`Calling OnSpace AI for shot analysis (${isVideo ? 'video' : 'image'}, mime: ${finalMime})...`);
 
     const aiResponse = await fetch(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -127,12 +130,10 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
     // Parse the JSON response
     let analysisResult;
     try {
-      // Strip any markdown fences just in case
       const cleaned = rawContent.replace(/```json\s*/gi, '').replace(/```\s*/gi, '').trim();
       analysisResult = JSON.parse(cleaned);
     } catch (parseErr) {
       console.error('Failed to parse AI JSON:', rawContent);
-      // Return raw text if parse fails
       return new Response(
         JSON.stringify({ raw: rawContent }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
