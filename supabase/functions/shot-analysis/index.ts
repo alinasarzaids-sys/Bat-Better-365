@@ -28,32 +28,11 @@ Deno.serve(async (req) => {
     const contextLine = shotContext ? `The player mentioned: "${shotContext}".\n` : '';
     const mediaLabel = isVideo ? 'video clip' : 'image/screenshot';
 
-    // ── Step 1: Resolve final base64 + mime BEFORE building the content array ──
-    // For videos: fetch from Supabase Storage URL (avoids 413 on request body)
+    // ── Step 1: Resolve media content BEFORE building the content array ──────
+    // For videos: pass the public storage URL directly — no re-fetch/re-encode
     // For images: use the base64 passed directly from the client
-    let finalBase64 = imageBase64 || '';
-    let finalMime = mimeType || (isVideo ? 'video/mp4' : 'image/jpeg');
-
-    if (mediaUrl && !imageBase64) {
-      console.log('Fetching media from storage URL...');
-      const mediaResp = await fetch(mediaUrl);
-      if (!mediaResp.ok) {
-        return new Response(
-          JSON.stringify({ error: `Failed to fetch media from URL: ${mediaResp.status}` }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      const contentType = mediaResp.headers.get('content-type') || mimeType || 'video/mp4';
-      finalMime = contentType;
-      const arrayBuffer = await mediaResp.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      let binary = '';
-      for (let i = 0; i < uint8Array.length; i++) {
-        binary += String.fromCharCode(uint8Array[i]);
-      }
-      finalBase64 = btoa(binary);
-      console.log(`Fetched ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB from storage`);
-    }
+    const finalMime = mimeType || (isVideo ? 'video/mp4' : 'image/jpeg');
+    const finalBase64 = imageBase64 || '';
 
     // ── Step 2: Build the AI prompt ──────────────────────────────────────────
     const systemPrompt = `You are an elite cricket batting coach and biomechanics expert with 20+ years of experience coaching international batters. You analyse batting ${mediaLabel}s with precision and provide highly actionable, structured feedback.
@@ -77,16 +56,20 @@ Your analysis must always follow this exact JSON structure:
 
 Be specific to cricket batting. Reference actual body parts (front elbow, back foot, head position, weight transfer, follow-through, etc.). Keep wentWell to 2-4 points. Keep improvements to 2-3 points maximum. Output ONLY valid JSON, no markdown fences.`;
 
-    // ── Step 3: Build content array (finalBase64 + finalMime are now initialised) ──
-    const mediaContent = isVideo
+    // ── Step 3: Build content array ──────────────────────────────────────────
+    // Videos: pass the public Supabase Storage URL directly (no re-encoding)
+    // Images: embed as base64 data URL (typically small, well within limits)
+    const mediaContent = (isVideo && mediaUrl)
       ? {
           type: 'video_url',
-          video_url: { url: `data:${finalMime};base64,${finalBase64}` }
+          video_url: { url: mediaUrl }
         }
       : {
           type: 'image_url',
           image_url: { url: `data:${finalMime};base64,${finalBase64}` }
         };
+
+    console.log(`Media mode: ${isVideo ? 'video URL' : 'image base64'}, url: ${mediaUrl || 'n/a'}`);
 
     const userContent = [
       {
