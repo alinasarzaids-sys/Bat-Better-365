@@ -211,7 +211,7 @@ function ShotAnalysisTab() {
   const scrollRef = useRef<ScrollView>(null);
 
   // Max video size: ~7 MB base64 (~5.25 MB raw) to stay under 10 MB edge function limit
-  const MAX_VIDEO_BYTES = 5.5 * 1024 * 1024;
+  const MAX_VIDEO_BYTES = 9.5 * 1024 * 1024;
 
   const pickMedia = useCallback(async (fromCamera: boolean, mode: MediaMode) => {
     try {
@@ -270,7 +270,7 @@ function ShotAnalysisTab() {
         if (fileSizeBytes > MAX_VIDEO_BYTES) {
           showAlert(
             'Video Too Large',
-            `The video is ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB. Please use a clip under 10 seconds or at lower quality (max ~5 MB).`,
+            `The video is ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB. Please use a clip under 10 seconds or at lower quality (max ~10 MB).`,
             [{ text: 'OK', style: 'cancel' }]
           );
           return;
@@ -407,7 +407,7 @@ function ShotAnalysisTab() {
         <View style={saStyles.videoHintCard}>
           <MaterialIcons name="info" size={15} color={colors.primary} />
           <Text style={saStyles.videoHintText}>
-            Keep the clip under 10 seconds for best results. Side-on or front-on angle works best. Max file size ~5 MB.
+            Keep the clip under 10 seconds for best results. Side-on or front-on angle works best. Max file size ~10 MB.
           </Text>
         </View>
       )}
