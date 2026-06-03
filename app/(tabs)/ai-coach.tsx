@@ -323,13 +323,49 @@ function ShotAnalysisTab() {
 
     try {
       const supabase = getSupabaseClient();
+
+      let requestBody: Record<string, any> = {
+        mimeType: pickedMedia.mimeType,
+        isVideo: pickedMedia.isVideo,
+        shotContext: context.trim() || undefined,
+      };
+
+      if (pickedMedia.isVideo) {
+        // Upload video to storage to avoid 413 on edge function request body
+        const ext = pickedMedia.mimeType?.includes('mp4') ? 'mp4' : 'mov';
+        const fileName = `shot_${Date.now()}.${ext}`;
+        const filePath = `temp/${fileName}`;
+
+        // Convert base64 back to binary for upload
+        const binaryStr = atob(pickedMedia.base64);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from('shot-uploads')
+          .upload(filePath, bytes.buffer, {
+            contentType: pickedMedia.mimeType || 'video/mp4',
+            upsert: true,
+          });
+
+        if (uploadError) {
+          showAlert('Upload Failed', uploadError.message);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('shot-uploads')
+          .getPublicUrl(filePath);
+
+        requestBody.mediaUrl = urlData.publicUrl;
+      } else {
+        requestBody.imageBase64 = pickedMedia.base64;
+      }
+
       const { data, error } = await supabase.functions.invoke('shot-analysis', {
-        body: {
-          imageBase64: pickedMedia.base64,
-          mimeType: pickedMedia.mimeType,
-          isVideo: pickedMedia.isVideo,
-          shotContext: context.trim() || undefined,
-        },
+        body: requestBody,
       });
 
       if (error) {
@@ -526,7 +562,7 @@ function ShotAnalysisTab() {
             <>
               <ActivityIndicator size="small" color={colors.textLight} />
               <Text style={saStyles.analyseBtnText}>
-                {pickedMedia.isVideo ? 'Analysing your video...' : 'Analysing your technique...'}
+                {pickedMedia.isVideo ? 'Uploading & Analysing...' : 'Analysing your technique...'}
               </Text>
             </>
           ) : (

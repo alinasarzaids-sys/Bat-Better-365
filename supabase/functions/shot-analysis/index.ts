@@ -6,11 +6,11 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { imageBase64, mimeType, shotContext, isVideo } = await req.json();
+    const { imageBase64, mediaUrl, mimeType, shotContext, isVideo } = await req.json();
 
-    if (!imageBase64) {
+    if (!imageBase64 && !mediaUrl) {
       return new Response(
-        JSON.stringify({ error: 'Media data is required' }),
+        JSON.stringify({ error: 'Media data or URL is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -54,11 +54,11 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
     const mediaContent = isVideo
       ? {
           type: 'video_url',
-          video_url: { url: `data:${mimeType || 'video/mp4'};base64,${imageBase64}` }
+          video_url: { url: `data:${finalMime || 'video/mp4'};base64,${finalBase64}` }
         }
       : {
           type: 'image_url',
-          image_url: { url: `data:${mimeType || 'image/jpeg'};base64,${imageBase64}` }
+          image_url: { url: `data:${finalMime || 'image/jpeg'};base64,${finalBase64}` }
         };
 
     const userContent = [
@@ -68,6 +68,30 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
       },
       mediaContent
     ];
+
+    // If a storage URL is provided (video case), fetch and convert to base64 server-side
+    let finalBase64 = imageBase64;
+    let finalMime = mimeType;
+    if (mediaUrl && !imageBase64) {
+      console.log('Fetching media from storage URL...');
+      const mediaResp = await fetch(mediaUrl);
+      if (!mediaResp.ok) {
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch media from URL: ${mediaResp.status}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const contentType = mediaResp.headers.get('content-type') || mimeType || 'video/mp4';
+      finalMime = contentType;
+      const arrayBuffer = await mediaResp.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < uint8Array.length; i++) {
+        binary += String.fromCharCode(uint8Array[i]);
+      }
+      finalBase64 = btoa(binary);
+      console.log(`Fetched ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(1)} MB from storage`);
+    }
 
     console.log(`Calling OnSpace AI for shot analysis (${isVideo ? 'video' : 'image'})...`);
 
