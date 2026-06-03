@@ -424,19 +424,23 @@ function ShotAnalysisTab() {
     setFollowUpLoading(true);
     try {
       const supabase = getSupabaseClient();
-      const analysisContext = `The player just had their batting shot analysed. Shot: ${analysis.shotType}, Score: ${analysis.overallScore}/10. What went well: ${analysis.wentWell.join(', ')}. Areas to improve: ${analysis.improvements.map(i => i.issue).join(', ')}. Key focus: ${analysis.keyFocus}.`;
+      const drillInfo = analysis.drillRecommendation
+        ? ` Recommended drill: "${analysis.drillRecommendation.name}" — ${analysis.drillRecommendation.description}`
+        : '';
+      const improvementDetails = analysis.improvements.map(i => `${i.issue}: ${i.detail} Fix: ${i.fix}`).join('; ');
+      const analysisContext = `The player just had their batting shot analysed. Shot: ${analysis.shotType}, Score: ${analysis.overallScore}/10. What went well: ${analysis.wentWell.join('; ')}. Areas to improve: ${improvementDetails}. Key focus: ${analysis.keyFocus}.${drillInfo} Answer any follow-up questions about this specific analysis, the shot technique, or the recommended drill.`;
       const chatMessages = [
-        { role: 'system', content: `You are an elite cricket batting coach. ${analysisContext} Answer follow-up questions about this analysis concisely and helpfully.` },
         ...newMessages.map(m => ({ role: m.role, content: m.content })),
       ];
+      const systemContext = `You are an elite cricket batting coach. ${analysisContext} Be specific, practical and encouraging. Reference the exact analysis details when relevant.`;
       const { data, error } = await supabase.functions.invoke('ai-coach-chat', {
-        body: { messages: chatMessages },
+        body: { messages: [{ role: 'system', content: systemContext }, ...chatMessages] },
       });
       if (error) {
         showAlert('Error', error.message || 'Failed to get response');
         return;
       }
-      const reply = data?.message || data?.content || 'Sorry, I could not answer that.';
+      const reply = data?.response || data?.message || data?.content || 'Sorry, I could not answer that.';
       setFollowUpMessages([...newMessages, { role: 'assistant', content: reply }]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
     } catch (e: any) {
