@@ -435,15 +435,11 @@ function ShotAnalysisTab() {
                 : 'A clear side-on or front-on image works best'}
             </Text>
             <View style={saStyles.uploadBtns}>
-              <Pressable style={saStyles.uploadBtn} onPress={() => pickMedia(true, mediaMode)}>
-                <MaterialIcons name="camera-alt" size={18} color={colors.textLight} />
+              <Pressable style={saStyles.uploadBtn} onPress={() => pickMedia(false, mediaMode)}>
+                <MaterialIcons name={mediaMode === 'video' ? 'video-library' : 'photo-library'} size={18} color={colors.textLight} />
                 <Text style={saStyles.uploadBtnText}>
-                  {mediaMode === 'video' ? 'Record' : 'Camera'}
+                  {mediaMode === 'video' ? 'Choose from Gallery' : 'Choose from Gallery'}
                 </Text>
-              </Pressable>
-              <Pressable style={[saStyles.uploadBtn, saStyles.uploadBtnOutline]} onPress={() => pickMedia(false, mediaMode)}>
-                <MaterialIcons name={mediaMode === 'video' ? 'video-library' : 'photo-library'} size={18} color={colors.primary} />
-                <Text style={[saStyles.uploadBtnText, { color: colors.primary }]}>Gallery</Text>
               </Pressable>
             </View>
           </View>
