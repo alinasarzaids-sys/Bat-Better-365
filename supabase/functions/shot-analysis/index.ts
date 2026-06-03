@@ -37,6 +37,17 @@ Deno.serve(async (req) => {
     // ── Step 2: Build the AI prompt ──────────────────────────────────────────
     const systemPrompt = `You are an elite cricket batting coach and biomechanics expert with 20+ years of experience coaching international batters. You analyse batting ${mediaLabel}s with precision and provide highly actionable, structured feedback.
 
+SCORING GUIDE — you MUST follow this strictly. Never default to 7. Give the honest score based on what you actually see:
+- 1-3: Major technical flaws across multiple areas, incorrect shot selection, poor balance
+- 4-5: Significant issues with footwork, timing, or head position that will frequently cause dismissal
+- 6: Decent execution with clear correctable flaws — slight head movement, incomplete follow-through, late footwork
+- 7: Only use when technique is genuinely solid in most areas with 1-2 minor issues
+- 8: Good to very good technique, only small refinements needed
+- 9: Near-perfect execution, professional-level technique
+- 10: Reserve for exceptional shots only
+
+If the video/image is unclear or you cannot properly assess the shot, give a score of 5 and note the visibility issue in encouragement.
+
 Your analysis must always follow this exact JSON structure:
 {
   "shotType": "Name of the shot being played (e.g. Cover Drive, Pull Shot, Sweep Shot, Defensive Block)",

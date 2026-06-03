@@ -34,6 +34,17 @@ interface TimeBlock {
   activity: string;
 }
 
+// Points awarded per checklist item tick
+const POINTS_PER_ITEM = 5;
+
+// Checklist fields that support tick-off
+const CHECKLIST_FIELDS: Array<keyof JournalEntry> = [
+  'top_3_tasks',
+  'performance_goals',
+  'todays_wins',
+  'things_to_improve',
+];
+
 interface JournalEntry {
   id?: string;
   user_id: string;
@@ -62,6 +73,7 @@ interface JournalEntry {
   is_completed?: boolean;
   completed_at?: string;
   points_awarded?: number;
+  completed_items?: Record<string, number[]>; // e.g. { top_3_tasks: [0, 2] }
 }
 
 const emptyEntry = (userId: string, date: string): JournalEntry => ({
@@ -89,6 +101,7 @@ const emptyEntry = (userId: string, date: string): JournalEntry => ({
   hourly_6am: '[]',
   is_completed: false,
   points_awarded: 0,
+  completed_items: {},
 });
 
 const parseTimeBlocks = (raw?: string): TimeBlock[] => {
@@ -117,6 +130,7 @@ export default function JournalScreen() {
   const [showWeeklyReview, setShowWeeklyReview] = useState(false);
   const [showPrescreeningView, setShowPrescreeningView] = useState(false);
   const [editingOnboarding, setEditingOnboarding] = useState(false);
+  const [tickPoints, setTickPoints] = useState<{ key: string; pts: number } | null>(null);
 
   // Time block modal state
   const [showAddBlockModal, setShowAddBlockModal] = useState(false);
@@ -243,6 +257,35 @@ export default function JournalScreen() {
       return next;
     });
     scheduleSave();
+  };
+
+  // Toggle a checklist item and award points for first-time ticks
+  const toggleChecklistItem = async (field: keyof JournalEntry, index: number) => {
+    if (!entry || !user) return;
+    const current: Record<string, number[]> = { ...(entry.completed_items || {}) };
+    const fieldKey = field as string;
+    const already = current[fieldKey] || [];
+    const isDone = already.includes(index);
+
+    if (isDone) {
+      // Untick
+      current[fieldKey] = already.filter((i) => i !== index);
+    } else {
+      // Tick — award points
+      current[fieldKey] = [...already, index];
+      // Show flash
+      setTickPoints({ key: `${fieldKey}-${index}`, pts: POINTS_PER_ITEM });
+      setTimeout(() => setTickPoints(null), 1400);
+      // Persist points to backend
+      const supabase = getSupabaseClient();
+      await supabase.rpc('increment_user_points', { p_user_id: user.id, p_points: POINTS_PER_ITEM });
+    }
+    updateEntry({ completed_items: current });
+  };
+
+  const isItemDone = (field: keyof JournalEntry, index: number): boolean => {
+    if (!entry?.completed_items) return false;
+    return (entry.completed_items[field as string] || []).includes(index);
   };
 
   const updateArrayField = (field: keyof JournalEntry, index: number, value: string) => {
@@ -598,16 +641,23 @@ export default function JournalScreen() {
 
           {/* 1. Performance Goals */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My 3 performance goals</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>My 3 performance goals</Text>
+              <View style={styles.pointsHint}>
+                <MaterialIcons name="stars" size={13} color={colors.warning} />
+                <Text style={styles.pointsHintText}>+{POINTS_PER_ITEM}pts each</Text>
+              </View>
+            </View>
             {entry.performance_goals.map((goal, index) => (
-              <TextInput
+              <ChecklistItem
                 key={index}
-                style={styles.goalInput}
-                placeholder={`${index + 1}.`}
-                placeholderTextColor={colors.textSecondary}
-                value={goal}
+                index={index}
+                text={goal}
+                done={isItemDone('performance_goals', index)}
+                onToggle={() => toggleChecklistItem('performance_goals', index)}
                 onChangeText={(text) => updateArrayField('performance_goals', index, text)}
                 onBlur={() => performSave()}
+                tickFlash={tickPoints?.key === `performance_goals-${index}`}
               />
             ))}
           </View>
@@ -739,32 +789,46 @@ export default function JournalScreen() {
 
           {/* 7. Today's Wins */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Today's wins</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Today's wins</Text>
+              <View style={styles.pointsHint}>
+                <MaterialIcons name="stars" size={13} color={colors.warning} />
+                <Text style={styles.pointsHintText}>+{POINTS_PER_ITEM}pts each</Text>
+              </View>
+            </View>
             {entry.todays_wins.map((win, index) => (
-              <TextInput
+              <ChecklistItem
                 key={index}
-                style={styles.goalInput}
-                placeholder={`${index + 1}.`}
-                placeholderTextColor={colors.textSecondary}
-                value={win}
+                index={index}
+                text={win}
+                done={isItemDone('todays_wins', index)}
+                onToggle={() => toggleChecklistItem('todays_wins', index)}
                 onChangeText={(text) => updateArrayField('todays_wins', index, text)}
                 onBlur={() => performSave()}
+                tickFlash={tickPoints?.key === `todays_wins-${index}`}
               />
             ))}
           </View>
 
           {/* 8. Things to Improve */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Things to improve tomorrow</Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Things to improve tomorrow</Text>
+              <View style={styles.pointsHint}>
+                <MaterialIcons name="stars" size={13} color={colors.warning} />
+                <Text style={styles.pointsHintText}>+{POINTS_PER_ITEM}pts each</Text>
+              </View>
+            </View>
             {entry.things_to_improve.map((item, index) => (
-              <TextInput
+              <ChecklistItem
                 key={index}
-                style={styles.goalInput}
-                placeholder={`${index + 1}.`}
-                placeholderTextColor={colors.textSecondary}
-                value={item}
+                index={index}
+                text={item}
+                done={isItemDone('things_to_improve', index)}
+                onToggle={() => toggleChecklistItem('things_to_improve', index)}
                 onChangeText={(text) => updateArrayField('things_to_improve', index, text)}
                 onBlur={() => performSave()}
+                tickFlash={tickPoints?.key === `things_to_improve-${index}`}
               />
             ))}
           </View>
@@ -895,6 +959,84 @@ export default function JournalScreen() {
   );
 }
 
+// ─── Checklist Item Component ────────────────────────────────────────────────
+function ChecklistItem({
+  index, text, done, onToggle, onChangeText, onBlur, tickFlash,
+}: {
+  index: number;
+  text: string;
+  done: boolean;
+  onToggle: () => void;
+  onChangeText: (t: string) => void;
+  onBlur: () => void;
+  tickFlash?: boolean;
+}) {
+  return (
+    <View style={clStyles.row}>
+      <Pressable
+        onPress={onToggle}
+        style={[clStyles.checkbox, done && clStyles.checkboxDone]}
+        hitSlop={8}
+      >
+        {done ? (
+          <MaterialIcons name="check" size={14} color={colors.textLight} />
+        ) : (
+          <Text style={clStyles.checkboxNum}>{index + 1}</Text>
+        )}
+      </Pressable>
+      <TextInput
+        style={[clStyles.input, done && clStyles.inputDone]}
+        placeholder={`Item ${index + 1}...`}
+        placeholderTextColor={colors.textSecondary}
+        value={text}
+        onChangeText={onChangeText}
+        onBlur={onBlur}
+        editable={!done}
+      />
+      {tickFlash && (
+        <View style={clStyles.pointsFlash}>
+          <MaterialIcons name="stars" size={12} color={colors.warning} />
+          <Text style={clStyles.pointsFlashText}>+5</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+const clStyles = StyleSheet.create({
+  row: {
+    flexDirection: 'row', alignItems: 'center',
+    gap: spacing.sm, marginBottom: spacing.sm,
+  },
+  checkbox: {
+    width: 28, height: 28, borderRadius: 6,
+    borderWidth: 2, borderColor: colors.border,
+    backgroundColor: colors.background,
+    justifyContent: 'center', alignItems: 'center',
+    flexShrink: 0,
+  },
+  checkboxDone: {
+    backgroundColor: colors.success, borderColor: colors.success,
+  },
+  checkboxNum: { fontSize: 11, fontWeight: '700', color: colors.textSecondary },
+  input: {
+    flex: 1, ...typography.body, color: colors.text,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+    paddingVertical: spacing.sm,
+  },
+  inputDone: {
+    color: colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  pointsFlash: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: colors.warning + '20',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: 6, paddingVertical: 2,
+  },
+  pointsFlashText: { fontSize: 12, fontWeight: '800', color: colors.warning },
+});
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FAFAFA' },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
@@ -971,6 +1113,17 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   sectionTitle: { ...typography.h4, color: colors.text, fontWeight: '700', marginBottom: spacing.md },
+  sectionHeaderRow: {
+    flexDirection: 'row', alignItems: 'center',
+    justifyContent: 'space-between', marginBottom: spacing.md,
+  },
+  pointsHint: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    backgroundColor: colors.warning + '18',
+    borderRadius: borderRadius.sm,
+    paddingHorizontal: 7, paddingVertical: 3,
+  },
+  pointsHintText: { fontSize: 11, fontWeight: '700', color: colors.warning },
   sectionSubtitle: { ...typography.caption, color: colors.textSecondary, marginBottom: spacing.md },
   goalInput: {
     ...typography.body, color: colors.text,
