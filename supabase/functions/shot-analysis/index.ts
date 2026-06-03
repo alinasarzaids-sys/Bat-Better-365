@@ -50,6 +50,10 @@ Your analysis must always follow this exact JSON structure:
     }
   ],
   "keyFocus": "The single most important thing to work on right now",
+  "drillRecommendation": {
+    "name": "Name of a specific cricket batting drill to address the main weakness",
+    "description": "2-3 sentence description of exactly how to perform the drill and what it fixes"
+  },
   "demoTip": "A vivid mental image or cue the player can visualise to instantly feel the correct technique",
   "encouragement": "A short motivating message personalised to what you see"
 }
@@ -94,7 +98,7 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
           { role: 'user', content: userContent }
         ],
         temperature: 0.4,
-        max_tokens: 1200,
+        max_tokens: 1400,
       }),
     });
 

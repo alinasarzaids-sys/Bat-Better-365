@@ -55,14 +55,25 @@ interface PickedMedia {
   fileSize?: number; // bytes
 }
 
+interface DrillRecommendation {
+  name: string;
+  description: string;
+}
+
 interface ShotAnalysis {
   shotType: string;
   overallScore: number;
   wentWell: string[];
   improvements: ShotImprovement[];
   keyFocus: string;
+  drillRecommendation?: DrillRecommendation;
   demoTip: string;
   encouragement: string;
+}
+
+interface FollowUpMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -208,6 +219,9 @@ function ShotAnalysisTab() {
   const [analysing, setAnalysing] = useState(false);
   const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
   const [expandedImprovement, setExpandedImprovement] = useState<number | null>(null);
+  const [followUpMessages, setFollowUpMessages] = useState<FollowUpMessage[]>([]);
+  const [followUpInput, setFollowUpInput] = useState('');
+  const [followUpLoading, setFollowUpLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   // Max video size: ~7 MB base64 (~5.25 MB raw) to stay under 10 MB edge function limit
@@ -397,6 +411,39 @@ function ShotAnalysisTab() {
     setAnalysis(null);
     setContext('');
     setExpandedImprovement(null);
+    setFollowUpMessages([]);
+    setFollowUpInput('');
+  };
+
+  const handleFollowUp = async () => {
+    if (!followUpInput.trim() || followUpLoading || !analysis) return;
+    const question = followUpInput.trim();
+    const newMessages: FollowUpMessage[] = [...followUpMessages, { role: 'user', content: question }];
+    setFollowUpMessages(newMessages);
+    setFollowUpInput('');
+    setFollowUpLoading(true);
+    try {
+      const supabase = getSupabaseClient();
+      const analysisContext = `The player just had their batting shot analysed. Shot: ${analysis.shotType}, Score: ${analysis.overallScore}/10. What went well: ${analysis.wentWell.join(', ')}. Areas to improve: ${analysis.improvements.map(i => i.issue).join(', ')}. Key focus: ${analysis.keyFocus}.`;
+      const chatMessages = [
+        { role: 'system', content: `You are an elite cricket batting coach. ${analysisContext} Answer follow-up questions about this analysis concisely and helpfully.` },
+        ...newMessages.map(m => ({ role: m.role, content: m.content })),
+      ];
+      const { data, error } = await supabase.functions.invoke('ai-coach-chat', {
+        body: { messages: chatMessages },
+      });
+      if (error) {
+        showAlert('Error', error.message || 'Failed to get response');
+        return;
+      }
+      const reply = data?.message || data?.content || 'Sorry, I could not answer that.';
+      setFollowUpMessages([...newMessages, { role: 'assistant', content: reply }]);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
+    } catch (e: any) {
+      showAlert('Error', e.message || 'Failed to get response');
+    } finally {
+      setFollowUpLoading(false);
+    }
   };
 
   return (
@@ -657,6 +704,65 @@ function ShotAnalysisTab() {
               <Text style={saStyles.demoTitle}>Visualise the Correct Technique</Text>
             </View>
             <Text style={saStyles.demoText}>{analysis.demoTip}</Text>
+          </View>
+
+          {/* Drill recommendation */}
+          {analysis.drillRecommendation && (
+            <View style={saStyles.drillCard}>
+              <View style={saStyles.drillHeader}>
+                <MaterialIcons name="fitness-center" size={18} color={colors.success} />
+                <Text style={saStyles.drillTitle}>Recommended Drill</Text>
+              </View>
+              <Text style={saStyles.drillName}>{analysis.drillRecommendation.name}</Text>
+              <Text style={saStyles.drillDesc}>{analysis.drillRecommendation.description}</Text>
+            </View>
+          )}
+
+          {/* Follow-up Q&A */}
+          <View style={saStyles.qaSection}>
+            <View style={saStyles.qaSectionHeader}>
+              <MaterialIcons name="chat" size={16} color={colors.primary} />
+              <Text style={saStyles.qaSectionTitle}>Ask a Follow-up Question</Text>
+            </View>
+            {followUpMessages.length > 0 && (
+              <View style={saStyles.qaChatList}>
+                {followUpMessages.map((msg, i) => (
+                  <View key={i} style={[
+                    saStyles.qaBubble,
+                    msg.role === 'user' ? saStyles.qaUserBubble : saStyles.qaAiBubble,
+                  ]}>
+                    <Text style={[
+                      saStyles.qaBubbleText,
+                      msg.role === 'user' && saStyles.qaUserText,
+                    ]}>{msg.content}</Text>
+                  </View>
+                ))}
+                {followUpLoading && (
+                  <View style={saStyles.qaAiBubble}>
+                    <ActivityIndicator size="small" color={colors.primary} />
+                  </View>
+                )}
+              </View>
+            )}
+            <View style={saStyles.qaInputRow}>
+              <TextInput
+                style={saStyles.qaInput}
+                placeholder='e.g. "How do I fix my head position?"'
+                placeholderTextColor={colors.textSecondary}
+                value={followUpInput}
+                onChangeText={setFollowUpInput}
+                multiline
+                maxLength={300}
+                editable={!followUpLoading}
+              />
+              <Pressable
+                style={[saStyles.qaSendBtn, (!followUpInput.trim() || followUpLoading) && saStyles.qaSendBtnDisabled]}
+                onPress={handleFollowUp}
+                disabled={!followUpInput.trim() || followUpLoading}
+              >
+                <MaterialIcons name="send" size={18} color={colors.textLight} />
+              </Pressable>
+            </View>
           </View>
 
           {/* Analyse again */}
@@ -1021,13 +1127,14 @@ const saStyles = StyleSheet.create({
     borderWidth: 1, borderColor: colors.border, padding: spacing.md,
   },
   scoreCircle: {
-    width: 64, height: 64, borderRadius: 32,
+    width: 76, height: 76, borderRadius: 38,
     borderWidth: 3, justifyContent: 'center', alignItems: 'center',
-    flexDirection: 'row', alignItems: 'baseline',
+    flexDirection: 'row',
     backgroundColor: colors.background,
+    flexShrink: 0,
   },
-  scoreNum: { fontSize: 24, fontWeight: '900' },
-  scoreDenom: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginLeft: 1 },
+  scoreNum: { fontSize: 26, fontWeight: '900', lineHeight: 30 },
+  scoreDenom: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 6 },
   shotTypeLabel: { fontSize: 10, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
   shotTypeName: { fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 1 },
   encouragement: { fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 17 },
@@ -1083,6 +1190,47 @@ const saStyles = StyleSheet.create({
     paddingVertical: spacing.md, backgroundColor: 'transparent',
   },
   resetBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+
+  drillCard: {
+    backgroundColor: colors.success + '10', borderRadius: borderRadius.lg,
+    borderWidth: 1, borderColor: colors.success + '35', padding: spacing.md, gap: spacing.sm,
+  },
+  drillHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  drillTitle: { fontSize: 13, fontWeight: '800', color: colors.success, textTransform: 'uppercase', letterSpacing: 0.4 },
+  drillName: { fontSize: 15, fontWeight: '800', color: colors.text },
+  drillDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+
+  qaSection: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm,
+  },
+  qaSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  qaSectionTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  qaChatList: { gap: spacing.sm },
+  qaBubble: {
+    maxWidth: '88%', padding: spacing.sm + 2, paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.lg,
+  },
+  qaUserBubble: { alignSelf: 'flex-end', backgroundColor: colors.primary },
+  qaAiBubble: {
+    alignSelf: 'flex-start', backgroundColor: colors.background,
+    borderWidth: 1, borderColor: colors.border,
+    minWidth: 48, minHeight: 36, justifyContent: 'center',
+  },
+  qaBubbleText: { fontSize: 13, color: colors.text, lineHeight: 19 },
+  qaUserText: { color: colors.textLight },
+  qaInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
+  qaInput: {
+    flex: 1, ...typography.body, color: colors.text,
+    backgroundColor: colors.background, borderRadius: borderRadius.md,
+    padding: spacing.sm + 2, borderWidth: 1, borderColor: colors.border,
+    maxHeight: 80, fontSize: 13,
+  },
+  qaSendBtn: {
+    backgroundColor: colors.primary, width: 42, height: 42,
+    borderRadius: borderRadius.full, justifyContent: 'center', alignItems: 'center',
+  },
+  qaSendBtnDisabled: { backgroundColor: colors.disabled },
 });
 
 // ─── Chat Tab Styles ───────────────────────────────────────────────────────────
