@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.onspace.cricketpro",
-      "buildNumber": "17",
+      "buildNumber": "18",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Bat Better 365 uses your photo library to analyse your batting shots with AI coaching feedback.",
         "NSPhotoLibraryAddUsageDescription": "Bat Better 365 may save analysis images to your photo library.",
