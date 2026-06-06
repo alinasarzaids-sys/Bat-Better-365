@@ -258,7 +258,6 @@ const styles = StyleSheet.create({
     borderRadius: 60,
     justifyContent: 'center',
     alignItems: 'center',
-    background: 'linear-gradient(135deg, #4CAF50 0%, #2196F3 100%)',
     backgroundColor: colors.success,
   },
   title: {
@@ -473,7 +472,6 @@ const styles = StyleSheet.create({
     width: '100%',
     paddingVertical: spacing.lg,
     borderRadius: borderRadius.md,
-    background: 'linear-gradient(90deg, #4CAF50 0%, #2196F3 100%)',
     backgroundColor: colors.success,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
