@@ -1431,7 +1431,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     borderRadius: borderRadius.md,
-    background: 'linear-gradient(90deg, #52B788 0%, #4A90E2 100%)',
     backgroundColor: '#52B788',
     minWidth: 120,
   },
