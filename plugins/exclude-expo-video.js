@@ -8,9 +8,8 @@
  *
  * JS-side imports are already shimmed via metro.config.js → expo-video.js.
  *
- * Uses defensive require with fallback paths so that if @expo/config-plugins
- * cannot be resolved in the EAS build environment the plugin exits gracefully
- * and the build continues unblocked.
+ * NOTE: This plugin is Android-only. It exits immediately on iOS builds to
+ * avoid @expo/config-plugins resolution failures on EAS iOS build servers.
  */
 const fs = require('fs');
 const path = require('path');
@@ -19,7 +18,14 @@ const path = require('path');
  * Remove expo-video from android/settings.gradle so Gradle never compiles it.
  */
 function withExcludeExpoVideo(config) {
-  // Try multiple resolution paths for @expo/config-plugins (mirrors block-permissions.js)
+  // This plugin only modifies Android settings.gradle.
+  // Exit immediately for iOS builds — EAS iOS servers may not resolve @expo/config-plugins.
+  const platform = process.env.EAS_BUILD_PLATFORM || '';
+  if (platform === 'ios') {
+    return config;
+  }
+
+  // Try multiple resolution paths for @expo/config-plugins
   let withDangerousMod;
   let createRunOncePlugin;
 

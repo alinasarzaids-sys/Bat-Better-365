@@ -1,8 +1,8 @@
 /**
  * Expo Config Plugin: Force-remove media/storage/camera permissions from AndroidManifest.
  *
- * Wrapped in try/catch so that if @expo/config-plugins cannot be resolved
- * (e.g. during iOS EAS builds), the plugin exits gracefully and the build continues.
+ * NOTE: This plugin is Android-only. It exits immediately on iOS builds to
+ * avoid @expo/config-plugins resolution failures on EAS iOS build servers.
  */
 
 const BILLING_PERMISSIONS = ['com.android.vending.BILLING'];
@@ -74,6 +74,13 @@ function applyManifestChanges(cfg) {
 }
 
 function withBlockPermissions(config) {
+  // This plugin only modifies Android manifest.
+  // Exit immediately for iOS builds — EAS iOS servers may not resolve @expo/config-plugins.
+  const platform = process.env.EAS_BUILD_PLATFORM || '';
+  if (platform === 'ios') {
+    return config;
+  }
+
   // Try multiple ways to load withAndroidManifest
   let withAndroidManifest;
   const candidates = [
