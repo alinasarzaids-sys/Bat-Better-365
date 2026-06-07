@@ -59,6 +59,9 @@ serve(async (req) => {
       console.log('Email confirmed for:', email);
     }
 
+    // Small delay to allow auth state to propagate after confirmation
+    await new Promise(resolve => setTimeout(resolve, 300));
+
     // Step 3: Sign in with password — should succeed now that email is confirmed
     const { data: signInData, error: signInErr } = await supabaseAnon.auth.signInWithPassword({
       email,
@@ -66,21 +69,45 @@ serve(async (req) => {
     });
 
     if (signInErr || !signInData?.session) {
-      console.error('signIn error:', signInErr?.message);
-      // Provide more specific error messages
-      let errorMsg = signInErr?.message || 'Login failed after registration. Please try again.';
-      if (errorMsg.toLowerCase().includes('invalid') || errorMsg.toLowerCase().includes('credentials')) {
-        errorMsg = 'Account created but sign-in failed. Please use Sign In with your new password.';
-      } else if (errorMsg.toLowerCase().includes('email not confirmed')) {
-        errorMsg = 'Email confirmation failed. Please try again.';
-      } else if (errorMsg.toLowerCase().includes('password')) {
-        errorMsg = 'Password does not meet requirements (minimum 6 characters, cannot be too common).';
+      console.error('signIn error:', signInErr?.message, '| code:', (signInErr as any)?.code);
+
+      // Try confirm again and retry sign-in once more
+      await supabaseAdmin.rpc('confirm_user_email', { p_email: email });
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      const { data: retryData, error: retryErr } = await supabaseAnon.auth.signInWithPassword({ email, password });
+
+      if (retryErr || !retryData?.session) {
+        console.error('signIn retry error:', retryErr?.message);
+        const rawMsg = retryErr?.message || signInErr?.message || '';
+        let errorMsg = 'Registration failed. Please try again.';
+
+        if (rawMsg.toLowerCase().includes('password') || rawMsg.toLowerCase().includes('common')) {
+          errorMsg = 'Password is too common. Please use a stronger password (e.g. mix letters and numbers).';
+        } else if (rawMsg.toLowerCase().includes('email not confirmed')) {
+          errorMsg = 'Email confirmation failed. Please try again in a moment.';
+        } else if (rawMsg.toLowerCase().includes('invalid') || rawMsg.toLowerCase().includes('credentials')) {
+          errorMsg = 'Account may already exist. Please use Sign In instead.';
+        } else if (rawMsg) {
+          errorMsg = rawMsg;
+        }
+
+        return new Response(JSON.stringify({ error: errorMsg, _debug: rawMsg }), {
+          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
+
+      // Retry succeeded
+      console.log('Successfully signed in on retry:', retryData.user.id);
       return new Response(JSON.stringify({
-        error: errorMsg,
-      }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        success: true,
+        user: { id: retryData.user.id, email: retryData.user.email },
+        session: {
+          access_token: retryData.session.access_token,
+          refresh_token: retryData.session.refresh_token,
+          expires_at: retryData.session.expires_at,
+        },
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     console.log('Successfully signed in:', signInData.user.id);
