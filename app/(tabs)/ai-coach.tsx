@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,19 @@ import {
   ActivityIndicator,
   Modal,
   Linking,
+  Animated,
+  Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SafeIcon as MaterialIcons } from '@/components/ui/SafeIcon';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
 import { aiCoachService } from '@/services/aiCoachService';
 import { colors, spacing, typography, borderRadius } from '@/constants/theme';
 import { useAlert, useAuth, getSupabaseClient } from '@/template';
 import { FunctionsHttpError } from '@supabase/supabase-js';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface Message {
@@ -51,8 +54,8 @@ interface PickedMedia {
   mimeType: string;
   isVideo: boolean;
   fileName?: string;
-  duration?: number; // seconds
-  fileSize?: number; // bytes
+  duration?: number;
+  fileSize?: number;
 }
 
 interface DrillRecommendation {
@@ -77,6 +80,21 @@ interface FollowUpMessage {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+function scoreColor(score: number) {
+  if (score >= 8) return '#10B981';
+  if (score >= 6) return '#F59E0B';
+  return '#EF4444';
+}
+
+function scoreLabel(score: number) {
+  if (score >= 9) return 'Elite';
+  if (score >= 8) return 'Excellent';
+  if (score >= 7) return 'Solid';
+  if (score >= 6) return 'Decent';
+  if (score >= 4) return 'Needs Work';
+  return 'Major Issues';
+}
+
 function ReportSection({ title, emoji, content, color }: { title: string; emoji: string; content: string; color: string }) {
   return (
     <View style={[rptStyles.section, { borderLeftColor: color }]}>
@@ -103,11 +121,80 @@ function parseReport(text: string): { wentWell: string; missing: string; recomme
   } catch { return null; }
 }
 
-// Score circle colour
-function scoreColor(score: number) {
-  if (score >= 8) return colors.success;
-  if (score >= 6) return '#F59E0B';
-  return '#EF4444';
+// ─── Animated Score Circle ─────────────────────────────────────────────────────
+function AnimatedScoreCircle({ score }: { score: number }) {
+  const animVal = useRef(new Animated.Value(0)).current;
+  const scaleVal = useRef(new Animated.Value(0.5)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(animVal, { toValue: 1, duration: 800, useNativeDriver: true }),
+      Animated.spring(scaleVal, { toValue: 1, tension: 80, friction: 8, useNativeDriver: true }),
+    ]).start();
+  }, []);
+
+  const color = scoreColor(score);
+  const label = scoreLabel(score);
+
+  return (
+    <Animated.View style={[saStyles.scoreCircleWrap, { transform: [{ scale: scaleVal }], opacity: animVal }]}>
+      <View style={[saStyles.scoreCircle, { borderColor: color }]}>
+        <Text style={[saStyles.scoreNum, { color }]}>{score}</Text>
+        <Text style={saStyles.scoreDenom}>/10</Text>
+      </View>
+      <View style={[saStyles.scoreLabelBadge, { backgroundColor: color + '20', borderColor: color + '40' }]}>
+        <Text style={[saStyles.scoreLabelText, { color }]}>{label}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+// ─── Upload Zone ───────────────────────────────────────────────────────────────
+function UploadZone({ mediaMode, onPick }: { mediaMode: MediaMode; onPick: () => void }) {
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.04, duration: 1200, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, []);
+
+  return (
+    <Pressable onPress={onPick}>
+      {({ pressed }) => (
+        <Animated.View style={[
+          saStyles.uploadZone,
+          pressed && { opacity: 0.85 },
+          { transform: [{ scale: pressed ? 0.98 : pulseAnim }] },
+        ]}>
+          <View style={saStyles.uploadIconRing}>
+            <MaterialIcons
+              name={mediaMode === 'video' ? 'video-library' : 'add-photo-alternate'}
+              size={36}
+              color={colors.primary}
+            />
+          </View>
+          <Text style={saStyles.uploadTitle}>
+            {mediaMode === 'video' ? 'Tap to add a batting clip' : 'Tap to add a batting photo'}
+          </Text>
+          <Text style={saStyles.uploadSub}>
+            {mediaMode === 'video'
+              ? 'Short clips ≤10 sec work best · side-on or front-on'
+              : 'Clear side-on or front-on photo · any stance'}
+          </Text>
+          <View style={saStyles.uploadPill}>
+            <MaterialIcons name={mediaMode === 'video' ? 'video-library' : 'photo-library'} size={15} color={colors.textLight} />
+            <Text style={saStyles.uploadPillText}>Choose from Gallery</Text>
+          </View>
+        </Animated.View>
+      )}
+    </Pressable>
+  );
 }
 
 // ─── Weekly Report Modal ───────────────────────────────────────────────────────
@@ -210,6 +297,49 @@ function WeeklyReportModal({
   );
 }
 
+// ─── Analysing Overlay ─────────────────────────────────────────────────────────
+function AnalysingOverlay({ isVideo }: { isVideo: boolean }) {
+  const spinAnim = useRef(new Animated.Value(0)).current;
+  const [dotCount, setDotCount] = useState(1);
+
+  useEffect(() => {
+    const spin = Animated.loop(
+      Animated.timing(spinAnim, { toValue: 1, duration: 2000, useNativeDriver: true })
+    );
+    spin.start();
+    const interval = setInterval(() => setDotCount(d => d === 3 ? 1 : d + 1), 500);
+    return () => { spin.stop(); clearInterval(interval); };
+  }, []);
+
+  const rotate = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+
+  const steps = isVideo
+    ? ['Uploading video to server', 'Extracting key frames', 'Analysing technique', 'Generating feedback']
+    : ['Processing your image', 'Identifying shot type', 'Analysing biomechanics', 'Generating feedback'];
+
+  return (
+    <View style={saStyles.analysingOverlay}>
+      <Animated.View style={{ transform: [{ rotate }] }}>
+        <MaterialIcons name="auto-awesome" size={48} color={colors.primary} />
+      </Animated.View>
+      <Text style={saStyles.analysingTitle}>
+        Analysing{'.'.repeat(dotCount)}
+      </Text>
+      <View style={saStyles.stepsContainer}>
+        {steps.map((step, i) => (
+          <View key={i} style={saStyles.stepRow}>
+            <MaterialIcons name="check-circle" size={16} color={colors.primary + '60'} />
+            <Text style={saStyles.stepRowText}>{step}</Text>
+          </View>
+        ))}
+      </View>
+      <Text style={saStyles.analysingSubText}>
+        {isVideo ? 'This may take 20–40 seconds' : 'Usually takes 5–10 seconds'}
+      </Text>
+    </View>
+  );
+}
+
 // ─── Shot Analysis Tab ─────────────────────────────────────────────────────────
 function ShotAnalysisTab() {
   const { showAlert } = useAlert();
@@ -217,35 +347,28 @@ function ShotAnalysisTab() {
   const [pickedMedia, setPickedMedia] = useState<PickedMedia | null>(null);
   const [context, setContext] = useState('');
   const [analysing, setAnalysing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [analysis, setAnalysis] = useState<ShotAnalysis | null>(null);
   const [expandedImprovement, setExpandedImprovement] = useState<number | null>(null);
   const [followUpMessages, setFollowUpMessages] = useState<FollowUpMessage[]>([]);
   const [followUpInput, setFollowUpInput] = useState('');
   const [followUpLoading, setFollowUpLoading] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const resultFadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Max video size: ~7 MB base64 (~5.25 MB raw) to stay under 10 MB edge function limit
   const MAX_VIDEO_BYTES = 9.5 * 1024 * 1024;
 
-  const pickMedia = useCallback(async (fromCamera: boolean, mode: MediaMode) => {
+  const pickMedia = useCallback(async (mode: MediaMode) => {
     try {
-      let permResult;
-      if (fromCamera) {
-        permResult = await ImagePicker.requestCameraPermissionsAsync();
-      } else {
-        permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      }
+      const permResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permResult.granted) {
-        const canAskAgain = permResult.canAskAgain;
         showAlert(
           'Permission Required',
-          canAskAgain
-            ? (fromCamera ? 'Camera access is needed to capture your shot.' : 'Photo library access is needed to pick a file.')
-            : (fromCamera
-                ? 'Camera access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'
-                : 'Photo/media access was denied. Please enable it in your device Settings > Apps > Bat Better 365 > Permissions.'),
-          canAskAgain
+          permResult.canAskAgain
+            ? 'Photo library access is needed to pick a file.'
+            : 'Photo/media access was denied. Please enable it in Settings > Apps > Bat Better 365 > Permissions.',
+          permResult.canAskAgain
             ? [{ text: 'OK', style: 'cancel' }]
             : [
                 { text: 'Cancel', style: 'cancel' },
@@ -256,63 +379,53 @@ function ShotAnalysisTab() {
       }
 
       const isVideo = mode === 'video';
-      const mediaTypes = isVideo ? 'videos' : 'images';
 
-      const result = fromCamera
-        ? await ImagePicker.launchCameraAsync({
-            mediaTypes,
-            quality: isVideo ? 0.5 : 0.7,
-            base64: !isVideo, // base64 for images only; videos read manually
-            videoMaxDuration: 10, // cap at 10 seconds
-            videoQuality: ImagePicker.UIImagePickerControllerQualityType.Medium,
-          })
-        : await ImagePicker.launchImageLibraryAsync({
-            mediaTypes,
-            quality: isVideo ? 0.5 : 0.7,
-            base64: !isVideo,
-            videoMaxDuration: 10,
-          });
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: isVideo ? 'videos' : 'images',
+        quality: isVideo ? 0.5 : 0.8,
+        base64: !isVideo,
+        videoMaxDuration: 10,
+      });
 
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
 
       if (isVideo) {
-        // Read video as base64 via FileSystem
-        const fileInfo = await FileSystem.getInfoAsync(asset.uri);
-        const fileSizeBytes = (fileInfo as any).size || 0;
+        const fileSizeBytes = asset.fileSize || 0;
 
         if (fileSizeBytes > MAX_VIDEO_BYTES) {
           showAlert(
             'Video Too Large',
-            `The video is ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB. Please use a clip under 10 seconds or at lower quality (max ~10 MB).`,
-            [{ text: 'OK', style: 'cancel' }]
+            `The video is ${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB. Please use a clip under 10 seconds (max ~10 MB).`,
           );
           return;
         }
 
-        const base64Data = await FileSystem.readAsStringAsync(asset.uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        const mimeType = asset.mimeType || 'video/mp4';
-        const durationSec = asset.duration ? Math.round(asset.duration / 1000) : undefined;
-        const fileName = asset.uri.split('/').pop() || 'video';
-
         setPickedMedia({
           uri: asset.uri,
-          base64: base64Data,
-          mimeType,
+          base64: '',
+          mimeType: asset.mimeType || 'video/mp4',
           isVideo: true,
-          fileName,
-          duration: durationSec,
+          fileName: asset.uri.split('/').pop() || 'video',
+          duration: asset.duration ? Math.round(asset.duration / 1000) : undefined,
           fileSize: fileSizeBytes,
         });
       } else {
         let base64Data = asset.base64 || '';
         if (!base64Data && asset.uri) {
-          base64Data = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          try {
+            const imgRes = await fetch(asset.uri);
+            const imgBuf = await imgRes.arrayBuffer();
+            const imgBytes = new Uint8Array(imgBuf);
+            let imgBinary = '';
+            for (let i = 0; i < imgBytes.byteLength; i++) {
+              imgBinary += String.fromCharCode(imgBytes[i]);
+            }
+            base64Data = btoa(imgBinary);
+          } catch {
+            showAlert('Error', 'Could not read image data. Please try again.');
+            return;
+          }
         }
         setPickedMedia({
           uri: asset.uri,
@@ -324,6 +437,7 @@ function ShotAnalysisTab() {
       }
 
       setAnalysis(null);
+      setFollowUpMessages([]);
     } catch (e: any) {
       showAlert('Error', e.message || 'Failed to pick media');
     }
@@ -334,10 +448,12 @@ function ShotAnalysisTab() {
     setAnalysing(true);
     setAnalysis(null);
     setExpandedImprovement(null);
+    setFollowUpMessages([]);
+    setUploadProgress(0);
+    resultFadeAnim.setValue(0);
 
     try {
       const supabase = getSupabaseClient();
-
       let requestBody: Record<string, any> = {
         mimeType: pickedMedia.mimeType,
         isVideo: pickedMedia.isVideo,
@@ -345,21 +461,17 @@ function ShotAnalysisTab() {
       };
 
       if (pickedMedia.isVideo) {
-        // Upload video to storage to avoid 413 on edge function request body
+        setUploadProgress(20);
         const ext = pickedMedia.mimeType?.includes('mp4') ? 'mp4' : 'mov';
-        const fileName = `shot_${Date.now()}.${ext}`;
-        const filePath = `temp/${fileName}`;
+        const filePath = `temp/shot_${Date.now()}.${ext}`;
 
-        // Convert base64 back to binary for upload
-        const binaryStr = atob(pickedMedia.base64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) {
-          bytes[i] = binaryStr.charCodeAt(i);
-        }
+        const videoResponse = await fetch(pickedMedia.uri);
+        const videoBlob = await videoResponse.blob();
 
+        setUploadProgress(40);
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('shot-uploads')
-          .upload(filePath, bytes.buffer, {
+          .upload(filePath, videoBlob, {
             contentType: pickedMedia.mimeType || 'video/mp4',
             upsert: true,
           });
@@ -368,19 +480,18 @@ function ShotAnalysisTab() {
           showAlert('Upload Failed', uploadError.message);
           return;
         }
+        setUploadProgress(60);
 
-        const { data: urlData } = supabase.storage
-          .from('shot-uploads')
-          .getPublicUrl(filePath);
-
+        const { data: urlData } = supabase.storage.from('shot-uploads').getPublicUrl(filePath);
         requestBody.mediaUrl = urlData.publicUrl;
+        setUploadProgress(80);
       } else {
         requestBody.imageBase64 = pickedMedia.base64;
+        setUploadProgress(50);
       }
 
-      const { data, error } = await supabase.functions.invoke('shot-analysis', {
-        body: requestBody,
-      });
+      const { data, error } = await supabase.functions.invoke('shot-analysis', { body: requestBody });
+      setUploadProgress(100);
 
       if (error) {
         let msg = error.message;
@@ -393,7 +504,8 @@ function ShotAnalysisTab() {
 
       if (data?.analysis) {
         setAnalysis(data.analysis);
-        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
+        Animated.timing(resultFadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+        setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 400);
       } else if (data?.raw) {
         showAlert('Analysis Result', data.raw);
       } else {
@@ -403,6 +515,7 @@ function ShotAnalysisTab() {
       showAlert('Error', e.message || 'Analysis failed');
     } finally {
       setAnalysing(false);
+      setUploadProgress(0);
     }
   };
 
@@ -413,6 +526,7 @@ function ShotAnalysisTab() {
     setExpandedImprovement(null);
     setFollowUpMessages([]);
     setFollowUpInput('');
+    resultFadeAnim.setValue(0);
   };
 
   const handleFollowUp = async () => {
@@ -428,18 +542,12 @@ function ShotAnalysisTab() {
         ? ` Recommended drill: "${analysis.drillRecommendation.name}" — ${analysis.drillRecommendation.description}`
         : '';
       const improvementDetails = analysis.improvements.map(i => `${i.issue}: ${i.detail} Fix: ${i.fix}`).join('; ');
-      const analysisContext = `The player just had their batting shot analysed. Shot: ${analysis.shotType}, Score: ${analysis.overallScore}/10. What went well: ${analysis.wentWell.join('; ')}. Areas to improve: ${improvementDetails}. Key focus: ${analysis.keyFocus}.${drillInfo} Answer any follow-up questions about this specific analysis, the shot technique, or the recommended drill.`;
-      const chatMessages = [
-        ...newMessages.map(m => ({ role: m.role, content: m.content })),
-      ];
-      const systemContext = `You are an elite cricket batting coach. ${analysisContext} Be specific, practical and encouraging. Reference the exact analysis details when relevant.`;
+      const systemContext = `You are an elite cricket batting coach. The player just had their shot analysed. Shot: ${analysis.shotType}, Score: ${analysis.overallScore}/10. What went well: ${analysis.wentWell.join('; ')}. Areas to improve: ${improvementDetails}. Key focus: ${analysis.keyFocus}.${drillInfo} Answer follow-up questions about this analysis. Be specific, practical and encouraging.`;
+
       const { data, error } = await supabase.functions.invoke('ai-coach-chat', {
-        body: { messages: [{ role: 'system', content: systemContext }, ...chatMessages] },
+        body: { messages: [{ role: 'system', content: systemContext }, ...newMessages.map(m => ({ role: m.role, content: m.content }))] },
       });
-      if (error) {
-        showAlert('Error', error.message || 'Failed to get response');
-        return;
-      }
+      if (error) { showAlert('Error', error.message || 'Failed to get response'); return; }
       const reply = data?.response || data?.message || data?.content || 'Sorry, I could not answer that.';
       setFollowUpMessages([...newMessages, { role: 'assistant', content: reply }]);
       setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
@@ -458,221 +566,198 @@ function ShotAnalysisTab() {
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
     >
-      {/* Hero card */}
+      {/* Hero */}
       <View style={saStyles.heroCard}>
-        <View style={saStyles.heroIcon}>
-          <MaterialIcons name="videocam" size={28} color={colors.primary} />
+        <View style={saStyles.heroIconWrap}>
+          <MaterialIcons name="videocam" size={26} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={saStyles.heroTitle}>Shot Analyser</Text>
-          <Text style={saStyles.heroSub}>Upload a photo or short video of your batting shot and get instant AI coaching feedback</Text>
+          <Text style={saStyles.heroTitle}>AI Shot Analyser</Text>
+          <Text style={saStyles.heroSub}>Upload a photo or clip of your batting shot for instant AI coaching feedback on your technique</Text>
         </View>
       </View>
 
-      {/* Media mode toggle */}
-      {!pickedMedia && (
-        <View style={saStyles.modeToggle}>
-          <Pressable
-            style={[saStyles.modeBtn, mediaMode === 'image' && saStyles.modeBtnActive]}
-            onPress={() => setMediaMode('image')}
-          >
-            <MaterialIcons name="photo-camera" size={16} color={mediaMode === 'image' ? colors.primary : colors.textSecondary} />
-            <Text style={[saStyles.modeBtnText, mediaMode === 'image' && saStyles.modeBtnTextActive]}>Photo</Text>
-          </Pressable>
-          <Pressable
-            style={[saStyles.modeBtn, mediaMode === 'video' && saStyles.modeBtnActive]}
-            onPress={() => setMediaMode('video')}
-          >
-            <MaterialIcons name="videocam" size={16} color={mediaMode === 'video' ? colors.primary : colors.textSecondary} />
-            <Text style={[saStyles.modeBtnText, mediaMode === 'video' && saStyles.modeBtnTextActive]}>Video</Text>
-            <View style={saStyles.newBadgeSmall}><Text style={saStyles.newBadgeSmallText}>NEW</Text></View>
-          </Pressable>
+      {/* Mode toggle */}
+      {!pickedMedia && !analysing && (
+        <View style={saStyles.modeRow}>
+          {(['image', 'video'] as MediaMode[]).map(mode => (
+            <Pressable
+              key={mode}
+              style={[saStyles.modeChip, mediaMode === mode && saStyles.modeChipActive]}
+              onPress={() => { setMediaMode(mode); }}
+            >
+              <MaterialIcons
+                name={mode === 'video' ? 'videocam' : 'photo-camera'}
+                size={16}
+                color={mediaMode === mode ? colors.primary : colors.textSecondary}
+              />
+              <Text style={[saStyles.modeChipText, mediaMode === mode && saStyles.modeChipTextActive]}>
+                {mode === 'video' ? 'Video Clip' : 'Photo'}
+              </Text>
+              {mode === 'video' && (
+                <View style={saStyles.newPill}><Text style={saStyles.newPillText}>NEW</Text></View>
+              )}
+            </Pressable>
+          ))}
         </View>
       )}
 
-      {mediaMode === 'video' && !pickedMedia && (
-        <View style={saStyles.videoHintCard}>
-          <MaterialIcons name="info" size={15} color={colors.primary} />
-          <Text style={saStyles.videoHintText}>
-            Keep the clip under 10 seconds for best results. Side-on or front-on angle works best. Max file size ~10 MB.
-          </Text>
-        </View>
-      )}
-
-      {/* Step 1: Upload */}
-      <View style={saStyles.stepCard}>
-        <View style={saStyles.stepHeader}>
-          <View style={saStyles.stepBadge}><Text style={saStyles.stepNum}>1</Text></View>
-          <Text style={saStyles.stepTitle}>Upload Your {mediaMode === 'video' ? 'Video Clip' : 'Shot Photo'}</Text>
-        </View>
-
-        {!pickedMedia ? (
-          <View style={saStyles.uploadZone}>
-            <MaterialIcons
-              name={mediaMode === 'video' ? 'video-library' : 'add-photo-alternate'}
-              size={40}
-              color={colors.textSecondary}
-            />
-            <Text style={saStyles.uploadTitle}>
-              {mediaMode === 'video' ? 'Add a batting video clip' : 'Add a batting photo'}
-            </Text>
-            <Text style={saStyles.uploadSub}>
-              {mediaMode === 'video'
-                ? 'Record your shot or pick a short clip (≤10 sec)'
-                : 'A clear side-on or front-on image works best'}
-            </Text>
-            <View style={saStyles.uploadBtns}>
-              <Pressable style={saStyles.uploadBtn} onPress={() => pickMedia(false, mediaMode)}>
-                <MaterialIcons name={mediaMode === 'video' ? 'video-library' : 'photo-library'} size={18} color={colors.textLight} />
-                <Text style={saStyles.uploadBtnText}>
-                  {mediaMode === 'video' ? 'Choose from Gallery' : 'Choose from Gallery'}
-                </Text>
-              </Pressable>
+      {/* Upload or preview */}
+      {!pickedMedia && !analysing && (
+        <>
+          {mediaMode === 'video' && (
+            <View style={saStyles.tipsRow}>
+              <MaterialIcons name="info" size={14} color={colors.primary} />
+              <Text style={saStyles.tipsText}>Keep clip under 10 sec · Side-on or front-on angle · Max ~10 MB</Text>
             </View>
-          </View>
-        ) : pickedMedia.isVideo ? (
-          /* Video preview — no expo-video; show a styled placeholder card */
-          <View style={saStyles.videoPreviewCard}>
-            <View style={saStyles.videoPreviewInner}>
-              <View style={saStyles.videoPlayCircle}>
-                <MaterialIcons name="play-arrow" size={36} color={colors.textLight} />
+          )}
+          <UploadZone mediaMode={mediaMode} onPick={() => pickMedia(mediaMode)} />
+        </>
+      )}
+
+      {/* Analysing state */}
+      {analysing && <AnalysingOverlay isVideo={pickedMedia?.isVideo || false} />}
+
+      {/* Media preview (after pick, before analyse) */}
+      {pickedMedia && !analysis && !analysing && (
+        <>
+          <View style={saStyles.previewCard}>
+            <View style={saStyles.previewCardHeader}>
+              <MaterialIcons
+                name={pickedMedia.isVideo ? 'videocam' : 'photo'}
+                size={16}
+                color={colors.primary}
+              />
+              <Text style={saStyles.previewCardTitle}>
+                {pickedMedia.isVideo ? 'Video Ready' : 'Photo Ready'}
+              </Text>
+              <View style={[saStyles.readyBadge]}>
+                <Text style={saStyles.readyBadgeText}>✓ Ready</Text>
               </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={saStyles.videoFileName} numberOfLines={1}>
-                  {pickedMedia.fileName || 'Video clip'}
-                </Text>
-                <View style={{ flexDirection: 'row', gap: spacing.sm }}>
-                  {pickedMedia.duration !== undefined && (
-                    <View style={saStyles.videoMeta}>
-                      <MaterialIcons name="timer" size={12} color={colors.textSecondary} />
-                      <Text style={saStyles.videoMetaText}>{pickedMedia.duration}s</Text>
-                    </View>
-                  )}
-                  {pickedMedia.fileSize !== undefined && (
-                    <View style={saStyles.videoMeta}>
-                      <MaterialIcons name="storage" size={12} color={colors.textSecondary} />
-                      <Text style={saStyles.videoMetaText}>{(pickedMedia.fileSize / (1024 * 1024)).toFixed(1)} MB</Text>
-                    </View>
-                  )}
+            </View>
+
+            {pickedMedia.isVideo ? (
+              <View style={saStyles.videoPreviewBox}>
+                <View style={saStyles.videoPlayBtn}>
+                  <MaterialIcons name="play-arrow" size={32} color={colors.textLight} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={saStyles.videoName} numberOfLines={1}>{pickedMedia.fileName || 'video clip'}</Text>
+                  <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: 4 }}>
+                    {pickedMedia.duration !== undefined && (
+                      <View style={saStyles.metaChip}>
+                        <MaterialIcons name="timer" size={11} color={colors.textSecondary} />
+                        <Text style={saStyles.metaText}>{pickedMedia.duration}s</Text>
+                      </View>
+                    )}
+                    {pickedMedia.fileSize !== undefined && (
+                      <View style={saStyles.metaChip}>
+                        <MaterialIcons name="storage" size={11} color={colors.textSecondary} />
+                        <Text style={saStyles.metaText}>{(pickedMedia.fileSize / (1024 * 1024)).toFixed(1)} MB</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
               </View>
-            </View>
-            {!analysis && (
-              <Pressable style={saStyles.changeImgBtn} onPress={resetAnalysis}>
-                <MaterialIcons name="swap-horiz" size={14} color={colors.textSecondary} />
-                <Text style={saStyles.changeImgText}>Change video</Text>
-              </Pressable>
+            ) : (
+              <Image
+                source={{ uri: pickedMedia.uri }}
+                style={saStyles.previewImg}
+                contentFit="cover"
+                transition={200}
+              />
             )}
+
+            <Pressable style={saStyles.changeBtn} onPress={resetAnalysis}>
+              <MaterialIcons name="swap-horiz" size={14} color={colors.textSecondary} />
+              <Text style={saStyles.changeBtnText}>Change {pickedMedia.isVideo ? 'video' : 'photo'}</Text>
+            </Pressable>
           </View>
-        ) : (
-          <View style={saStyles.imagePreview}>
+
+          {/* Context input */}
+          <View style={saStyles.contextCard}>
+            <Text style={saStyles.contextLabel}>Add context <Text style={saStyles.optional}>(optional)</Text></Text>
+            <TextInput
+              style={saStyles.contextInput}
+              placeholder={`e.g. "Cover drive — I feel I'm falling over at contact"`}
+              placeholderTextColor={colors.textSecondary}
+              value={context}
+              onChangeText={setContext}
+              multiline
+              maxLength={200}
+            />
+            <Text style={saStyles.charCount}>{context.length}/200</Text>
+          </View>
+
+          {/* Analyse button */}
+          <Pressable style={saStyles.analyseBtn} onPress={handleAnalyse}>
+            {({ pressed }) => (
+              <View style={[saStyles.analyseBtnInner, pressed && { opacity: 0.88 }]}>
+                <MaterialIcons name="auto-awesome" size={20} color="#fff" />
+                <Text style={saStyles.analyseBtnText}>
+                  {pickedMedia.isVideo ? 'Analyse My Video' : 'Analyse My Shot'}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        </>
+      )}
+
+      {/* ── RESULTS ── */}
+      {analysis && (
+        <Animated.View style={[saStyles.results, { opacity: resultFadeAnim }]}>
+
+          {/* Score header */}
+          <View style={saStyles.scoreHeader}>
+            <AnimatedScoreCircle score={analysis.overallScore} />
+            <View style={{ flex: 1 }}>
+              <Text style={saStyles.shotTypeTag}>Shot Identified</Text>
+              <Text style={saStyles.shotTypeName}>{analysis.shotType}</Text>
+              <Text style={saStyles.encouragementText}>{analysis.encouragement}</Text>
+            </View>
+          </View>
+
+          {/* Thumbnail */}
+          {pickedMedia && !pickedMedia.isVideo && (
             <Image
               source={{ uri: pickedMedia.uri }}
-              style={saStyles.previewImg}
+              style={saStyles.resultThumb}
               contentFit="cover"
               transition={200}
             />
-            {!analysis && (
-              <Pressable style={saStyles.changeImgBtn} onPress={resetAnalysis}>
-                <MaterialIcons name="swap-horiz" size={14} color={colors.textSecondary} />
-                <Text style={saStyles.changeImgText}>Change image</Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-      </View>
-
-      {/* Step 2: Context (optional) */}
-      {pickedMedia && !analysis && (
-        <View style={saStyles.stepCard}>
-          <View style={saStyles.stepHeader}>
-            <View style={saStyles.stepBadge}><Text style={saStyles.stepNum}>2</Text></View>
-            <Text style={saStyles.stepTitle}>Add Context <Text style={saStyles.optional}>(Optional)</Text></Text>
-          </View>
-          <TextInput
-            style={saStyles.contextInput}
-            placeholder={`e.g. "This is my cover drive, I feel I'm falling over" or "Pull shot against a short ball"`}
-            placeholderTextColor={colors.textSecondary}
-            value={context}
-            onChangeText={setContext}
-            multiline
-            maxLength={200}
-          />
-          <Text style={saStyles.charCount}>{context.length}/200</Text>
-        </View>
-      )}
-
-      {/* Analyse button */}
-      {pickedMedia && !analysis && (
-        <Pressable
-          style={[saStyles.analyseBtn, analysing && saStyles.analyseBtnDisabled]}
-          onPress={handleAnalyse}
-          disabled={analysing}
-        >
-          {analysing ? (
-            <>
-              <ActivityIndicator size="small" color={colors.textLight} />
-              <Text style={saStyles.analyseBtnText}>
-                {pickedMedia.isVideo ? 'Uploading & Analysing...' : 'Analysing your technique...'}
-              </Text>
-            </>
-          ) : (
-            <>
-              <MaterialIcons name="auto-awesome" size={20} color={colors.textLight} />
-              <Text style={saStyles.analyseBtnText}>
-                {pickedMedia.isVideo ? 'Analyse My Video' : 'Analyse My Shot'}
-              </Text>
-            </>
           )}
-        </Pressable>
-      )}
-
-      {/* Analysis Results */}
-      {analysis && (
-        <View style={saStyles.resultsContainer}>
-
-          {/* Score header */}
-          <View style={saStyles.scoreCard}>
-            <View style={[saStyles.scoreCircle, { borderColor: scoreColor(analysis.overallScore) }]}>
-              <Text style={[saStyles.scoreNum, { color: scoreColor(analysis.overallScore) }]}>{analysis.overallScore}</Text>
-              <Text style={saStyles.scoreDenom}>/10</Text>
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={saStyles.shotTypeLabel}>Shot Identified</Text>
-              <Text style={saStyles.shotTypeName}>{analysis.shotType}</Text>
-              <Text style={saStyles.encouragement}>{analysis.encouragement}</Text>
-            </View>
-          </View>
 
           {/* What went well */}
-          <View style={saStyles.resultSection}>
-            <View style={saStyles.resultSectionHeader}>
-              <View style={[saStyles.resultDot, { backgroundColor: colors.success }]} />
-              <Text style={saStyles.resultSectionTitle}>What You Did Well</Text>
+          <View style={saStyles.sectionCard}>
+            <View style={saStyles.sectionCardHeader}>
+              <View style={[saStyles.sectionDot, { backgroundColor: '#10B981' }]} />
+              <Text style={saStyles.sectionCardTitle}>What You Did Well</Text>
             </View>
             {analysis.wentWell.map((point, i) => (
               <View key={i} style={saStyles.bulletRow}>
-                <Text style={[saStyles.bulletDot, { color: colors.success }]}>✓</Text>
+                <Text style={[saStyles.bulletMark, { color: '#10B981' }]}>✓</Text>
                 <Text style={saStyles.bulletText}>{point}</Text>
               </View>
             ))}
           </View>
 
-          {/* Areas to improve */}
-          <View style={saStyles.resultSection}>
-            <View style={saStyles.resultSectionHeader}>
-              <View style={[saStyles.resultDot, { backgroundColor: colors.warning }]} />
-              <Text style={saStyles.resultSectionTitle}>Areas to Improve</Text>
+          {/* Improvements — expandable */}
+          <View style={saStyles.sectionCard}>
+            <View style={saStyles.sectionCardHeader}>
+              <View style={[saStyles.sectionDot, { backgroundColor: '#F59E0B' }]} />
+              <Text style={saStyles.sectionCardTitle}>Areas to Improve</Text>
             </View>
             {analysis.improvements.map((imp, i) => (
               <Pressable
                 key={i}
-                style={saStyles.improvementCard}
+                style={saStyles.improvCard}
                 onPress={() => setExpandedImprovement(expandedImprovement === i ? null : i)}
               >
-                <View style={saStyles.improvementHeader}>
-                  <MaterialIcons name="warning" size={15} color={colors.warning} />
-                  <Text style={saStyles.improvementIssue}>{imp.issue}</Text>
+                <View style={saStyles.improvHeader}>
+                  <View style={saStyles.improvNumBadge}>
+                    <Text style={saStyles.improvNum}>{i + 1}</Text>
+                  </View>
+                  <Text style={saStyles.improvIssue}>{imp.issue}</Text>
                   <MaterialIcons
                     name={expandedImprovement === i ? 'expand-less' : 'expand-more'}
                     size={20}
@@ -680,11 +765,11 @@ function ShotAnalysisTab() {
                   />
                 </View>
                 {expandedImprovement === i && (
-                  <View style={saStyles.improvementBody}>
-                    <Text style={saStyles.improvementDetail}>{imp.detail}</Text>
+                  <View style={saStyles.improvBody}>
+                    <Text style={saStyles.improvDetail}>{imp.detail}</Text>
                     <View style={saStyles.fixBox}>
-                      <MaterialIcons name="fitness-center" size={14} color={colors.primary} />
-                      <Text style={saStyles.fixText}>{imp.fix}</Text>
+                      <MaterialIcons name="fitness-center" size={13} color={colors.primary} />
+                      <Text style={saStyles.fixText}><Text style={{ fontWeight: '700' }}>Fix: </Text>{imp.fix}</Text>
                     </View>
                   </View>
                 )}
@@ -693,57 +778,60 @@ function ShotAnalysisTab() {
           </View>
 
           {/* Key focus */}
-          <View style={saStyles.keyFocusCard}>
-            <View style={saStyles.keyFocusHeader}>
-              <MaterialIcons name="flag" size={18} color={colors.primary} />
-              <Text style={saStyles.keyFocusTitle}>Your #1 Focus Right Now</Text>
+          <View style={saStyles.focusCard}>
+            <View style={saStyles.focusHeader}>
+              <MaterialIcons name="flag" size={17} color={colors.primary} />
+              <Text style={saStyles.focusTitle}>Your #1 Focus Right Now</Text>
             </View>
-            <Text style={saStyles.keyFocusText}>{analysis.keyFocus}</Text>
-          </View>
-
-          {/* Demo tip */}
-          <View style={saStyles.demoCard}>
-            <View style={saStyles.demoHeader}>
-              <MaterialIcons name="lightbulb" size={18} color="#F59E0B" />
-              <Text style={saStyles.demoTitle}>Visualise the Correct Technique</Text>
-            </View>
-            <Text style={saStyles.demoText}>{analysis.demoTip}</Text>
+            <Text style={saStyles.focusText}>{analysis.keyFocus}</Text>
           </View>
 
           {/* Drill recommendation */}
           {analysis.drillRecommendation && (
             <View style={saStyles.drillCard}>
               <View style={saStyles.drillHeader}>
-                <MaterialIcons name="fitness-center" size={18} color={colors.success} />
-                <Text style={saStyles.drillTitle}>Recommended Drill</Text>
+                <View style={saStyles.drillIconWrap}>
+                  <MaterialIcons name="fitness-center" size={16} color={colors.textLight} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={saStyles.drillLabel}>Recommended Drill</Text>
+                  <Text style={saStyles.drillName}>{analysis.drillRecommendation.name}</Text>
+                </View>
               </View>
-              <Text style={saStyles.drillName}>{analysis.drillRecommendation.name}</Text>
               <Text style={saStyles.drillDesc}>{analysis.drillRecommendation.description}</Text>
             </View>
           )}
 
+          {/* Demo tip */}
+          <View style={saStyles.demoCard}>
+            <View style={saStyles.demoHeader}>
+              <MaterialIcons name="lightbulb" size={16} color="#F59E0B" />
+              <Text style={saStyles.demoTitle}>Technique Visualisation</Text>
+            </View>
+            <Text style={saStyles.demoText}>"{analysis.demoTip}"</Text>
+          </View>
+
           {/* Follow-up Q&A */}
-          <View style={saStyles.qaSection}>
-            <View style={saStyles.qaSectionHeader}>
+          <View style={saStyles.qaCard}>
+            <View style={saStyles.qaHeader}>
               <MaterialIcons name="chat" size={16} color={colors.primary} />
-              <Text style={saStyles.qaSectionTitle}>Ask a Follow-up Question</Text>
+              <Text style={saStyles.qaTitle}>Ask a Follow-up Question</Text>
             </View>
             {followUpMessages.length > 0 && (
-              <View style={saStyles.qaChatList}>
+              <View style={saStyles.qaMessages}>
                 {followUpMessages.map((msg, i) => (
-                  <View key={i} style={[
-                    saStyles.qaBubble,
-                    msg.role === 'user' ? saStyles.qaUserBubble : saStyles.qaAiBubble,
-                  ]}>
-                    <Text style={[
-                      saStyles.qaBubbleText,
-                      msg.role === 'user' && saStyles.qaUserText,
-                    ]}>{msg.content}</Text>
+                  <View key={i} style={[saStyles.qaBubble, msg.role === 'user' ? saStyles.qaUserBubble : saStyles.qaAiBubble]}>
+                    <Text style={[saStyles.qaBubbleText, msg.role === 'user' && saStyles.qaUserText]}>
+                      {msg.content}
+                    </Text>
                   </View>
                 ))}
                 {followUpLoading && (
                   <View style={saStyles.qaAiBubble}>
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>Thinking...</Text>
+                    </View>
                   </View>
                 )}
               </View>
@@ -764,17 +852,17 @@ function ShotAnalysisTab() {
                 onPress={handleFollowUp}
                 disabled={!followUpInput.trim() || followUpLoading}
               >
-                <MaterialIcons name="send" size={18} color={colors.textLight} />
+                <MaterialIcons name="send" size={17} color="#fff" />
               </Pressable>
             </View>
           </View>
 
           {/* Analyse again */}
-          <Pressable style={saStyles.resetBtn} onPress={() => { resetAnalysis(); }}>
+          <Pressable style={saStyles.resetBtn} onPress={resetAnalysis}>
             <MaterialIcons name="refresh" size={18} color={colors.primary} />
             <Text style={saStyles.resetBtnText}>Analyse Another Shot</Text>
           </Pressable>
-        </View>
+        </Animated.View>
       )}
     </ScrollView>
   );
@@ -870,7 +958,6 @@ function AIChatTab() {
         contentContainerStyle={chatStyles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Weekly report card */}
         <Pressable
           style={chatStyles.reportCard}
           onPress={() => { setShowReport(true); if (!weeklyReport && !reportLoading) handleGenerateReport(); }}
@@ -905,7 +992,6 @@ function AIChatTab() {
         )}
       </ScrollView>
 
-      {/* Quick prompts */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -920,7 +1006,7 @@ function AIChatTab() {
           'Improve my pull shot',
           'Mental tips for batting',
         ].map((p) => (
-          <Pressable key={p} style={chatStyles.quickChip} onPress={() => { setInput(p); }}>
+          <Pressable key={p} style={chatStyles.quickChip} onPress={() => setInput(p)}>
             <Text style={chatStyles.quickChipText}>{p}</Text>
           </Pressable>
         ))}
@@ -942,7 +1028,7 @@ function AIChatTab() {
           onPress={handleSend}
           disabled={!input.trim() || loading}
         >
-          <MaterialIcons name="send" size={22} color={!input.trim() || loading ? colors.disabled : colors.textLight} />
+          <MaterialIcons name="send" size={22} color="#fff" />
         </Pressable>
       </View>
 
@@ -960,36 +1046,37 @@ function AIChatTab() {
 
 // ─── Main Screen ───────────────────────────────────────────────────────────────
 export default function AICoachScreen() {
-  const [activeTab, setActiveTab] = useState<'chat' | 'analysis'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'analysis'>('analysis');
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
       <View style={styles.header}>
         <MaterialIcons name="psychology" size={24} color={colors.primary} />
         <Text style={styles.headerTitle}>AI Batting Coach</Text>
       </View>
 
-      {/* Tab switcher */}
       <View style={styles.tabBar}>
-        <Pressable
-          style={[styles.tabBtn, activeTab === 'chat' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('chat')}
-        >
-          <MaterialIcons name="chat" size={17} color={activeTab === 'chat' ? colors.primary : colors.textSecondary} />
-          <Text style={[styles.tabBtnText, activeTab === 'chat' && styles.tabBtnTextActive]}>AI Chat</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.tabBtn, activeTab === 'analysis' && styles.tabBtnActive]}
-          onPress={() => setActiveTab('analysis')}
-        >
-          <MaterialIcons name="videocam" size={17} color={activeTab === 'analysis' ? colors.primary : colors.textSecondary} />
-          <Text style={[styles.tabBtnText, activeTab === 'analysis' && styles.tabBtnTextActive]}>Shot Analyser</Text>
-          <View style={styles.newBadge}><Text style={styles.newBadgeText}>NEW</Text></View>
-        </Pressable>
+        {[
+          { key: 'chat', label: 'AI Chat', icon: 'chat' },
+          { key: 'analysis', label: 'Shot Analyser', icon: 'videocam' },
+        ].map(tab => (
+          <Pressable
+            key={tab.key}
+            style={[styles.tabBtn, activeTab === tab.key && styles.tabBtnActive]}
+            onPress={() => setActiveTab(tab.key as any)}
+          >
+            <MaterialIcons
+              name={tab.icon as any}
+              size={17}
+              color={activeTab === tab.key ? colors.primary : colors.textSecondary}
+            />
+            <Text style={[styles.tabBtnText, activeTab === tab.key && styles.tabBtnTextActive]}>
+              {tab.label}
+            </Text>
+          </Pressable>
+        ))}
       </View>
 
-      {/* Tab content */}
       {activeTab === 'chat' ? <AIChatTab /> : <ShotAnalysisTab />}
     </SafeAreaView>
   );
@@ -997,110 +1084,130 @@ export default function AICoachScreen() {
 
 // ─── Shot Analysis Styles ──────────────────────────────────────────────────────
 const saStyles = StyleSheet.create({
-  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 40 },
-
-  modeToggle: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: borderRadius.full,
-    borderWidth: 1, borderColor: colors.border,
-    padding: 3,
-    alignSelf: 'center',
-  },
-  modeBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingVertical: 8, paddingHorizontal: 20,
-    borderRadius: borderRadius.full,
-  },
-  modeBtnActive: { backgroundColor: colors.primary + '18' },
-  modeBtnText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
-  modeBtnTextActive: { color: colors.primary, fontWeight: '800' },
-  newBadgeSmall: {
-    backgroundColor: colors.success, borderRadius: 3,
-    paddingHorizontal: 4, paddingVertical: 1,
-  },
-  newBadgeSmallText: { fontSize: 8, fontWeight: '900', color: colors.textLight },
-
-  videoHintCard: {
-    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
-    backgroundColor: colors.primary + '08', borderRadius: borderRadius.md,
-    borderWidth: 1, borderColor: colors.primary + '25',
-    padding: spacing.sm + 2, paddingHorizontal: spacing.md,
-  },
-  videoHintText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
-
-  videoPreviewCard: {
-    backgroundColor: colors.background, borderRadius: borderRadius.md,
-    borderWidth: 1, borderColor: colors.border,
-    overflow: 'hidden', gap: spacing.sm,
-  },
-  videoPreviewInner: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    padding: spacing.md,
-    backgroundColor: '#0D0D0D',
-    minHeight: 90,
-  },
-  videoPlayCircle: {
-    width: 56, height: 56, borderRadius: 28,
-    backgroundColor: colors.primary,
-    justifyContent: 'center', alignItems: 'center',
-  },
-  videoFileName: { fontSize: 13, fontWeight: '700', color: colors.textLight },
-  videoMeta: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  videoMetaText: { fontSize: 11, color: colors.textSecondary },
+  content: { padding: spacing.md, gap: spacing.md, paddingBottom: 48 },
 
   heroCard: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    backgroundColor: colors.primary + '10', borderRadius: borderRadius.lg,
+    backgroundColor: colors.primary + '10', borderRadius: borderRadius.xl,
     borderWidth: 1, borderColor: colors.primary + '25', padding: spacing.md,
   },
-  heroIcon: {
-    width: 52, height: 52, borderRadius: 26,
-    backgroundColor: colors.primary + '15', justifyContent: 'center', alignItems: 'center',
+  heroIconWrap: {
+    width: 50, height: 50, borderRadius: 25,
+    backgroundColor: colors.primary + '18', justifyContent: 'center', alignItems: 'center',
   },
-  heroTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+  heroTitle: { fontSize: 17, fontWeight: '800', color: colors.text },
   heroSub: { fontSize: 12, color: colors.textSecondary, lineHeight: 17, marginTop: 2 },
 
-  stepCard: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.md,
+  modeRow: {
+    flexDirection: 'row', gap: spacing.sm,
   },
-  stepHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  stepBadge: {
-    width: 26, height: 26, borderRadius: 13,
+  modeChip: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: spacing.sm + 2,
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+  modeChipActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primary + '10',
+  },
+  modeChipText: { fontSize: 13, fontWeight: '700', color: colors.textSecondary },
+  modeChipTextActive: { color: colors.primary },
+  newPill: {
+    backgroundColor: '#10B981', borderRadius: 3,
+    paddingHorizontal: 4, paddingVertical: 1,
+  },
+  newPillText: { fontSize: 8, fontWeight: '900', color: '#fff' },
+
+  tipsRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.primary + '08', borderRadius: borderRadius.md,
+    borderWidth: 1, borderColor: colors.primary + '20',
+    padding: spacing.sm + 2, paddingHorizontal: spacing.md,
+  },
+  tipsText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
+
+  // Upload zone
+  uploadZone: {
+    alignItems: 'center', gap: spacing.md,
+    paddingVertical: spacing.xl + 8,
+    paddingHorizontal: spacing.lg,
+    backgroundColor: colors.surface,
+    borderRadius: borderRadius.xl,
+    borderWidth: 2, borderStyle: 'dashed', borderColor: colors.primary + '40',
+  },
+  uploadIconRing: {
+    width: 80, height: 80, borderRadius: 40,
+    backgroundColor: colors.primary + '12',
+    borderWidth: 2, borderColor: colors.primary + '25',
+    justifyContent: 'center', alignItems: 'center',
+  },
+  uploadTitle: { fontSize: 16, fontWeight: '800', color: colors.text, textAlign: 'center' },
+  uploadSub: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19 },
+  uploadPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: colors.primary, borderRadius: borderRadius.full,
+    paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.lg,
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 5,
+  },
+  uploadPillText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+
+  // Analysing overlay
+  analysingOverlay: {
+    alignItems: 'center', gap: spacing.md,
+    paddingVertical: spacing.xl + 8,
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
+    borderWidth: 1, borderColor: colors.primary + '25',
+    padding: spacing.xl,
+  },
+  analysingTitle: { fontSize: 20, fontWeight: '800', color: colors.text },
+  analysingSubText: { fontSize: 12, color: colors.textSecondary },
+  stepsContainer: { gap: spacing.xs, alignSelf: 'stretch', paddingHorizontal: spacing.md },
+  stepRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  stepRowText: { fontSize: 13, color: colors.textSecondary },
+
+  // Preview card
+  previewCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  previewCardHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  previewCardTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.text },
+  readyBadge: {
+    backgroundColor: '#10B981' + '20', borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+    borderWidth: 1, borderColor: '#10B981' + '40',
+  },
+  readyBadgeText: { fontSize: 11, fontWeight: '700', color: '#10B981' },
+  videoPreviewBox: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    padding: spacing.md, backgroundColor: '#0A0A0A', minHeight: 80,
+  },
+  videoPlayBtn: {
+    width: 56, height: 56, borderRadius: 28,
     backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center',
   },
-  stepNum: { fontSize: 13, fontWeight: '900', color: colors.textLight },
-  stepTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
+  videoName: { fontSize: 13, fontWeight: '700', color: '#fff' },
+  metaChip: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  metaText: { fontSize: 11, color: colors.textSecondary },
+  previewImg: { width: '100%', height: 220 },
+  changeBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    padding: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  changeBtnText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+
+  // Context
+  contextCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.xs,
+  },
+  contextLabel: { fontSize: 13, fontWeight: '700', color: colors.text },
   optional: { fontSize: 12, fontWeight: '400', color: colors.textSecondary },
-
-  uploadZone: {
-    alignItems: 'center', gap: spacing.sm,
-    paddingVertical: spacing.xl, paddingHorizontal: spacing.md,
-    backgroundColor: colors.background, borderRadius: borderRadius.md,
-    borderWidth: 1.5, borderStyle: 'dashed', borderColor: colors.border,
-  },
-  uploadTitle: { fontSize: 15, fontWeight: '700', color: colors.text },
-  uploadSub: { fontSize: 12, color: colors.textSecondary, textAlign: 'center' },
-  uploadBtns: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
-  uploadBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.primary, borderRadius: borderRadius.md,
-    paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.md + 4,
-  },
-  uploadBtnOutline: {
-    backgroundColor: 'transparent', borderWidth: 1.5, borderColor: colors.primary,
-  },
-  uploadBtnText: { fontSize: 14, fontWeight: '700', color: colors.textLight },
-
-  imagePreview: { gap: spacing.sm },
-  previewImg: { width: '100%', height: 220, borderRadius: borderRadius.md },
-  changeImgBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    alignSelf: 'center',
-  },
-  changeImgText: { fontSize: 12, color: colors.textSecondary },
-
   contextInput: {
     ...typography.body,
     color: colors.text,
@@ -1108,109 +1215,129 @@ const saStyles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     borderWidth: 1, borderColor: colors.border,
-    minHeight: 80,
+    minHeight: 70,
     textAlignVertical: 'top',
+    fontSize: 14,
   },
   charCount: { fontSize: 11, color: colors.textSecondary, textAlign: 'right' },
 
+  // Analyse button
   analyseBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    backgroundColor: colors.primary, borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md + 2,
-    shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
+    borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+    shadowColor: colors.primary, shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4, shadowRadius: 12, elevation: 8,
   },
-  analyseBtnDisabled: { backgroundColor: colors.disabled, shadowOpacity: 0 },
-  analyseBtnText: { fontSize: 16, fontWeight: '800', color: colors.textLight },
+  analyseBtnInner: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    backgroundColor: colors.primary,
+    paddingVertical: spacing.md + 4,
+  },
+  analyseBtnText: { fontSize: 17, fontWeight: '900', color: '#fff', letterSpacing: 0.2 },
 
-  resultsContainer: { gap: spacing.md },
+  // Results
+  results: { gap: spacing.md },
 
-  scoreCard: {
+  scoreHeader: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.md,
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md,
   },
+  scoreCircleWrap: { alignItems: 'center', gap: 6 },
   scoreCircle: {
-    width: 76, height: 76, borderRadius: 38,
-    borderWidth: 3, justifyContent: 'center', alignItems: 'center',
+    width: 80, height: 80, borderRadius: 40,
+    borderWidth: 3.5, justifyContent: 'center', alignItems: 'center',
     flexDirection: 'row',
     backgroundColor: colors.background,
-    flexShrink: 0,
   },
-  scoreNum: { fontSize: 26, fontWeight: '900', lineHeight: 30 },
-  scoreDenom: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginTop: 6 },
-  shotTypeLabel: { fontSize: 10, fontWeight: '600', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
-  shotTypeName: { fontSize: 17, fontWeight: '800', color: colors.text, marginTop: 1 },
-  encouragement: { fontSize: 12, color: colors.textSecondary, marginTop: 3, lineHeight: 17 },
+  scoreNum: { fontSize: 28, fontWeight: '900', lineHeight: 32 },
+  scoreDenom: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginTop: 8 },
+  scoreLabelBadge: {
+    borderRadius: borderRadius.full, borderWidth: 1,
+    paddingHorizontal: spacing.sm, paddingVertical: 2,
+  },
+  scoreLabelText: { fontSize: 11, fontWeight: '800' },
 
-  resultSection: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+  shotTypeTag: { fontSize: 10, fontWeight: '700', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.6 },
+  shotTypeName: { fontSize: 18, fontWeight: '900', color: colors.text, marginTop: 2 },
+  encouragementText: { fontSize: 12, color: colors.textSecondary, marginTop: 4, lineHeight: 18 },
+
+  resultThumb: {
+    width: '100%', height: 180, borderRadius: borderRadius.xl,
+    overflow: 'hidden',
+  },
+
+  sectionCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm,
   },
-  resultSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  resultDot: { width: 10, height: 10, borderRadius: 5 },
-  resultSectionTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
-  bulletRow: { flexDirection: 'row', gap: spacing.sm, paddingLeft: spacing.xs },
-  bulletDot: { fontSize: 14, fontWeight: '700', width: 18 },
-  bulletText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 20 },
+  sectionCardHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: 2 },
+  sectionDot: { width: 10, height: 10, borderRadius: 5 },
+  sectionCardTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  bulletRow: { flexDirection: 'row', gap: spacing.sm, paddingLeft: 2 },
+  bulletMark: { fontSize: 15, fontWeight: '700', width: 20, lineHeight: 22 },
+  bulletText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 21 },
 
-  improvementCard: {
+  improvCard: {
     backgroundColor: colors.background, borderRadius: borderRadius.md,
-    borderWidth: 1, borderColor: colors.warning + '40', overflow: 'hidden',
+    borderWidth: 1, borderColor: '#F59E0B' + '35',
+    overflow: 'hidden',
   },
-  improvementHeader: {
+  improvHeader: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    padding: spacing.sm + 2, paddingHorizontal: spacing.md,
+    padding: spacing.sm + 4, paddingHorizontal: spacing.md,
   },
-  improvementIssue: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.text },
-  improvementBody: { padding: spacing.md, paddingTop: 0, gap: spacing.sm },
-  improvementDetail: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  improvNumBadge: {
+    width: 22, height: 22, borderRadius: 11,
+    backgroundColor: '#F59E0B', justifyContent: 'center', alignItems: 'center',
+  },
+  improvNum: { fontSize: 11, fontWeight: '900', color: '#fff' },
+  improvIssue: { flex: 1, fontSize: 13, fontWeight: '700', color: colors.text },
+  improvBody: { padding: spacing.md, paddingTop: 4, gap: spacing.sm },
+  improvDetail: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
   fixBox: {
     flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm,
     backgroundColor: colors.primary + '10', borderRadius: borderRadius.sm,
-    padding: spacing.sm, borderLeftWidth: 3, borderLeftColor: colors.primary,
+    padding: spacing.sm + 2, borderLeftWidth: 3, borderLeftColor: colors.primary,
   },
-  fixText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 18 },
+  fixText: { flex: 1, fontSize: 13, color: colors.text, lineHeight: 19 },
 
-  keyFocusCard: {
-    backgroundColor: colors.primary + '08', borderRadius: borderRadius.lg,
+  focusCard: {
+    backgroundColor: colors.primary + '08', borderRadius: borderRadius.xl,
     borderWidth: 1.5, borderColor: colors.primary + '30', padding: spacing.md, gap: spacing.sm,
   },
-  keyFocusHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  keyFocusTitle: { fontSize: 13, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.4 },
-  keyFocusText: { fontSize: 14, color: colors.text, lineHeight: 21, fontWeight: '600' },
-
-  demoCard: {
-    backgroundColor: '#F59E0B10', borderRadius: borderRadius.lg,
-    borderWidth: 1, borderColor: '#F59E0B30', padding: spacing.md, gap: spacing.sm,
-  },
-  demoHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  demoTitle: { fontSize: 13, fontWeight: '800', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 0.4 },
-  demoText: { fontSize: 14, color: colors.text, lineHeight: 21, fontStyle: 'italic' },
-
-  resetBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    borderWidth: 1.5, borderColor: colors.primary, borderRadius: borderRadius.lg,
-    paddingVertical: spacing.md, backgroundColor: 'transparent',
-  },
-  resetBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
+  focusHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  focusTitle: { fontSize: 13, fontWeight: '800', color: colors.primary, textTransform: 'uppercase', letterSpacing: 0.4 },
+  focusText: { fontSize: 14, color: colors.text, lineHeight: 22, fontWeight: '600' },
 
   drillCard: {
-    backgroundColor: colors.success + '10', borderRadius: borderRadius.lg,
-    borderWidth: 1, borderColor: colors.success + '35', padding: spacing.md, gap: spacing.sm,
+    backgroundColor: '#10B981' + '08', borderRadius: borderRadius.xl,
+    borderWidth: 1, borderColor: '#10B981' + '30', padding: spacing.md, gap: spacing.sm,
   },
-  drillHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  drillTitle: { fontSize: 13, fontWeight: '800', color: colors.success, textTransform: 'uppercase', letterSpacing: 0.4 },
+  drillHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  drillIconWrap: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#10B981', justifyContent: 'center', alignItems: 'center',
+  },
+  drillLabel: { fontSize: 10, fontWeight: '700', color: '#10B981', textTransform: 'uppercase', letterSpacing: 0.5 },
   drillName: { fontSize: 15, fontWeight: '800', color: colors.text },
   drillDesc: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
 
-  qaSection: {
-    backgroundColor: colors.surface, borderRadius: borderRadius.lg,
+  demoCard: {
+    backgroundColor: '#F59E0B' + '08', borderRadius: borderRadius.xl,
+    borderWidth: 1, borderColor: '#F59E0B' + '30', padding: spacing.md, gap: spacing.sm,
+  },
+  demoHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  demoTitle: { fontSize: 13, fontWeight: '800', color: '#F59E0B', textTransform: 'uppercase', letterSpacing: 0.4 },
+  demoText: { fontSize: 14, color: colors.text, lineHeight: 22, fontStyle: 'italic' },
+
+  qaCard: {
+    backgroundColor: colors.surface, borderRadius: borderRadius.xl,
     borderWidth: 1, borderColor: colors.border, padding: spacing.md, gap: spacing.sm,
   },
-  qaSectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
-  qaSectionTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
-  qaChatList: { gap: spacing.sm },
+  qaHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  qaTitle: { fontSize: 14, fontWeight: '800', color: colors.text },
+  qaMessages: { gap: spacing.sm },
   qaBubble: {
     maxWidth: '88%', padding: spacing.sm + 2, paddingHorizontal: spacing.md,
     borderRadius: borderRadius.lg,
@@ -1222,7 +1349,7 @@ const saStyles = StyleSheet.create({
     minWidth: 48, minHeight: 36, justifyContent: 'center',
   },
   qaBubbleText: { fontSize: 13, color: colors.text, lineHeight: 19 },
-  qaUserText: { color: colors.textLight },
+  qaUserText: { color: '#fff' },
   qaInputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm, marginTop: spacing.xs },
   qaInput: {
     flex: 1, ...typography.body, color: colors.text,
@@ -1232,12 +1359,20 @@ const saStyles = StyleSheet.create({
   },
   qaSendBtn: {
     backgroundColor: colors.primary, width: 42, height: 42,
-    borderRadius: borderRadius.full, justifyContent: 'center', alignItems: 'center',
+    borderRadius: 21, justifyContent: 'center', alignItems: 'center',
   },
   qaSendBtnDisabled: { backgroundColor: colors.disabled },
+
+  resetBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
+    borderWidth: 1.5, borderColor: colors.primary, borderRadius: borderRadius.xl,
+    paddingVertical: spacing.md, backgroundColor: 'transparent',
+    marginBottom: spacing.md,
+  },
+  resetBtnText: { fontSize: 14, fontWeight: '700', color: colors.primary },
 });
 
-// ─── Chat Tab Styles ───────────────────────────────────────────────────────────
+// ─── Chat Styles ───────────────────────────────────────────────────────────────
 const chatStyles = StyleSheet.create({
   content: { padding: spacing.md, gap: spacing.md },
   reportCard: {
@@ -1256,7 +1391,7 @@ const chatStyles = StyleSheet.create({
   userMessage: { alignSelf: 'flex-end', backgroundColor: colors.primary },
   assistantMessage: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   messageText: { ...typography.body, color: colors.text, lineHeight: 22 },
-  userMessageText: { color: colors.textLight },
+  userMessageText: { color: '#fff' },
   loadingText: { ...typography.body, color: colors.textSecondary, fontStyle: 'italic' },
   quickPromptsContainer: { maxHeight: 46, borderTopWidth: 1, borderTopColor: colors.border },
   quickPromptsContent: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, gap: spacing.sm, flexDirection: 'row', alignItems: 'center' },
@@ -1312,7 +1447,7 @@ const rptStyles = StyleSheet.create({
     paddingVertical: spacing.md, paddingHorizontal: spacing.xl, alignSelf: 'center',
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 6,
   },
-  generateBtnText: { fontSize: 15, fontWeight: '800', color: colors.textLight },
+  generateBtnText: { fontSize: 15, fontWeight: '800', color: '#fff' },
   section: {
     backgroundColor: colors.background, borderRadius: borderRadius.lg,
     borderLeftWidth: 4, padding: spacing.md, gap: spacing.sm,
@@ -1348,9 +1483,4 @@ const styles = StyleSheet.create({
   tabBtnActive: { borderBottomColor: colors.primary },
   tabBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
   tabBtnTextActive: { color: colors.primary, fontWeight: '800' },
-  newBadge: {
-    backgroundColor: colors.success, borderRadius: 4,
-    paddingHorizontal: 5, paddingVertical: 1,
-  },
-  newBadgeText: { fontSize: 9, fontWeight: '900', color: colors.textLight, letterSpacing: 0.3 },
 });

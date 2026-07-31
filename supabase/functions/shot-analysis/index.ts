@@ -103,13 +103,13 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
+        model: 'google/gemini-2.5-flash-preview-05-20',
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent }
         ],
-        temperature: 0.4,
-        max_tokens: 1400,
+        temperature: 0.3,
+        max_tokens: 1800,
       }),
     });
 

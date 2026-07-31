@@ -248,18 +248,8 @@ export default function TabLayout() {
           }}
         />
         <Tabs.Screen
-          name="live-lab"
-          options={{ href: null }}
-        />
-        <Tabs.Screen
           name="academy"
-          options={{
-            title: 'Academy',
-            href: showAcademy ? undefined : null,
-            tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="shield" size={size} color={color} />
-            ),
-          }}
+          options={{ href: null }}
         />
         <Tabs.Screen
           name="leaderboard"
@@ -269,14 +259,7 @@ export default function TabLayout() {
         />
         <Tabs.Screen
           name="admin"
-          options={{
-            title: 'Admin',
-            href: isSuperAdmin ? undefined : null,
-            tabBarIcon: ({ color, size }) => (
-              <MaterialIcons name="admin-panel-settings" size={size} color={color} />
-            ),
-            tabBarActiveTintColor: colors.warning,
-          }}
+          options={{ href: null }}
         />
       </Tabs>
       <MiniSessionBar />

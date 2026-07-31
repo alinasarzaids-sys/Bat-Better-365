@@ -31,11 +31,15 @@ function useVideoPlayer(_source, _setup) {
   };
 }
 
-module.exports = {
+var _exports = {
   VideoView: VideoView,
   useVideoPlayer: useVideoPlayer,
-  default: { VideoView: VideoView, useVideoPlayer: useVideoPlayer },
 };
 
-// Also support ES module default import
-module.exports.default = module.exports;
+// Support ES module default import without circular reference
+_exports.default = {
+  VideoView: VideoView,
+  useVideoPlayer: useVideoPlayer,
+};
+
+module.exports = _exports;

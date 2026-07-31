@@ -41,10 +41,7 @@
     "production": {
       "ios": {
         "language": "en-US",
-        "ascAppId": "6761528190",
-        "appleApiKeyId": "55JB9LU2CW",
-        "appleApiIssuerId": "488a0877-d2e7-4f92-a957-01d4ff549959",
-        "appleApiKeyPath": "./AuthKey_55JB9LU2CW.p8"
+        "ascAppId": "6761528190"
       },
       "android": {
         "track": "internal"
