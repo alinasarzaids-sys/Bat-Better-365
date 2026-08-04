@@ -8,8 +8,8 @@
 const BILLING_PERMISSIONS = ['com.android.vending.BILLING'];
 
 const PERMISSIONS_TO_REMOVE = [
-  'android.permission.READ_MEDIA_IMAGES',
-  'android.permission.READ_MEDIA_VIDEO',
+  // READ_MEDIA_IMAGES and READ_MEDIA_VIDEO are intentionally kept — required by expo-image-picker
+  // for the AI Shot Analyser feature on Android 13+.
   'android.permission.READ_MEDIA_AUDIO',
   'android.permission.READ_EXTERNAL_STORAGE',
   'android.permission.WRITE_EXTERNAL_STORAGE',

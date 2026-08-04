@@ -103,7 +103,7 @@ Be specific to cricket batting. Reference actual body parts (front elbow, back f
         'Authorization': `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash-preview-05-20',
+        model: 'google/gemini-2.5-flash',  // stable vision model
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userContent }

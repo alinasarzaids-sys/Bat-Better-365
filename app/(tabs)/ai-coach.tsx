@@ -466,12 +466,12 @@ function ShotAnalysisTab() {
         const filePath = `temp/shot_${Date.now()}.${ext}`;
 
         const videoResponse = await fetch(pickedMedia.uri);
-        const videoBlob = await videoResponse.blob();
+        const videoArrayBuffer = await videoResponse.arrayBuffer();
 
         setUploadProgress(40);
         const { data: uploadData, error: uploadError } = await supabase.storage
           .from('shot-uploads')
-          .upload(filePath, videoBlob, {
+          .upload(filePath, videoArrayBuffer, {
             contentType: pickedMedia.mimeType || 'video/mp4',
             upsert: true,
           });
