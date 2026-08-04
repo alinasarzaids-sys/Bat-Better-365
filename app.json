@@ -18,7 +18,8 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.onspace.cricketpro",
-      "buildNumber": "23",
+      "buildNumber": "24",
+      "deploymentTarget": "15.1",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Bat Better 365 uses your photo library to analyse your batting shots with AI coaching feedback.",
         "NSPhotoLibraryAddUsageDescription": "Bat Better 365 may save analysis images to your photo library.",
@@ -84,6 +85,7 @@
       "expo-router",
       "./plugins/block-permissions",
       "./plugins/exclude-expo-video",
+      "./plugins/fix-ios-build",
       [
         "expo-image-picker",
         {
