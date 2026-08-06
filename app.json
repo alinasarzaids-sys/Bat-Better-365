@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.onspace.cricketpro",
-      "buildNumber": "24",
+      "buildNumber": "25",
       "deploymentTarget": "15.1",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Bat Better 365 uses your photo library to analyse your batting shots with AI coaching feedback.",
@@ -54,14 +54,12 @@
         "backgroundColor": "#1B5E20"
       },
       "package": "com.batbetter365.app",
-      "versionCode": 1779576423,
+      "versionCode": 1779576424,
       "targetSdkVersion": 36,
       "permissions": [
         "android.permission.INTERNET",
         "android.permission.ACCESS_NETWORK_STATE",
-        "com.android.vending.BILLING",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO"
+        "com.android.vending.BILLING"
       ],
       "blockedPermissions": [
         "android.permission.ACCESS_BACKGROUND_LOCATION",
@@ -86,12 +84,7 @@
       "./plugins/block-permissions",
       "./plugins/exclude-expo-video",
       "./plugins/fix-ios-build",
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Allow Bat Better 365 to access your photos for shot analysis."
-        }
-      ]
+
     ]
   }
 }
