@@ -18,7 +18,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "app.onspace.cricketpro",
-      "buildNumber": "28",
+      "buildNumber": "29",
       "deploymentTarget": "15.1",
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Bat Better 365 uses your photo library to analyse your batting shots with AI coaching feedback.",
@@ -54,7 +54,7 @@
         "backgroundColor": "#1B5E20"
       },
       "package": "com.batbetter365.app",
-      "versionCode": 1779576427,
+      "versionCode": 1779576428,
       "targetSdkVersion": 36,
       "permissions": [
         "android.permission.INTERNET",
