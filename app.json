@@ -83,7 +83,9 @@
       "expo-router",
       "./plugins/block-permissions",
       "./plugins/exclude-expo-video",
-      "./plugins/fix-ios-build"
+      "./plugins/fix-ios-build",
+      "@react-native-community/datetimepicker",
+      "expo-web-browser"
     ]
   }
 }
